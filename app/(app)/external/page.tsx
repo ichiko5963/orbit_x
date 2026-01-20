@@ -121,6 +121,7 @@ interface GeneratedPattern {
   id: number;
   name: string;
   text: string;
+  threadPost: string;
   isLoading: boolean;
   error?: string;
 }
@@ -215,6 +216,7 @@ export default function ExternalPage() {
       id: index + 1,
       name: p.name,
       text: "",
+      threadPost: "",
       isLoading: true,
     }));
     setGeneratedPatterns(initialPatterns);
@@ -245,10 +247,10 @@ export default function ExternalPage() {
           throw new Error(data.error || "生成に失敗しました");
         }
 
-        return { id: index + 1, text: data.text, error: undefined };
+        return { id: index + 1, text: data.text, threadPost: data.threadPost || "", error: undefined };
       } catch (err) {
         const message = err instanceof Error ? err.message : "エラー";
-        return { id: index + 1, text: "", error: message };
+        return { id: index + 1, text: "", threadPost: "", error: message };
       }
     });
 
@@ -260,6 +262,7 @@ export default function ExternalPage() {
         return {
           ...p,
           text: result?.text || "",
+          threadPost: result?.threadPost || "",
           error: result?.error,
           isLoading: false,
         };
@@ -307,7 +310,7 @@ export default function ExternalPage() {
 
       setGeneratedPatterns((prev) =>
         prev.map((p) =>
-          p.id === patternId ? { ...p, text: data.text, isLoading: false } : p
+          p.id === patternId ? { ...p, text: data.text, threadPost: data.threadPost || "", isLoading: false } : p
         )
       );
     } catch (err) {
@@ -320,9 +323,16 @@ export default function ExternalPage() {
     }
   };
 
-  const handleCopy = (id: number, text: string) => {
+  const handleCopy = (id: number, text: string, threadPost?: string) => {
+    // Copy main post only (user will post thread separately on X)
     navigator.clipboard.writeText(text);
     setCopiedId(id);
+    setTimeout(() => setCopiedId(null), 2000);
+  };
+
+  const handleCopyThread = (id: number, threadPost: string) => {
+    navigator.clipboard.writeText(threadPost);
+    setCopiedId(id + 100); // Use different ID for thread copy
     setTimeout(() => setCopiedId(null), 2000);
   };
 
@@ -480,16 +490,19 @@ export default function ExternalPage() {
             key={article.id}
             className="group bg-white border border-zinc-200 rounded-2xl overflow-hidden hover:shadow-lg transition-all"
           >
-            {/* AI Button at TOP - Primary action */}
-            <div className="p-4 bg-gradient-to-r from-emerald-50 to-emerald-100 border-b border-emerald-200">
-              <button
-                onClick={() => handleGenerateFromArticle(article)}
-                className="w-full flex items-center justify-center gap-2 py-3 bg-emerald-500 text-white font-semibold rounded-xl hover:bg-emerald-600 transition-colors shadow-lg shadow-emerald-500/25"
-              >
-                <Sparkles className="w-5 h-5" />
-                AIで6パターン生成
-              </button>
-            </div>
+            {/* OG Image */}
+            {article.imageUrl && (
+              <div className="relative aspect-[1.91/1] bg-zinc-100 overflow-hidden">
+                <img
+                  src={article.imageUrl}
+                  alt={article.title}
+                  className="w-full h-full object-cover"
+                  onError={(e) => {
+                    (e.target as HTMLImageElement).style.display = "none";
+                  }}
+                />
+              </div>
+            )}
 
             {/* Article Header */}
             <div className="p-5">
@@ -535,24 +548,35 @@ export default function ExternalPage() {
               </div>
             </div>
 
-            {/* Footer */}
-            <div className="p-4 flex items-center justify-between border-t border-zinc-100">
+            {/* Footer - Author info */}
+            <div className="px-5 py-2 border-t border-zinc-100">
               <div className="flex items-center gap-2 text-sm text-zinc-400">
                 <Calendar className="w-4 h-4" />
                 {article.publishedAt}
                 <span className="text-zinc-300">•</span>
                 <span>{article.author}</span>
               </div>
+            </div>
 
+            {/* Action Buttons */}
+            <div className="p-4 flex items-center justify-between border-t border-zinc-100 bg-zinc-50">
               <a
                 href={article.url}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="flex items-center gap-1.5 px-3 py-2 text-sm text-zinc-600 hover:text-zinc-900 hover:bg-zinc-100 rounded-lg transition-colors"
+                className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-zinc-600 hover:text-zinc-900 bg-white border border-zinc-200 rounded-lg hover:bg-zinc-100 transition-colors"
               >
-                記事を読む
                 <ExternalLink className="w-4 h-4" />
+                記事を読む
               </a>
+
+              <button
+                onClick={() => handleGenerateFromArticle(article)}
+                className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-emerald-600 bg-emerald-50 border border-emerald-200 rounded-lg hover:bg-emerald-100 transition-colors"
+              >
+                <Sparkles className="w-4 h-4" />
+                AIで生成
+              </button>
             </div>
           </div>
         ))}
@@ -674,9 +698,24 @@ export default function ExternalPage() {
                             </button>
                           </div>
                         ) : (
-                          <p className="text-sm text-zinc-700 whitespace-pre-wrap leading-relaxed line-clamp-[7]">
-                            {pattern.text}
-                          </p>
+                          <div className="space-y-3">
+                            {/* Main post */}
+                            <div>
+                              <span className="text-xs font-medium text-zinc-500 mb-1 block">1投稿目</span>
+                              <p className="text-sm text-zinc-700 whitespace-pre-wrap leading-relaxed">
+                                {pattern.text}
+                              </p>
+                            </div>
+                            {/* Thread post */}
+                            {pattern.threadPost && (
+                              <div className="pt-3 border-t border-zinc-100">
+                                <span className="text-xs font-medium text-blue-500 mb-1 block">2投稿目（ツリー）</span>
+                                <p className="text-sm text-zinc-600 whitespace-pre-wrap leading-relaxed bg-blue-50 p-2 rounded-lg">
+                                  {pattern.threadPost}
+                                </p>
+                              </div>
+                            )}
+                          </div>
                         )}
                       </div>
 
@@ -689,42 +728,66 @@ export default function ExternalPage() {
 
                       {/* Card Actions */}
                       {!pattern.isLoading && !pattern.error && pattern.text && (
-                        <div className="flex border-t border-zinc-100">
-                          <button
-                            onClick={() => handleCopy(pattern.id, pattern.text)}
-                            className="flex-1 flex items-center justify-center gap-1.5 py-3 text-sm font-medium text-zinc-600 hover:bg-zinc-50 transition-colors border-r border-zinc-100"
-                          >
-                            {copiedId === pattern.id ? (
-                              <>
-                                <CheckCircle2 className="w-4 h-4 text-emerald-500" />
-                                <span className="text-emerald-600">コピー済み</span>
-                              </>
-                            ) : (
-                              <>
-                                <Copy className="w-4 h-4" />
-                                コピー
-                              </>
+                        <div className="border-t border-zinc-100">
+                          {/* Copy buttons row */}
+                          <div className="flex border-b border-zinc-100">
+                            <button
+                              onClick={() => handleCopy(pattern.id, pattern.text)}
+                              className="flex-1 flex items-center justify-center gap-1.5 py-2.5 text-sm font-medium text-zinc-600 hover:bg-zinc-50 transition-colors border-r border-zinc-100"
+                            >
+                              {copiedId === pattern.id ? (
+                                <>
+                                  <CheckCircle2 className="w-4 h-4 text-emerald-500" />
+                                  <span className="text-emerald-600">済</span>
+                                </>
+                              ) : (
+                                <>
+                                  <Copy className="w-4 h-4" />
+                                  1投稿目
+                                </>
+                              )}
+                            </button>
+                            {pattern.threadPost && (
+                              <button
+                                onClick={() => handleCopyThread(pattern.id, pattern.threadPost)}
+                                className="flex-1 flex items-center justify-center gap-1.5 py-2.5 text-sm font-medium text-blue-600 hover:bg-blue-50 transition-colors"
+                              >
+                                {copiedId === pattern.id + 100 ? (
+                                  <>
+                                    <CheckCircle2 className="w-4 h-4 text-emerald-500" />
+                                    <span className="text-emerald-600">済</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <Copy className="w-4 h-4" />
+                                    2投稿目
+                                  </>
+                                )}
+                              </button>
                             )}
-                          </button>
-                          <button
-                            onClick={() => handleSchedule(pattern.id, pattern.text)}
-                            disabled={schedulingId === pattern.id}
-                            className="flex-1 flex items-center justify-center gap-1.5 py-3 text-sm font-medium text-violet-600 hover:bg-violet-50 transition-colors border-r border-zinc-100 disabled:opacity-50"
-                          >
-                            {schedulingId === pattern.id ? (
-                              <Loader2 className="w-4 h-4 animate-spin" />
-                            ) : (
-                              <Calendar className="w-4 h-4" />
-                            )}
-                            予約
-                          </button>
-                          <button
-                            onClick={() => handlePost(pattern.text)}
-                            className="flex-1 flex items-center justify-center gap-1.5 py-3 text-sm font-medium text-zinc-900 hover:bg-zinc-100 transition-colors"
-                          >
-                            <ExternalLink className="w-4 h-4" />
-                            投稿
-                          </button>
+                          </div>
+                          {/* Action buttons row */}
+                          <div className="flex">
+                            <button
+                              onClick={() => handleSchedule(pattern.id, pattern.text)}
+                              disabled={schedulingId === pattern.id}
+                              className="flex-1 flex items-center justify-center gap-1.5 py-2.5 text-sm font-medium text-violet-600 hover:bg-violet-50 transition-colors border-r border-zinc-100 disabled:opacity-50"
+                            >
+                              {schedulingId === pattern.id ? (
+                                <Loader2 className="w-4 h-4 animate-spin" />
+                              ) : (
+                                <Calendar className="w-4 h-4" />
+                              )}
+                              予約
+                            </button>
+                            <button
+                              onClick={() => handlePost(pattern.text)}
+                              className="flex-1 flex items-center justify-center gap-1.5 py-2.5 text-sm font-medium text-zinc-900 hover:bg-zinc-100 transition-colors"
+                            >
+                              <ExternalLink className="w-4 h-4" />
+                              投稿
+                            </button>
+                          </div>
                         </div>
                       )}
 
