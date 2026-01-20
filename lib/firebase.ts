@@ -269,5 +269,56 @@ export const clearContextPosts = async (userId: string) => {
   }
 };
 
+// Firestore functions - Drafts
+export const saveDraft = async (userId: string, draft: any) => {
+  try {
+    const draftRef = doc(collection(db, "users", userId, "drafts"));
+    await setDoc(draftRef, {
+      ...draft,
+      createdAt: Timestamp.now(),
+      updatedAt: Timestamp.now(),
+    });
+    return draftRef.id;
+  } catch (error) {
+    console.error("Save draft error:", error);
+    throw error;
+  }
+};
+
+export const getDrafts = async (userId: string) => {
+  try {
+    const draftsRef = collection(db, "users", userId, "drafts");
+    const q = query(draftsRef, orderBy("createdAt", "desc"));
+    const snapshot = await getDocs(q);
+    return snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+  } catch (error) {
+    console.error("Get drafts error:", error);
+    throw error;
+  }
+};
+
+export const updateDraft = async (userId: string, draftId: string, updates: any) => {
+  try {
+    const draftRef = doc(db, "users", userId, "drafts", draftId);
+    await updateDoc(draftRef, {
+      ...updates,
+      updatedAt: Timestamp.now(),
+    });
+  } catch (error) {
+    console.error("Update draft error:", error);
+    throw error;
+  }
+};
+
+export const deleteDraft = async (userId: string, draftId: string) => {
+  try {
+    const draftRef = doc(db, "users", userId, "drafts", draftId);
+    await deleteDoc(draftRef);
+  } catch (error) {
+    console.error("Delete draft error:", error);
+    throw error;
+  }
+};
+
 export { auth, db, onAuthStateChanged };
 export type { User };
