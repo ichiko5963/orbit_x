@@ -29,7 +29,7 @@ const mainNav = [
   { name: "ダッシュボード", href: "/dashboard", icon: LayoutDashboard },
   { name: "AI投稿作成", href: "/compose", icon: Sparkles },
   { name: "予約投稿", href: "/schedule", icon: Calendar },
-  { name: "投稿ランキング", href: "/posts", icon: TrendingUp },
+  { name: "過去投稿一覧", href: "/posts", icon: TrendingUp },
   { name: "バズ投稿参考", href: "/viral", icon: Users },
   { name: "外部コンテンツ", href: "/external", icon: Globe },
 ];

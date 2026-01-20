@@ -70,9 +70,23 @@ export const savePosts = async (userId: string, posts: any[]) => {
 export const getPosts = async (userId: string) => {
   try {
     const postsRef = collection(db, "users", userId, "posts");
-    const q = query(postsRef, orderBy("createdAt", "desc"));
-    const snapshot = await getDocs(q);
-    return snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+    // Fetch without orderBy to avoid index requirements
+    const snapshot = await getDocs(postsRef);
+    const posts = snapshot.docs.map((doc) => {
+      const data = doc.data();
+      return {
+        id: doc.id,
+        ...data,
+        // Normalize createdAt to string for consistency
+        createdAt: data.createdAt?.toDate?.()?.toISOString?.() || data.createdAt || new Date().toISOString(),
+      };
+    });
+    // Sort client-side by createdAt descending
+    return posts.sort((a, b) => {
+      const dateA = new Date(a.createdAt).getTime();
+      const dateB = new Date(b.createdAt).getTime();
+      return dateB - dateA;
+    });
   } catch (error) {
     console.error("Get posts error:", error);
     throw error;
@@ -238,9 +252,23 @@ export const saveContextPosts = async (userId: string, posts: any[]) => {
 export const getContextPosts = async (userId: string) => {
   try {
     const postsRef = collection(db, "users", userId, "contextPosts");
-    const q = query(postsRef, orderBy("importedAt", "desc"));
-    const snapshot = await getDocs(q);
-    return snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+    // Fetch without orderBy to avoid index requirements
+    const snapshot = await getDocs(postsRef);
+    const posts = snapshot.docs.map((doc) => {
+      const data = doc.data();
+      return {
+        id: doc.id,
+        ...data,
+        // Normalize dates for consistency
+        importedAt: data.importedAt?.toDate?.()?.toISOString?.() || data.importedAt || new Date().toISOString(),
+      };
+    });
+    // Sort client-side by importedAt descending
+    return posts.sort((a, b) => {
+      const dateA = new Date(a.importedAt).getTime();
+      const dateB = new Date(b.importedAt).getTime();
+      return dateB - dateA;
+    });
   } catch (error) {
     console.error("Get context posts error:", error);
     throw error;

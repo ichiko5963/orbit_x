@@ -128,20 +128,31 @@ interface GeneratePostOptions {
  * Generate a new post based on template and topic
  */
 export async function generatePost(options: GeneratePostOptions): Promise<string> {
-  const { template, topic, category, tone = "カジュアル", emojiSet = [] } = options;
+  const { template, topic, category, tone = "casual", emojiSet = [] } = options;
 
   const toneDescriptions: Record<string, string> = {
-    casual: "親しみやすく、フレンドリーな口調",
+    casual: "親しみやすく自然な口調。エンジニアやビジネスパーソンが書いたような文体",
     professional: "専門的で信頼感のある口調",
     energetic: "熱量高めで、モチベーションを上げる口調",
   };
 
   const toneDescription = toneDescriptions[tone] || toneDescriptions.casual;
 
-  const emojiInstruction =
-    emojiSet.length > 0
-      ? `以下の絵文字を適度に使用してください: ${emojiSet.join(" ")}`
-      : "絵文字は控えめに、または使用しないでください";
+  // カテゴリー別の追加指示
+  const categoryInstructions: Record<string, string> = {
+    "記事": `
+- 記事の要点を箇条書きで整理（「・」を使用）
+- 記事から得られる学びを明確に
+- 元記事へのリンクを含める価値を示唆`,
+    "技術・プログラミング": `
+- 技術的なポイントを箇条書きで整理
+- 具体的なコード例や数値を含める`,
+    "学習・勉強法": `
+- 学びのポイントを箇条書きで整理
+- 実践的なアドバイスを含める`,
+  };
+
+  const categoryInstruction = category && categoryInstructions[category] ? categoryInstructions[category] : "";
 
   const prompt = `以下のテンプレートと条件に基づいて、X（Twitter）用の投稿を作成してください。
 
@@ -151,13 +162,20 @@ ${template}
 トピック/キーワード：${topic}
 ${category ? `カテゴリー：${category}` : ""}
 口調：${toneDescription}
-${emojiInstruction}
 
-条件：
-- 280文字以内
-- 改行を効果的に使用
-- 読者の興味を引く内容
-- 具体的で価値のある情報
+絶対に守るルール：
+- 絵文字は使わない、または最小限（1-2個まで）
+- AIっぽい表現を避ける（「〜ですね」「〜しましょう」等の説教調を避ける）
+- 自然な日本語で、人間が書いたような文体で
+- 改行を効果的に使用（各セクションの間に空行を入れる）
+- 箇条書きは「・」を使用し、1項目1行で読みやすく
+- 読者の興味を引く具体的な内容
+${categoryInstruction}
+
+フォーマットのルール：
+- タイトル/見出しの後は空行を入れる
+- 箇条書きの項目は1行ずつ区切る
+- 結論/まとめの前に空行を入れる
 
 投稿本文のみを出力してください。`;
 
@@ -167,15 +185,15 @@ ${emojiInstruction}
       {
         role: "system",
         content:
-          "あなたはバズるX（Twitter）投稿を作成するエキスパートです。読者の心を掴む、シェアされやすい投稿を作成してください。",
+          "あなたはバズるX（Twitter）投稿を作成するエキスパートです。自然な日本語で、人間らしい文体で書いてください。絵文字は最小限に。AIっぽい文体は絶対に避けてください。",
       },
       {
         role: "user",
         content: prompt,
       },
     ],
-    temperature: 0.8,
-    max_tokens: 500,
+    temperature: 0.7,
+    max_tokens: 600,
   });
 
   const content = response.choices[0]?.message?.content?.trim();
@@ -347,7 +365,7 @@ export async function generateWithReference(
   };
 
   const toneDescriptions: Record<string, string> = {
-    casual: "親しみやすく、フレンドリーな口調",
+    casual: "親しみやすく自然な口調。エンジニアやビジネスパーソンが書いたような文体",
     professional: "専門的で信頼感のある口調",
     energetic: "熱量高めで、モチベーションを上げる口調",
   };
@@ -355,14 +373,33 @@ export async function generateWithReference(
   const structure = templateStructures[templateId] || "";
   const toneDescription = toneDescriptions[tone] || toneDescriptions.casual;
 
+  // カテゴリー別の追加指示
+  const categoryInstructions: Record<string, string> = {
+    "記事": `
+- 記事の要点を箇条書きで整理（「・」を使用）
+- 記事タイトルや概要から核心を抽出
+- 読者が記事を読みたくなる内容に`,
+    "技術・プログラミング": `
+- 技術的なポイントを箇条書きで整理
+- 具体的な数値やコード例があれば含める`,
+  };
+
+  const categoryInstruction = category && categoryInstructions[category] ? categoryInstructions[category] : "";
+
   const prompt = `以下の条件に基づいて、X（Twitter）用の投稿を作成してください。
+
+【重要】参考投稿の構造を完全に再現してください：
+- 文の区切り方、改行の位置を同じにする
+- 段落の数と長さを合わせる
+- 箇条書きがあれば同じ形式で（「・」を使用）
+- 最初の一文の書き出し方を模倣する
 
 入力コンテンツ：
 ${content}
 
 テンプレート構造：${structure}
 
-参考投稿（この投稿の「文体」「リズム」「改行パターン」を参考にする）：
+参考投稿（この投稿の構造を完全にコピーして、内容だけ差し替える）：
 """
 ${referenceText}
 """
@@ -370,12 +407,18 @@ ${referenceText}
 ${category ? `カテゴリー：${category}` : ""}
 口調：${toneDescription}
 
-条件：
-- 280文字以内
-- 参考投稿の構造・リズム・文体を模倣
-- テンプレートの型に従う
-- 入力コンテンツの情報を元に作成
-- 具体的で価値のある情報
+絶対に守るルール：
+- 絵文字は使わない、または最小限（参考投稿に絵文字がある場合のみ同程度使用）
+- AIっぽい表現を避ける（「〜ですね」「〜しましょう」等の説教調を避ける）
+- 参考投稿と同じ文の長さ、同じリズムで書く
+- 入力コンテンツの情報を自然に組み込む
+- 具体的で価値のある情報を含める
+${categoryInstruction}
+
+フォーマットのルール：
+- タイトル/見出しの後は空行を入れる
+- 箇条書きの項目は「・」で始め、1行ずつ区切る
+- 結論/まとめの前に空行を入れる
 
 投稿本文のみを出力してください。`;
 
@@ -385,15 +428,15 @@ ${category ? `カテゴリー：${category}` : ""}
       {
         role: "system",
         content:
-          "あなたはバズるX（Twitter）投稿を作成するエキスパートです。参考投稿のスタイルを巧みに取り入れながら、オリジナルの価値ある投稿を作成してください。",
+          "あなたはバズるX（Twitter）投稿を作成するエキスパートです。参考投稿の構造を完全に再現しながら、内容だけを差し替えます。絵文字は最小限に。自然な日本語で書いてください。AIっぽい文体は絶対に避けてください。",
       },
       {
         role: "user",
         content: prompt,
       },
     ],
-    temperature: 0.8,
-    max_tokens: 500,
+    temperature: 0.7,
+    max_tokens: 600,
   });
 
   const responseContent = response.choices[0]?.message?.content?.trim();

@@ -12,6 +12,7 @@ import {
   ArrowRight,
   Info,
 } from "lucide-react";
+import { useAuth } from "@/lib/auth-context";
 
 interface ProcessStep {
   name: string;
@@ -44,6 +45,7 @@ const tiers = [
 ];
 
 export default function ImportPage() {
+  const { user } = useAuth();
   const [file, setFile] = useState<File | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -99,7 +101,7 @@ export default function ImportPage() {
   };
 
   const handleImport = async () => {
-    if (!file) return;
+    if (!file || !user) return;
 
     setIsProcessing(true);
     setCompletedSteps([]);
@@ -139,6 +141,7 @@ export default function ImportPage() {
 
       const formData = new FormData();
       formData.append("file", filteredFile);
+      formData.append("userId", user.uid);
 
       const response = await fetch("/api/import", {
         method: "POST",
