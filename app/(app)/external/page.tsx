@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import {
   Globe,
   Search,
@@ -11,7 +12,6 @@ import {
   Clock,
   Bookmark,
   BookmarkCheck,
-  Image as ImageIcon,
   FileText,
   Calendar,
   X,
@@ -20,9 +20,10 @@ import {
   CheckCircle2,
   Loader2,
   RotateCcw,
+  Settings,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
-import { saveScheduledPost } from "@/lib/firebase";
+import { saveScheduledPost, getArticlePatterns, initializeArticlePatterns, ArticlePattern, DEFAULT_ARTICLE_PATTERNS } from "@/lib/firebase";
 
 interface Article {
   id: string;
@@ -116,6 +117,14 @@ function formatNumber(num: number): string {
   return num.toString();
 }
 
+interface GeneratedPattern {
+  id: number;
+  name: string;
+  text: string;
+  isLoading: boolean;
+  error?: string;
+}
+
 export default function ExternalPage() {
   const router = useRouter();
   const { user } = useAuth();
@@ -125,13 +134,37 @@ export default function ExternalPage() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [showSavedOnly, setShowSavedOnly] = useState(false);
 
-  // Preview Modal
-  const [selectedArticle, setSelectedArticle] = useState<Article | null>(null);
+  // Patterns from Firebase
+  const [articlePatterns, setArticlePatterns] = useState<ArticlePattern[]>([]);
+  const [isPatternsLoading, setIsPatternsLoading] = useState(true);
 
-  // Generation State
-  const [isGenerating, setIsGenerating] = useState(false);
-  const [generatedText, setGeneratedText] = useState("");
-  const [copied, setCopied] = useState(false);
+  // Modal State
+  const [selectedArticle, setSelectedArticle] = useState<Article | null>(null);
+  const [generatedPatterns, setGeneratedPatterns] = useState<GeneratedPattern[]>([]);
+  const [copiedId, setCopiedId] = useState<number | null>(null);
+  const [schedulingId, setSchedulingId] = useState<number | null>(null);
+
+  // Load patterns from Firebase
+  useEffect(() => {
+    const loadPatterns = async () => {
+      if (!user) return;
+      setIsPatternsLoading(true);
+      try {
+        // Initialize patterns if first time
+        await initializeArticlePatterns(user.uid);
+        // Load patterns
+        const patterns = await getArticlePatterns(user.uid);
+        setArticlePatterns(patterns);
+      } catch (error) {
+        console.error("Failed to load patterns:", error);
+        // Fallback to defaults
+        setArticlePatterns(DEFAULT_ARTICLE_PATTERNS.map((p, i) => ({ ...p, id: `default_${i + 1}` })));
+      } finally {
+        setIsPatternsLoading(false);
+      }
+    };
+    loadPatterns();
+  }, [user]);
 
   const fetchArticles = useCallback(async () => {
     try {
@@ -154,7 +187,6 @@ export default function ExternalPage() {
     }
   }, [selectedSource, articles]);
 
-  // Auto-fetch on mount and when source changes
   useEffect(() => {
     fetchArticles();
   }, [selectedSource]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -171,21 +203,99 @@ export default function ExternalPage() {
     );
   };
 
+  // Generate patterns for the article (use patterns from Firebase)
   const handleGenerateFromArticle = async (article: Article) => {
     setSelectedArticle(article);
-    setIsGenerating(true);
-    setGeneratedText("");
+
+    // Use up to 6 patterns
+    const patternsToUse = articlePatterns.slice(0, 6);
+
+    // Initialize patterns with loading state
+    const initialPatterns: GeneratedPattern[] = patternsToUse.map((p, index) => ({
+      id: index + 1,
+      name: p.name,
+      text: "",
+      isLoading: true,
+    }));
+    setGeneratedPatterns(initialPatterns);
+
+    // Generate all in parallel
+    const promises = patternsToUse.map(async (pattern, index) => {
+      try {
+        const response = await fetch("/api/generate-article-post", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            patternId: index + 1,
+            patternTemplate: pattern.template,
+            article: {
+              title: article.title,
+              description: article.description,
+              url: article.url,
+              source: article.source,
+              author: article.author,
+              tags: article.tags,
+            },
+          }),
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(data.error || "生成に失敗しました");
+        }
+
+        return { id: index + 1, text: data.text, error: undefined };
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "エラー";
+        return { id: index + 1, text: "", error: message };
+      }
+    });
+
+    const results = await Promise.all(promises);
+
+    setGeneratedPatterns((prev) =>
+      prev.map((p) => {
+        const result = results.find((r) => r.id === p.id);
+        return {
+          ...p,
+          text: result?.text || "",
+          error: result?.error,
+          isLoading: false,
+        };
+      })
+    );
+  };
+
+  // Regenerate single pattern
+  const handleRegeneratePattern = async (patternId: number) => {
+    if (!selectedArticle) return;
+
+    const patternIndex = patternId - 1;
+    const pattern = articlePatterns[patternIndex];
+    if (!pattern) return;
+
+    setGeneratedPatterns((prev) =>
+      prev.map((p) =>
+        p.id === patternId ? { ...p, isLoading: true, error: undefined } : p
+      )
+    );
 
     try {
-      const response = await fetch("/api/generate", {
+      const response = await fetch("/api/generate-article-post", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          mode: "template",
-          templateId: "news",
-          content: `記事タイトル: ${article.title}\n\n記事概要: ${article.description}\n\nタグ: ${article.tags.join(", ")}`,
-          category: "記事",
-          tone: "casual",
+          patternId: patternId,
+          patternTemplate: pattern.template,
+          article: {
+            title: selectedArticle.title,
+            description: selectedArticle.description,
+            url: selectedArticle.url,
+            source: selectedArticle.source,
+            author: selectedArticle.author,
+            tags: selectedArticle.tags,
+          },
         }),
       });
 
@@ -195,58 +305,58 @@ export default function ExternalPage() {
         throw new Error(data.error || "生成に失敗しました");
       }
 
-      setGeneratedText(data.text);
+      setGeneratedPatterns((prev) =>
+        prev.map((p) =>
+          p.id === patternId ? { ...p, text: data.text, isLoading: false } : p
+        )
+      );
     } catch (err) {
-      console.error("Generate error:", err);
-      setGeneratedText("生成中にエラーが発生しました。もう一度お試しください。");
-    } finally {
-      setIsGenerating(false);
+      const message = err instanceof Error ? err.message : "エラー";
+      setGeneratedPatterns((prev) =>
+        prev.map((p) =>
+          p.id === patternId ? { ...p, error: message, isLoading: false } : p
+        )
+      );
     }
   };
 
-  const handleCopy = () => {
-    navigator.clipboard.writeText(generatedText);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+  const handleCopy = (id: number, text: string) => {
+    navigator.clipboard.writeText(text);
+    setCopiedId(id);
+    setTimeout(() => setCopiedId(null), 2000);
   };
 
-  const handlePost = () => {
-    const tweetUrl = `https://twitter.com/intent/tweet?text=${encodeURIComponent(generatedText)}`;
+  const handlePost = (text: string) => {
+    const tweetUrl = `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}`;
     window.open(tweetUrl, "_blank");
   };
 
-  const handleSchedulePost = async () => {
-    if (!user || !generatedText) return;
+  const handleSchedule = async (id: number, text: string) => {
+    if (!user) return;
 
+    setSchedulingId(id);
     try {
       const scheduledAt = new Date();
       scheduledAt.setHours(scheduledAt.getHours() + 1);
 
       await saveScheduledPost(user.uid, {
-        text: generatedText,
+        text,
         scheduledAt,
         status: "scheduled",
         category: "記事",
       });
 
       alert("1時間後に予約投稿しました");
-      setSelectedArticle(null);
-      setGeneratedText("");
     } catch (err) {
       console.error("Schedule failed:", err);
-    }
-  };
-
-  const handleRegenerate = () => {
-    if (selectedArticle) {
-      handleGenerateFromArticle(selectedArticle);
+    } finally {
+      setSchedulingId(null);
     }
   };
 
   const closeModal = () => {
     setSelectedArticle(null);
-    setGeneratedText("");
-    setIsGenerating(false);
+    setGeneratedPatterns([]);
   };
 
   const filteredArticles = articles.filter((article) => {
@@ -260,6 +370,7 @@ export default function ExternalPage() {
   });
 
   const savedCount = articles.filter((a) => a.saved).length;
+  const isAnyLoading = generatedPatterns.some((p) => p.isLoading);
 
   return (
     <div className="animate-fade-in">
@@ -369,8 +480,19 @@ export default function ExternalPage() {
             key={article.id}
             className="group bg-white border border-zinc-200 rounded-2xl overflow-hidden hover:shadow-lg transition-all"
           >
+            {/* AI Button at TOP - Primary action */}
+            <div className="p-4 bg-gradient-to-r from-emerald-50 to-emerald-100 border-b border-emerald-200">
+              <button
+                onClick={() => handleGenerateFromArticle(article)}
+                className="w-full flex items-center justify-center gap-2 py-3 bg-emerald-500 text-white font-semibold rounded-xl hover:bg-emerald-600 transition-colors shadow-lg shadow-emerald-500/25"
+              >
+                <Sparkles className="w-5 h-5" />
+                AIで6パターン生成
+              </button>
+            </div>
+
             {/* Article Header */}
-            <div className="p-5 border-b border-zinc-100">
+            <div className="p-5">
               <div className="flex items-start justify-between gap-3 mb-3">
                 <div className="flex items-center gap-2">
                   <span className={`px-2.5 py-1 text-xs font-medium rounded-lg border ${sourceConfig[article.source].color}`}>
@@ -403,7 +525,7 @@ export default function ExternalPage() {
             </div>
 
             {/* Tags */}
-            <div className="px-5 py-3 border-b border-zinc-100 bg-zinc-50">
+            <div className="px-5 py-3 border-t border-zinc-100 bg-zinc-50">
               <div className="flex flex-wrap gap-1.5">
                 {article.tags.map((tag) => (
                   <span key={tag} className="px-2 py-0.5 text-xs bg-white text-zinc-600 rounded border border-zinc-200">
@@ -413,8 +535,8 @@ export default function ExternalPage() {
               </div>
             </div>
 
-            {/* Actions */}
-            <div className="p-4 flex items-center justify-between">
+            {/* Footer */}
+            <div className="p-4 flex items-center justify-between border-t border-zinc-100">
               <div className="flex items-center gap-2 text-sm text-zinc-400">
                 <Calendar className="w-4 h-4" />
                 {article.publishedAt}
@@ -422,24 +544,15 @@ export default function ExternalPage() {
                 <span>{article.author}</span>
               </div>
 
-              <div className="flex items-center gap-2">
-                <a
-                  href={article.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex items-center gap-1.5 px-3 py-2 text-sm text-zinc-600 hover:text-zinc-900 hover:bg-zinc-100 rounded-lg transition-colors"
-                >
-                  記事を読む
-                  <ExternalLink className="w-4 h-4" />
-                </a>
-                <button
-                  onClick={() => handleGenerateFromArticle(article)}
-                  className="flex items-center gap-1.5 px-4 py-2 bg-emerald-500 text-white text-sm font-medium rounded-lg hover:bg-emerald-600 transition-colors shadow-sm"
-                >
-                  <Sparkles className="w-4 h-4" />
-                  AIで投稿作成
-                </button>
-              </div>
+              <a
+                href={article.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-1.5 px-3 py-2 text-sm text-zinc-600 hover:text-zinc-900 hover:bg-zinc-100 rounded-lg transition-colors"
+              >
+                記事を読む
+                <ExternalLink className="w-4 h-4" />
+              </a>
             </div>
           </div>
         ))}
@@ -456,118 +569,180 @@ export default function ExternalPage() {
         </div>
       )}
 
-      {/* Generation Modal */}
+      {/* 6 Patterns Modal */}
       {selectedArticle && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center">
+        <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto">
           <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={closeModal} />
 
-          <div className="relative w-full max-w-3xl bg-white rounded-2xl shadow-xl mx-4 max-h-[90vh] overflow-hidden flex flex-col">
+          <div className="relative w-full max-w-6xl bg-white rounded-2xl shadow-xl mx-4 my-8">
             {/* Modal Header */}
-            <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-200">
+            <div className="sticky top-0 z-10 flex items-center justify-between px-6 py-4 border-b border-zinc-200 bg-white rounded-t-2xl">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-xl bg-emerald-100 flex items-center justify-center">
                   <Sparkles className="w-5 h-5 text-emerald-600" />
                 </div>
                 <div>
-                  <h2 className="text-lg font-semibold text-zinc-900">AIで投稿作成</h2>
-                  <p className="text-sm text-zinc-500">記事カテゴリー</p>
+                  <h2 className="text-lg font-semibold text-zinc-900">6パターン生成</h2>
+                  <p className="text-sm text-zinc-500 line-clamp-1">{selectedArticle.title}</p>
                 </div>
               </div>
-              <button onClick={closeModal} className="p-2 rounded-lg hover:bg-zinc-100 transition-colors">
-                <X className="w-5 h-5 text-zinc-500" />
-              </button>
-            </div>
-
-            {/* Modal Content */}
-            <div className="flex-1 overflow-y-auto p-6 space-y-6">
-              {/* Article Preview */}
-              <div className="p-4 bg-zinc-50 rounded-xl border border-zinc-200">
-                <div className="flex items-center gap-2 mb-2">
-                  <span className={`px-2 py-0.5 text-xs font-medium rounded border ${sourceConfig[selectedArticle.source].color}`}>
-                    {sourceConfig[selectedArticle.source].name}
-                  </span>
-                  <span className="text-xs text-zinc-400">{selectedArticle.publishedAt}</span>
-                </div>
-                <h3 className="font-semibold text-zinc-900 mb-2">{selectedArticle.title}</h3>
-                <p className="text-sm text-zinc-600 leading-relaxed">{selectedArticle.description}</p>
-                <div className="flex flex-wrap gap-1.5 mt-3">
-                  {selectedArticle.tags.map((tag) => (
-                    <span key={tag} className="px-2 py-0.5 text-xs bg-white text-zinc-500 rounded border border-zinc-200">
-                      {tag}
-                    </span>
-                  ))}
-                </div>
-              </div>
-
-              {/* Generation Result */}
-              {isGenerating ? (
-                <div className="flex flex-col items-center justify-center py-12">
-                  <Loader2 className="w-10 h-10 text-emerald-500 animate-spin mb-4" />
-                  <p className="text-zinc-600 font-medium">生成中...</p>
-                  <p className="text-sm text-zinc-400 mt-1">AIが投稿を作成しています</p>
-                </div>
-              ) : generatedText ? (
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between">
-                    <h3 className="font-semibold text-zinc-900">生成結果</h3>
-                    <span className="text-sm text-zinc-500">{generatedText.length}文字</span>
-                  </div>
-                  <div className="p-4 bg-emerald-50 border-2 border-emerald-200 rounded-xl">
-                    <p className="text-zinc-900 whitespace-pre-wrap leading-relaxed">
-                      {generatedText}
-                    </p>
-                  </div>
-                </div>
-              ) : null}
-            </div>
-
-            {/* Modal Footer */}
-            {generatedText && !isGenerating && (
-              <div className="px-6 py-4 border-t border-zinc-200 bg-zinc-50">
-                <div className="flex items-center justify-between gap-4">
+              <div className="flex items-center gap-3">
+                {!isAnyLoading && (
                   <button
-                    onClick={handleRegenerate}
-                    className="flex items-center gap-2 px-4 py-2.5 text-zinc-600 hover:text-zinc-900 hover:bg-zinc-100 rounded-xl transition-colors"
+                    onClick={() => handleGenerateFromArticle(selectedArticle)}
+                    className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-emerald-600 bg-emerald-50 rounded-lg hover:bg-emerald-100 transition-colors"
                   >
                     <RotateCcw className="w-4 h-4" />
-                    再生成
+                    全て再生成
                   </button>
-
-                  <div className="flex items-center gap-3">
-                    <button
-                      onClick={handleCopy}
-                      className="flex items-center gap-2 px-4 py-2.5 bg-white border border-zinc-200 text-zinc-700 font-medium rounded-xl hover:bg-zinc-50 transition-colors"
-                    >
-                      {copied ? (
-                        <>
-                          <CheckCircle2 className="w-4 h-4 text-emerald-500" />
-                          コピー済み
-                        </>
-                      ) : (
-                        <>
-                          <Copy className="w-4 h-4" />
-                          コピー
-                        </>
-                      )}
-                    </button>
-                    <button
-                      onClick={handleSchedulePost}
-                      className="flex items-center gap-2 px-4 py-2.5 bg-violet-500 text-white font-medium rounded-xl hover:bg-violet-600 transition-colors"
-                    >
-                      <Calendar className="w-4 h-4" />
-                      予約投稿
-                    </button>
-                    <button
-                      onClick={handlePost}
-                      className="flex items-center gap-2 px-5 py-2.5 bg-zinc-900 text-white font-medium rounded-xl hover:bg-zinc-800 transition-colors"
-                    >
-                      <ExternalLink className="w-4 h-4" />
-                      Xで投稿
-                    </button>
-                  </div>
-                </div>
+                )}
+                <button onClick={closeModal} className="p-2 rounded-lg hover:bg-zinc-100 transition-colors">
+                  <X className="w-5 h-5 text-zinc-500" />
+                </button>
               </div>
-            )}
+            </div>
+
+            {/* Article Preview (Compact) */}
+            <div className="px-6 py-4 bg-zinc-50 border-b border-zinc-200">
+              <div className="flex items-center gap-3">
+                <span className={`px-2 py-0.5 text-xs font-medium rounded border ${sourceConfig[selectedArticle.source].color}`}>
+                  {sourceConfig[selectedArticle.source].name}
+                </span>
+                <span className="text-sm text-zinc-600 line-clamp-1 flex-1">{selectedArticle.description}</span>
+                <a
+                  href={selectedArticle.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-1 text-sm text-emerald-600 hover:underline flex-shrink-0"
+                >
+                  記事を読む <ExternalLink className="w-3 h-3" />
+                </a>
+              </div>
+            </div>
+
+            {/* Pattern Cards */}
+            <div className="p-6">
+              <div className="flex items-center justify-between mb-4">
+                <p className="text-sm text-zinc-500">
+                  {articlePatterns.length}パターンで生成中
+                </p>
+                <Link
+                  href="/settings/patterns"
+                  className="flex items-center gap-1 text-sm text-emerald-600 hover:underline"
+                >
+                  <Settings className="w-4 h-4" />
+                  パターン設定
+                </Link>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                {generatedPatterns.map((pattern) => {
+                  const patternInfo = articlePatterns[pattern.id - 1];
+
+                  return (
+                    <div
+                      key={pattern.id}
+                      className="bg-white rounded-xl border border-zinc-200 shadow-sm overflow-hidden flex flex-col"
+                    >
+                      {/* Card Header */}
+                      <div className="flex items-center justify-between p-4 border-b border-zinc-100 bg-zinc-50">
+                        <div className="flex items-center gap-2">
+                          <span className="w-7 h-7 rounded-full bg-emerald-500 text-white flex items-center justify-center text-sm font-bold">
+                            {pattern.id}
+                          </span>
+                          <div>
+                            <span className="text-sm font-medium text-zinc-900">{pattern.name}</span>
+                            <p className="text-xs text-zinc-500">{patternInfo?.description}</p>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Card Body */}
+                      <div className="flex-1 p-4">
+                        {pattern.isLoading ? (
+                          <div className="h-36 flex flex-col items-center justify-center text-zinc-400">
+                            <Loader2 className="w-8 h-8 animate-spin mb-2" />
+                            <span className="text-sm">生成中...</span>
+                          </div>
+                        ) : pattern.error ? (
+                          <div className="h-36 flex flex-col items-center justify-center text-red-500">
+                            <span className="text-sm mb-2">{pattern.error}</span>
+                            <button
+                              onClick={() => handleRegeneratePattern(pattern.id)}
+                              className="text-sm text-emerald-600 hover:underline"
+                            >
+                              再試行
+                            </button>
+                          </div>
+                        ) : (
+                          <p className="text-sm text-zinc-700 whitespace-pre-wrap leading-relaxed line-clamp-[7]">
+                            {pattern.text}
+                          </p>
+                        )}
+                      </div>
+
+                      {/* Card Footer - Stats */}
+                      {!pattern.isLoading && !pattern.error && pattern.text && (
+                        <div className="px-4 py-2 border-t border-zinc-100 bg-zinc-50">
+                          <span className="text-xs text-zinc-500">{pattern.text.length}文字</span>
+                        </div>
+                      )}
+
+                      {/* Card Actions */}
+                      {!pattern.isLoading && !pattern.error && pattern.text && (
+                        <div className="flex border-t border-zinc-100">
+                          <button
+                            onClick={() => handleCopy(pattern.id, pattern.text)}
+                            className="flex-1 flex items-center justify-center gap-1.5 py-3 text-sm font-medium text-zinc-600 hover:bg-zinc-50 transition-colors border-r border-zinc-100"
+                          >
+                            {copiedId === pattern.id ? (
+                              <>
+                                <CheckCircle2 className="w-4 h-4 text-emerald-500" />
+                                <span className="text-emerald-600">コピー済み</span>
+                              </>
+                            ) : (
+                              <>
+                                <Copy className="w-4 h-4" />
+                                コピー
+                              </>
+                            )}
+                          </button>
+                          <button
+                            onClick={() => handleSchedule(pattern.id, pattern.text)}
+                            disabled={schedulingId === pattern.id}
+                            className="flex-1 flex items-center justify-center gap-1.5 py-3 text-sm font-medium text-violet-600 hover:bg-violet-50 transition-colors border-r border-zinc-100 disabled:opacity-50"
+                          >
+                            {schedulingId === pattern.id ? (
+                              <Loader2 className="w-4 h-4 animate-spin" />
+                            ) : (
+                              <Calendar className="w-4 h-4" />
+                            )}
+                            予約
+                          </button>
+                          <button
+                            onClick={() => handlePost(pattern.text)}
+                            className="flex-1 flex items-center justify-center gap-1.5 py-3 text-sm font-medium text-zinc-900 hover:bg-zinc-100 transition-colors"
+                          >
+                            <ExternalLink className="w-4 h-4" />
+                            投稿
+                          </button>
+                        </div>
+                      )}
+
+                      {/* Regenerate single */}
+                      {!pattern.isLoading && pattern.text && (
+                        <button
+                          onClick={() => handleRegeneratePattern(pattern.id)}
+                          className="flex items-center justify-center gap-1.5 py-2 text-xs text-zinc-400 hover:text-zinc-600 hover:bg-zinc-50 transition-colors border-t border-zinc-100"
+                        >
+                          <RotateCcw className="w-3 h-3" />
+                          再生成
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
           </div>
         </div>
       )}

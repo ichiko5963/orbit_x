@@ -8,6 +8,56 @@ import {
 // Dynamic import to avoid build-time errors
 let adminDb: FirebaseFirestore.Firestore | null = null;
 
+// Parse date string safely and return valid Date or current date as fallback
+function parseDate(dateStr: string): Date {
+  if (!dateStr || typeof dateStr !== "string") {
+    return new Date();
+  }
+
+  // Try various date formats
+  const formats = [
+    // ISO format
+    () => new Date(dateStr),
+    // Japanese format: 2024/01/15 or 2024年01月15日
+    () => {
+      const match = dateStr.match(/(\d{4})[\/年](\d{1,2})[\/月](\d{1,2})/);
+      if (match) {
+        return new Date(parseInt(match[1]), parseInt(match[2]) - 1, parseInt(match[3]));
+      }
+      return null;
+    },
+    // Date with time: 2024/01/15 10:30:00
+    () => {
+      const match = dateStr.match(/(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})\s+(\d{1,2}):(\d{1,2})/);
+      if (match) {
+        return new Date(
+          parseInt(match[1]),
+          parseInt(match[2]) - 1,
+          parseInt(match[3]),
+          parseInt(match[4]),
+          parseInt(match[5])
+        );
+      }
+      return null;
+    },
+  ];
+
+  for (const parser of formats) {
+    try {
+      const date = parser();
+      if (date && !isNaN(date.getTime())) {
+        return date;
+      }
+    } catch {
+      // Continue to next format
+    }
+  }
+
+  // Fallback to current date
+  console.warn(`Could not parse date: ${dateStr}, using current date`);
+  return new Date();
+}
+
 async function getAdminDb() {
   if (adminDb) return adminDb;
 
@@ -18,13 +68,20 @@ async function getAdminDb() {
     if (getApps().length === 0) {
       const privateKey = process.env.FIREBASE_PRIVATE_KEY;
       if (!privateKey) {
-        throw new Error("FIREBASE_PRIVATE_KEY is not set");
+        console.error("FIREBASE_PRIVATE_KEY environment variable is not set");
+        throw new Error("Firebase Admin設定エラー: FIREBASE_PRIVATE_KEYを.env.localに設定してください");
+      }
+
+      const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
+      if (!clientEmail) {
+        console.error("FIREBASE_CLIENT_EMAIL environment variable is not set");
+        throw new Error("Firebase Admin設定エラー: FIREBASE_CLIENT_EMAILを.env.localに設定してください");
       }
 
       initializeApp({
         credential: cert({
           projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
-          clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
+          clientEmail: clientEmail,
           privateKey: privateKey.replace(/\\n/g, "\n"),
         }),
       });
@@ -120,20 +177,37 @@ export async function POST(request: NextRequest) {
 
     // Save posts to Firebase
     const db = await getAdminDb();
-    const batch = db.batch();
-    const postsRef = db.collection("users").doc(userId).collection("posts");
+    const { Timestamp } = await import("firebase-admin/firestore");
 
-    for (const post of posts) {
-      const docRef = postsRef.doc();
-      batch.set(docRef, {
-        ...post,
-        id: docRef.id,
-        importedAt: new Date(),
-        createdAt: new Date(post.createdAt),
-      });
+    // Firestore batch has a limit of 500 operations, so we chunk if needed
+    const batchSize = 500;
+    const chunks = [];
+    for (let i = 0; i < posts.length; i += batchSize) {
+      chunks.push(posts.slice(i, i + batchSize));
     }
 
-    await batch.commit();
+    const postsRef = db.collection("users").doc(userId).collection("posts");
+
+    for (const chunk of chunks) {
+      const batch = db.batch();
+
+      for (const post of chunk) {
+        const docRef = postsRef.doc();
+
+        // Parse dates safely
+        const createdAtDate = parseDate(post.createdAt);
+        const importedAtDate = new Date();
+
+        batch.set(docRef, {
+          ...post,
+          id: docRef.id,
+          importedAt: Timestamp.fromDate(importedAtDate),
+          createdAt: Timestamp.fromDate(createdAtDate),
+        });
+      }
+
+      await batch.commit();
+    }
 
     // Update category counts
     const categoryCounts: Record<string, number> = {};

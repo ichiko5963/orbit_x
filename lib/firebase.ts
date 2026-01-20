@@ -348,5 +348,180 @@ export const deleteDraft = async (userId: string, draftId: string) => {
   }
 };
 
+// Firestore functions - Article Patterns
+export interface ArticlePattern {
+  id?: string;
+  name: string;
+  description: string;
+  template: string;
+  category: string;
+  isDefault: boolean;
+  createdAt?: any;
+  updatedAt?: any;
+}
+
+// Default patterns - "記事紹介" category (shared for everyone)
+export const DEFAULT_ARTICLE_PATTERNS: Omit<ArticlePattern, "id" | "createdAt" | "updatedAt">[] = [
+  {
+    name: "有益すぎた型",
+    description: "詳細な機能紹介 + 効果を数字で示す",
+    template: `〇〇が公開した「△△」が有益すぎた。□□で■■を実現。▲▲な人は必読👇🧵`,
+    category: "記事紹介",
+    isDefault: true,
+  },
+  {
+    name: "無料公開発見型",
+    description: "発見の驚き + 推薦",
+    template: `〇〇が無料公開した「△△」が公開されていた😳□□を深く学べるし、■■でなくとも▲▲なので強くオススメしたい👇`,
+    category: "記事紹介",
+    isDefault: true,
+  },
+  {
+    name: "やばい発見型",
+    description: "インパクト + 詳細はリプ欄",
+    template: `〇〇がやばい。△△を軸に□□と連携。しかも■■。▲▲で●●できる。詳細はリプ欄↓`,
+    category: "記事紹介",
+    isDefault: true,
+  },
+  {
+    name: "超大作紹介型",
+    description: "ボリューム強調 + 箇条書き",
+    template: `〇〇が公開した「△△」が有益だった。
+□□の超大作で、■■から▲▲まで完全網羅。
+「●●」ための具体的手法が学べる：
+◆◆な人は必読👇`,
+    category: "記事紹介",
+    isDefault: true,
+  },
+  {
+    name: "全員見て型",
+    description: "対象者限定 + 無料の強調",
+    template: `〇〇したい人は全員この記事を見ておいて損しない。
+「△△」は、□□も全部公開してて、■■！
+▲▲で迷ってる人、まずここだけ見ておけば大丈夫。`,
+    category: "記事紹介",
+    isDefault: true,
+  },
+  {
+    name: "すごかった型",
+    description: "具体例列挙 + 職種横断",
+    template: `〇〇が公開した「△△」がすごかった...□□したり、■■したり、▲▲したりと●●が◆◆も掲載されている。◇◇という人こそ読むべき👇`,
+    category: "記事紹介",
+    isDefault: true,
+  },
+];
+
+// Get user's article patterns (including default patterns)
+export const getArticlePatterns = async (userId: string) => {
+  try {
+    const patternsRef = collection(db, "users", userId, "articlePatterns");
+    const snapshot = await getDocs(patternsRef);
+    const userPatterns = snapshot.docs.map((doc) => ({
+      id: doc.id,
+      ...doc.data(),
+    })) as ArticlePattern[];
+
+    // If no patterns exist, return defaults
+    if (userPatterns.length === 0) {
+      return DEFAULT_ARTICLE_PATTERNS.map((p, i) => ({
+        ...p,
+        id: `default_${i + 1}`,
+      }));
+    }
+
+    return userPatterns;
+  } catch (error) {
+    console.error("Get article patterns error:", error);
+    // Return defaults on error
+    return DEFAULT_ARTICLE_PATTERNS.map((p, i) => ({
+      ...p,
+      id: `default_${i + 1}`,
+    }));
+  }
+};
+
+// Initialize user's patterns with defaults
+export const initializeArticlePatterns = async (userId: string) => {
+  try {
+    const patternsRef = collection(db, "users", userId, "articlePatterns");
+    const snapshot = await getDocs(patternsRef);
+
+    // Only initialize if no patterns exist
+    if (snapshot.docs.length === 0) {
+      const batch = DEFAULT_ARTICLE_PATTERNS.map(async (pattern) => {
+        const patternRef = doc(collection(db, "users", userId, "articlePatterns"));
+        await setDoc(patternRef, {
+          ...pattern,
+          createdAt: Timestamp.now(),
+          updatedAt: Timestamp.now(),
+        });
+        return patternRef.id;
+      });
+      await Promise.all(batch);
+    }
+  } catch (error) {
+    console.error("Initialize article patterns error:", error);
+    throw error;
+  }
+};
+
+// Save a new article pattern
+export const saveArticlePattern = async (userId: string, pattern: Omit<ArticlePattern, "id" | "createdAt" | "updatedAt">) => {
+  try {
+    const patternRef = doc(collection(db, "users", userId, "articlePatterns"));
+    await setDoc(patternRef, {
+      ...pattern,
+      createdAt: Timestamp.now(),
+      updatedAt: Timestamp.now(),
+    });
+    return patternRef.id;
+  } catch (error) {
+    console.error("Save article pattern error:", error);
+    throw error;
+  }
+};
+
+// Update an article pattern
+export const updateArticlePattern = async (userId: string, patternId: string, updates: Partial<ArticlePattern>) => {
+  try {
+    const patternRef = doc(db, "users", userId, "articlePatterns", patternId);
+    await updateDoc(patternRef, {
+      ...updates,
+      updatedAt: Timestamp.now(),
+    });
+  } catch (error) {
+    console.error("Update article pattern error:", error);
+    throw error;
+  }
+};
+
+// Delete an article pattern
+export const deleteArticlePattern = async (userId: string, patternId: string) => {
+  try {
+    const patternRef = doc(db, "users", userId, "articlePatterns", patternId);
+    await deleteDoc(patternRef);
+  } catch (error) {
+    console.error("Delete article pattern error:", error);
+    throw error;
+  }
+};
+
+// Reset patterns to defaults
+export const resetArticlePatternsToDefault = async (userId: string) => {
+  try {
+    // Delete all existing patterns
+    const patternsRef = collection(db, "users", userId, "articlePatterns");
+    const snapshot = await getDocs(patternsRef);
+    const deletePromises = snapshot.docs.map((doc) => deleteDoc(doc.ref));
+    await Promise.all(deletePromises);
+
+    // Re-initialize with defaults
+    await initializeArticlePatterns(userId);
+  } catch (error) {
+    console.error("Reset article patterns error:", error);
+    throw error;
+  }
+};
+
 export { auth, db, onAuthStateChanged };
 export type { User };

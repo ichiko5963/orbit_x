@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import {
   Settings,
   User,
@@ -17,6 +18,8 @@ import {
   AlertCircle,
   RefreshCw,
   Trash2,
+  FileText,
+  ChevronRight,
 } from "lucide-react";
 
 interface SettingSection {
@@ -27,6 +30,7 @@ interface SettingSection {
 
 const sections: SettingSection[] = [
   { id: "profile", title: "プロフィール", icon: User },
+  { id: "patterns", title: "投稿パターン", icon: FileText },
   { id: "notifications", title: "通知", icon: Bell },
   { id: "api", title: "API連携", icon: Key },
   { id: "schedule", title: "スケジュール", icon: Clock },
@@ -139,6 +143,47 @@ export default function SettingsPage() {
                       defaultValue="user@example.com"
                       className="w-full h-11 px-4 bg-zinc-50 border border-zinc-200 rounded-xl text-zinc-900 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-colors"
                     />
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Patterns Section */}
+            {activeSection === "patterns" && (
+              <div className="space-y-6">
+                <div>
+                  <h3 className="text-lg font-semibold text-zinc-900 mb-1">
+                    投稿パターン設定
+                  </h3>
+                  <p className="text-sm text-zinc-500">
+                    記事紹介用の投稿パターンを管理します
+                  </p>
+                </div>
+
+                <div className="space-y-4">
+                  <Link
+                    href="/settings/patterns"
+                    className="flex items-center justify-between p-4 bg-zinc-50 rounded-xl hover:bg-zinc-100 transition-colors group"
+                  >
+                    <div className="flex items-center gap-4">
+                      <div className="w-12 h-12 rounded-xl bg-emerald-100 flex items-center justify-center">
+                        <FileText className="w-6 h-6 text-emerald-600" />
+                      </div>
+                      <div>
+                        <p className="font-medium text-zinc-900">記事紹介パターン</p>
+                        <p className="text-sm text-zinc-500">
+                          外部コンテンツからAI投稿を生成する際のパターンを編集
+                        </p>
+                      </div>
+                    </div>
+                    <ChevronRight className="w-5 h-5 text-zinc-400 group-hover:text-zinc-600 transition-colors" />
+                  </Link>
+
+                  <div className="p-4 bg-blue-50 border border-blue-200 rounded-xl">
+                    <p className="text-sm text-blue-700">
+                      <strong>6つのデフォルトパターン</strong>が用意されています。自由に編集・追加できます。
+                      外部コンテンツページでAI生成する際に使用されます。
+                    </p>
                   </div>
                 </div>
               </div>
