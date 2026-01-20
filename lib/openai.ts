@@ -130,20 +130,11 @@ interface GeneratePostOptions {
 export async function generatePost(options: GeneratePostOptions): Promise<string> {
   const { template, topic, category, tone = "casual", emojiSet = [] } = options;
 
-  const toneDescriptions: Record<string, string> = {
-    casual: "親しみやすく自然な口調。エンジニアやビジネスパーソンが書いたような文体",
-    professional: "専門的で信頼感のある口調",
-    energetic: "熱量高めで、モチベーションを上げる口調",
-  };
-
-  const toneDescription = toneDescriptions[tone] || toneDescriptions.casual;
-
   // カテゴリー別の追加指示
   const categoryInstructions: Record<string, string> = {
     "記事": `
 - 記事の要点を箇条書きで整理（「・」を使用）
-- 記事から得られる学びを明確に
-- 元記事へのリンクを含める価値を示唆`,
+- 記事から得られる学びを明確に`,
     "技術・プログラミング": `
 - 技術的なポイントを箇条書きで整理
 - 具体的なコード例や数値を含める`,
@@ -161,23 +152,23 @@ ${template}
 
 トピック/キーワード：${topic}
 ${category ? `カテゴリー：${category}` : ""}
-口調：${toneDescription}
 
-絶対に守るルール：
-- 絵文字は使わない、または最小限（1-2個まで）
-- AIっぽい表現を避ける（「〜ですね」「〜しましょう」等の説教調を避ける）
-- 自然な日本語で、人間が書いたような文体で
-- 改行を効果的に使用（各セクションの間に空行を入れる）
-- 箇条書きは「・」を使用し、1項目1行で読みやすく
-- 読者の興味を引く具体的な内容
+【最重要ルール - 絶対厳守】
+- 絵文字は一切使用禁止。絶対に使わない
+- 「！」は最小限（1-2個まで）
+- AIっぽい表現は絶対に禁止：
+  - 「〜ですね」「〜しましょう」「〜してみてください」等の説教調
+  - 「素晴らしい」「驚くべき」「画期的」等の大げさな形容詞
+  - 「ぜひ」「必見」等の押し付け表現
+- 淡々とした、事実ベースの文体で書く
+- 箇条書きは「・」を使用
+
+フォーマット：
+- 改行を効果的に使用
+- 箇条書きは1項目1行
 ${categoryInstruction}
 
-フォーマットのルール：
-- タイトル/見出しの後は空行を入れる
-- 箇条書きの項目は1行ずつ区切る
-- 結論/まとめの前に空行を入れる
-
-投稿本文のみを出力してください。`;
+投稿本文のみを出力。絵文字は絶対に入れない。`;
 
   const response = await openai.chat.completions.create({
     model: "gpt-4o-mini",
@@ -185,14 +176,14 @@ ${categoryInstruction}
       {
         role: "system",
         content:
-          "あなたはバズるX（Twitter）投稿を作成するエキスパートです。自然な日本語で、人間らしい文体で書いてください。絵文字は最小限に。AIっぽい文体は絶対に避けてください。",
+          "あなたはX（Twitter）投稿を作成するライターです。絵文字は絶対に使用禁止。「！」も最小限。淡々とした事実ベースの文体で書く。「〜ですね」「〜しましょう」「素晴らしい」「ぜひ」等のAIっぽい表現は絶対禁止。",
       },
       {
         role: "user",
         content: prompt,
       },
     ],
-    temperature: 0.7,
+    temperature: 0.5,
     max_tokens: 600,
   });
 
@@ -212,7 +203,7 @@ export async function imitatePost(
   newTopic: string,
   tone?: string
 ): Promise<string> {
-  const prompt = `以下の参考投稿の「構造」と「文体」を模倣して、新しいトピックで投稿を作成してください。
+  const prompt = `以下の参考投稿の「構造」「文体」「口調」を完全に模倣して、新しいトピックで投稿を作成してください。
 
 参考投稿：
 """
@@ -220,14 +211,14 @@ ${referenceText}
 """
 
 新しいトピック：${newTopic}
-${tone ? `口調：${tone}` : ""}
 
-条件：
-- 参考投稿と同じ構造（段落構成、改行パターン、箇条書きの有無など）を維持
-- 内容は完全に新しいものに置き換え
-- 280文字以内
+【絶対厳守】
+- 参考投稿と同じ構造（段落構成、改行パターン、箇条書きの有無など）を完全維持
+- 参考投稿に絵文字がなければ絶対に絵文字を入れない
+- 参考投稿の口調を完全にコピー（熱量を上げない）
+- 「〜ですね」「〜しましょう」「素晴らしい」「ぜひ」等のAI表現は絶対禁止
 
-投稿本文のみを出力してください。`;
+投稿本文のみを出力。絵文字禁止。`;
 
   const response = await openai.chat.completions.create({
     model: "gpt-4o-mini",
@@ -235,14 +226,14 @@ ${tone ? `口調：${tone}` : ""}
       {
         role: "system",
         content:
-          "あなたはバズる投稿の構造を分析し、同じ構造で新しいコンテンツを作成するエキスパートです。",
+          "参考投稿を完全に模倣するライター。絵文字は参考投稿にある場合のみ使用。AIっぽい表現は絶対禁止。淡々と書く。",
       },
       {
         role: "user",
         content: prompt,
       },
     ],
-    temperature: 0.7,
+    temperature: 0.4,
     max_tokens: 500,
   });
 
@@ -373,54 +364,39 @@ export async function generateWithReference(
   const structure = templateStructures[templateId] || "";
   const toneDescription = toneDescriptions[tone] || toneDescriptions.casual;
 
-  // カテゴリー別の追加指示
-  const categoryInstructions: Record<string, string> = {
-    "記事": `
-- 記事の要点を箇条書きで整理（「・」を使用）
-- 記事タイトルや概要から核心を抽出
-- 読者が記事を読みたくなる内容に`,
-    "技術・プログラミング": `
-- 技術的なポイントを箇条書きで整理
-- 具体的な数値やコード例があれば含める`,
-  };
-
-  const categoryInstruction = category && categoryInstructions[category] ? categoryInstructions[category] : "";
-
   const prompt = `以下の条件に基づいて、X（Twitter）用の投稿を作成してください。
 
-【重要】参考投稿の構造を完全に再現してください：
-- 文の区切り方、改行の位置を同じにする
-- 段落の数と長さを合わせる
+【最重要 - 参考投稿の完全模倣】
+参考投稿の以下を完全にコピーしてください：
+- 文の区切り方、改行の位置を完全に同じに
+- 段落の数と長さを完全に合わせる
 - 箇条書きがあれば同じ形式で（「・」を使用）
-- 最初の一文の書き出し方を模倣する
+- 最初の一文の書き出し方を完全に模倣
+- 参考投稿に絵文字がなければ絶対に絵文字を使わない
+- 参考投稿の口調・文体を完全にコピー
 
 入力コンテンツ：
 ${content}
 
-テンプレート構造：${structure}
-
-参考投稿（この投稿の構造を完全にコピーして、内容だけ差し替える）：
+参考投稿（この投稿の構造・口調を完全にコピーして、内容だけ差し替える）：
 """
 ${referenceText}
 """
 
 ${category ? `カテゴリー：${category}` : ""}
-口調：${toneDescription}
 
-絶対に守るルール：
-- 絵文字は使わない、または最小限（参考投稿に絵文字がある場合のみ同程度使用）
-- AIっぽい表現を避ける（「〜ですね」「〜しましょう」等の説教調を避ける）
-- 参考投稿と同じ文の長さ、同じリズムで書く
-- 入力コンテンツの情報を自然に組み込む
-- 具体的で価値のある情報を含める
-${categoryInstruction}
+【絶対禁止事項】
+- 参考投稿にない絵文字を追加することは絶対禁止
+- 参考投稿にない口調（「！」の多用、「〜ですね」等）を追加することは絶対禁止
+- AIっぽい表現は絶対禁止：
+  - 「〜ですね」「〜しましょう」「〜してみてください」
+  - 「素晴らしい」「驚くべき」「画期的」
+  - 「ぜひ」「必見」「おすすめ」
+- 参考投稿より熱量を上げることは禁止（淡々と書く）
 
-フォーマットのルール：
-- タイトル/見出しの後は空行を入れる
-- 箇条書きの項目は「・」で始め、1行ずつ区切る
-- 結論/まとめの前に空行を入れる
+【重要】参考投稿の雰囲気を100%維持。絵文字や口調を勝手に追加しない。
 
-投稿本文のみを出力してください。`;
+投稿本文のみを出力。`;
 
   const response = await openai.chat.completions.create({
     model: "gpt-4o-mini",
@@ -428,14 +404,14 @@ ${categoryInstruction}
       {
         role: "system",
         content:
-          "あなたはバズるX（Twitter）投稿を作成するエキスパートです。参考投稿の構造を完全に再現しながら、内容だけを差し替えます。絵文字は最小限に。自然な日本語で書いてください。AIっぽい文体は絶対に避けてください。",
+          "あなたはX投稿を作成するライターです。【最重要】参考投稿の構造・口調・雰囲気を100%コピーする。参考投稿に絵文字がなければ絶対に絵文字を入れない。参考投稿より熱量を上げない。「〜ですね」「〜しましょう」「素晴らしい」「ぜひ」等のAIっぽい表現は絶対禁止。淡々と事実を書く。",
       },
       {
         role: "user",
         content: prompt,
       },
     ],
-    temperature: 0.7,
+    temperature: 0.4,
     max_tokens: 600,
   });
 

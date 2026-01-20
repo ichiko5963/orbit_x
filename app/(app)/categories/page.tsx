@@ -1,177 +1,265 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   FolderOpen,
-  Plus,
   Edit3,
-  Trash2,
   X,
   CheckCircle2,
   BarChart3,
   Hash,
-  GripVertical,
+  Eye,
+  Heart,
+  Calendar,
+  ChevronRight,
+  ArrowLeft,
+  Copy,
+  Loader2,
 } from "lucide-react";
+import { useAuth } from "@/lib/auth-context";
+import { getPosts } from "@/lib/firebase";
 
-interface Category {
+interface Post {
   id: string;
+  text: string;
+  createdAt: string;
+  tier: "S" | "A" | "B" | "C";
+  category: string;
+  impressions: number;
+  likes: number;
+  retweets: number;
+}
+
+interface CategoryData {
   name: string;
   color: string;
-  postCount: number;
+  posts: Post[];
   description: string;
 }
 
-const initialCategories: Category[] = [
-  {
-    id: "1",
-    name: "マインド",
-    color: "#8b5cf6",
-    postCount: 45,
-    description: "エンジニアとしての考え方・心構え",
-  },
-  {
-    id: "2",
-    name: "速報",
-    color: "#ef4444",
-    postCount: 23,
-    description: "技術ニュース・アップデート情報",
-  },
-  {
-    id: "3",
-    name: "ノウハウ",
-    color: "#10b981",
-    postCount: 67,
-    description: "実践的なテクニック・Tips",
-  },
-  {
-    id: "4",
-    name: "キャリア",
-    color: "#f59e0b",
-    postCount: 31,
-    description: "転職・キャリアアップ関連",
-  },
-  {
-    id: "5",
-    name: "技術",
-    color: "#3b82f6",
-    postCount: 89,
-    description: "プログラミング・技術解説",
-  },
-  {
-    id: "6",
-    name: "ツール",
-    color: "#ec4899",
-    postCount: 28,
-    description: "開発ツール・サービス紹介",
-  },
-];
+// 10+ categories with colors
+const CATEGORY_CONFIG: Record<string, { color: string; description: string }> = {
+  "マインドセット": { color: "#8b5cf6", description: "考え方・心構え・哲学" },
+  "キャリア・転職": { color: "#f59e0b", description: "転職・キャリアアップ・副業" },
+  "技術・プログラミング": { color: "#3b82f6", description: "コード・実装・技術解説" },
+  "ツール・サービス": { color: "#ec4899", description: "開発ツール・サービス紹介" },
+  "ニュース・速報": { color: "#ef4444", description: "最新ニュース・アップデート" },
+  "学習・勉強法": { color: "#10b981", description: "学習方法・書籍・リソース" },
+  "仕事術・生産性": { color: "#06b6d4", description: "効率化・タスク管理・習慣" },
+  "日常・雑談": { color: "#84cc16", description: "日記・つぶやき・感想" },
+  "お知らせ・告知": { color: "#f97316", description: "イベント・告知・募集" },
+  "記事": { color: "#6366f1", description: "外部記事からの投稿" },
+  "その他": { color: "#71717a", description: "その他の投稿" },
+  "未分類": { color: "#a1a1aa", description: "カテゴリー未設定" },
+};
 
-const colorOptions = [
-  "#8b5cf6",
-  "#ef4444",
-  "#10b981",
-  "#f59e0b",
-  "#3b82f6",
-  "#ec4899",
-  "#06b6d4",
-  "#84cc16",
-];
+const tierConfig = {
+  S: { bgColor: "bg-amber-100", textColor: "text-amber-700" },
+  A: { bgColor: "bg-violet-100", textColor: "text-violet-700" },
+  B: { bgColor: "bg-blue-100", textColor: "text-blue-700" },
+  C: { bgColor: "bg-zinc-100", textColor: "text-zinc-700" },
+};
+
+function formatNumber(num: number): string {
+  if (num >= 10000) return (num / 10000).toFixed(1) + "万";
+  if (num >= 1000) return (num / 1000).toFixed(1) + "K";
+  return num.toString();
+}
+
+function formatDate(dateString: string): string {
+  try {
+    const date = new Date(dateString);
+    return date.toLocaleDateString("ja-JP", { month: "short", day: "numeric" });
+  } catch {
+    return dateString;
+  }
+}
 
 export default function CategoriesPage() {
-  const [categories, setCategories] = useState<Category[]>(initialCategories);
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [editingCategory, setEditingCategory] = useState<Category | null>(null);
-  const [newName, setNewName] = useState("");
-  const [newDescription, setNewDescription] = useState("");
-  const [newColor, setNewColor] = useState(colorOptions[0]);
+  const { user } = useAuth();
+  const [posts, setPosts] = useState<Post[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
 
-  const handleOpenModal = (category?: Category) => {
-    if (category) {
-      setEditingCategory(category);
-      setNewName(category.name);
-      setNewDescription(category.description);
-      setNewColor(category.color);
-    } else {
-      setEditingCategory(null);
-      setNewName("");
-      setNewDescription("");
-      setNewColor(colorOptions[0]);
-    }
-    setIsModalOpen(true);
+  // Load posts from Firebase
+  useEffect(() => {
+    const loadPosts = async () => {
+      if (!user) return;
+      setIsLoading(true);
+      try {
+        const fetchedPosts = await getPosts(user.uid);
+        setPosts(fetchedPosts as Post[]);
+      } catch (error) {
+        console.error("Failed to load posts:", error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    loadPosts();
+  }, [user]);
+
+  // Group posts by category
+  const categoriesData: CategoryData[] = Object.entries(CATEGORY_CONFIG).map(([name, config]) => {
+    const categoryPosts = posts.filter((p) => p.category === name);
+    return {
+      name,
+      color: config.color,
+      description: config.description,
+      posts: categoryPosts.sort((a, b) => b.likes - a.likes),
+    };
+  }).filter((cat) => cat.posts.length > 0 || Object.keys(CATEGORY_CONFIG).slice(0, 10).includes(cat.name));
+
+  const totalPosts = posts.length;
+  const totalCategories = categoriesData.filter((c) => c.posts.length > 0).length;
+
+  const handleCopy = (text: string, id: string) => {
+    navigator.clipboard.writeText(text);
+    setCopiedId(id);
+    setTimeout(() => setCopiedId(null), 2000);
   };
 
-  const handleSave = () => {
-    if (!newName) return;
+  const selectedCategoryData = selectedCategory
+    ? categoriesData.find((c) => c.name === selectedCategory)
+    : null;
 
-    if (editingCategory) {
-      setCategories((prev) =>
-        prev.map((cat) =>
-          cat.id === editingCategory.id
-            ? { ...cat, name: newName, description: newDescription, color: newColor }
-            : cat
-        )
-      );
-    } else {
-      const newCategory: Category = {
-        id: Date.now().toString(),
-        name: newName,
-        description: newDescription,
-        color: newColor,
-        postCount: 0,
-      };
-      setCategories((prev) => [...prev, newCategory]);
-    }
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <Loader2 className="w-8 h-8 text-emerald-500 animate-spin" />
+      </div>
+    );
+  }
 
-    setIsModalOpen(false);
-  };
+  // Category Detail View
+  if (selectedCategory && selectedCategoryData) {
+    return (
+      <div className="animate-fade-in">
+        {/* Header */}
+        <div className="flex items-center gap-4 mb-8">
+          <button
+            onClick={() => setSelectedCategory(null)}
+            className="p-2 rounded-xl text-zinc-400 hover:text-zinc-600 hover:bg-zinc-100 transition-colors"
+          >
+            <ArrowLeft className="w-6 h-6" />
+          </button>
+          <div className="flex items-center gap-3">
+            <div
+              className="w-12 h-12 rounded-xl flex items-center justify-center"
+              style={{ backgroundColor: selectedCategoryData.color + "20" }}
+            >
+              <div
+                className="w-4 h-4 rounded-full"
+                style={{ backgroundColor: selectedCategoryData.color }}
+              />
+            </div>
+            <div>
+              <h1 className="text-2xl font-bold text-zinc-900">{selectedCategory}</h1>
+              <p className="text-zinc-500">{selectedCategoryData.description}</p>
+            </div>
+          </div>
+          <div className="ml-auto px-4 py-2 bg-zinc-100 rounded-xl">
+            <span className="text-lg font-bold text-zinc-900">{selectedCategoryData.posts.length}</span>
+            <span className="text-zinc-500 ml-1">件</span>
+          </div>
+        </div>
 
-  const handleDelete = (id: string) => {
-    setCategories((prev) => prev.filter((cat) => cat.id !== id));
-  };
+        {/* Posts List */}
+        {selectedCategoryData.posts.length === 0 ? (
+          <div className="bg-white p-12 rounded-2xl border border-zinc-200 text-center">
+            <div className="w-16 h-16 rounded-2xl bg-zinc-100 flex items-center justify-center mx-auto mb-4">
+              <FolderOpen className="w-8 h-8 text-zinc-400" />
+            </div>
+            <p className="text-lg text-zinc-600 mb-2">このカテゴリーに投稿がありません</p>
+            <p className="text-sm text-zinc-400">CSVをインポートして投稿を追加してください</p>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {selectedCategoryData.posts.map((post, index) => (
+              <div
+                key={post.id}
+                className="bg-white p-5 rounded-xl border border-zinc-200 hover:border-zinc-300 transition-all"
+              >
+                <div className="flex items-start gap-4">
+                  {/* Rank & Tier */}
+                  <div className="flex flex-col items-center gap-1 flex-shrink-0">
+                    <span className="text-sm text-zinc-400">#{index + 1}</span>
+                    <span className={`${tierConfig[post.tier].bgColor} ${tierConfig[post.tier].textColor} text-xs font-bold px-2 py-1 rounded`}>
+                      {post.tier}
+                    </span>
+                  </div>
 
-  const totalPosts = categories.reduce((sum, cat) => sum + cat.postCount, 0);
+                  {/* Content */}
+                  <div className="flex-1 min-w-0">
+                    <p className="text-zinc-700 leading-relaxed whitespace-pre-wrap mb-3">
+                      {post.text}
+                    </p>
+                    <div className="flex items-center gap-4 text-sm text-zinc-400">
+                      <span className="flex items-center gap-1">
+                        <Calendar className="w-4 h-4" />
+                        {formatDate(post.createdAt)}
+                      </span>
+                      <span className="flex items-center gap-1">
+                        <Eye className="w-4 h-4" />
+                        {formatNumber(post.impressions)}
+                      </span>
+                      <span className="flex items-center gap-1">
+                        <Heart className="w-4 h-4" />
+                        {formatNumber(post.likes)}
+                      </span>
+                    </div>
+                  </div>
 
+                  {/* Copy Button */}
+                  <button
+                    onClick={() => handleCopy(post.text, post.id)}
+                    className="p-2 rounded-lg text-zinc-400 hover:text-zinc-600 hover:bg-zinc-100 transition-colors flex-shrink-0"
+                  >
+                    {copiedId === post.id ? (
+                      <CheckCircle2 className="w-5 h-5 text-emerald-500" />
+                    ) : (
+                      <Copy className="w-5 h-5" />
+                    )}
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // Categories List View
   return (
     <div className="max-w-4xl mx-auto animate-fade-in">
       {/* Page Header */}
-      <div className="flex items-end justify-between mb-8">
-        <div>
-          <div className="flex items-center gap-2 mb-2">
-            <span className="text-sm text-zinc-500">Categories</span>
-          </div>
-          <h1 className="text-3xl font-bold text-zinc-900 tracking-tight mb-2">
-            カテゴリー管理
-          </h1>
-          <p className="text-zinc-500">
-            投稿のカテゴリーを作成・編集して、コンテンツを整理
-          </p>
-        </div>
-        <button
-          onClick={() => handleOpenModal()}
-          className="flex items-center gap-2 px-5 py-2.5 bg-emerald-500 text-white text-sm font-medium rounded-xl hover:bg-emerald-600 transition-colors btn-press"
-        >
-          <Plus className="w-4 h-4" />
-          カテゴリー追加
-        </button>
+      <div className="mb-8">
+        <h1 className="text-3xl font-bold text-zinc-900 tracking-tight mb-2">
+          カテゴリー管理
+        </h1>
+        <p className="text-lg text-zinc-500">
+          投稿をカテゴリー別に閲覧・管理
+        </p>
       </div>
 
       {/* Stats */}
       <div className="grid grid-cols-2 gap-4 mb-8">
         <div className="p-5 bg-white border border-zinc-200 rounded-2xl shadow-sm">
           <div className="flex items-center gap-3">
-            <div className="w-12 h-12 rounded-xl bg-violet-500/20 flex items-center justify-center">
-              <Hash className="w-6 h-6 text-violet-400" />
+            <div className="w-12 h-12 rounded-xl bg-violet-100 flex items-center justify-center">
+              <Hash className="w-6 h-6 text-violet-600" />
             </div>
             <div>
-              <p className="text-3xl font-bold text-zinc-900">{categories.length}</p>
-              <p className="text-sm text-zinc-500">カテゴリー</p>
+              <p className="text-3xl font-bold text-zinc-900">{totalCategories}</p>
+              <p className="text-sm text-zinc-500">使用中カテゴリー</p>
             </div>
           </div>
         </div>
         <div className="p-5 bg-white border border-zinc-200 rounded-2xl shadow-sm">
           <div className="flex items-center gap-3">
-            <div className="w-12 h-12 rounded-xl bg-emerald-500/20 flex items-center justify-center">
-              <BarChart3 className="w-6 h-6 text-emerald-400" />
+            <div className="w-12 h-12 rounded-xl bg-emerald-100 flex items-center justify-center">
+              <BarChart3 className="w-6 h-6 text-emerald-600" />
             </div>
             <div>
               <p className="text-3xl font-bold text-zinc-900">{totalPosts}</p>
@@ -183,160 +271,71 @@ export default function CategoriesPage() {
 
       {/* Categories List */}
       <div className="space-y-3">
-        {categories.map((category) => (
-          <div
-            key={category.id}
-            className="group flex items-center gap-4 p-4 bg-white border border-zinc-200 rounded-xl hover:border-zinc-300 transition-all shadow-sm"
+        {categoriesData.map((category) => (
+          <button
+            key={category.name}
+            onClick={() => setSelectedCategory(category.name)}
+            className="w-full group flex items-center gap-4 p-4 bg-white border border-zinc-200 rounded-xl hover:border-zinc-300 hover:shadow-md transition-all text-left"
           >
-            <div className="text-zinc-400 cursor-grab">
-              <GripVertical className="w-5 h-5" />
-            </div>
-
             <div
-              className="w-10 h-10 rounded-xl flex items-center justify-center text-white text-sm font-bold"
-              style={{ backgroundColor: category.color + "30" }}
+              className="w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0"
+              style={{ backgroundColor: category.color + "20" }}
             >
               <div
-                className="w-3 h-3 rounded-full"
+                className="w-4 h-4 rounded-full"
                 style={{ backgroundColor: category.color }}
               />
             </div>
 
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-3">
-                <h3 className="font-medium text-zinc-900">{category.name}</h3>
-                <span className="px-2 py-0.5 text-xs bg-zinc-100 text-zinc-500 rounded">
-                  {category.postCount}件
+                <h3 className="font-semibold text-zinc-900">{category.name}</h3>
+                <span className="px-2.5 py-1 text-sm font-medium bg-zinc-100 text-zinc-600 rounded-lg">
+                  {category.posts.length}件
                 </span>
               </div>
-              <p className="text-sm text-zinc-500 truncate">
+              <p className="text-sm text-zinc-500 truncate mt-0.5">
                 {category.description}
               </p>
             </div>
 
-            <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-              <button
-                onClick={() => handleOpenModal(category)}
-                className="p-2 rounded-lg text-zinc-400 hover:text-zinc-900 hover:bg-zinc-100 transition-colors"
-              >
-                <Edit3 className="w-4 h-4" />
-              </button>
-              <button
-                onClick={() => handleDelete(category.id)}
-                className="p-2 rounded-lg text-zinc-400 hover:text-red-400 hover:bg-red-500/10 transition-colors"
-              >
-                <Trash2 className="w-4 h-4" />
-              </button>
-            </div>
-          </div>
+            {/* Tier breakdown */}
+            {category.posts.length > 0 && (
+              <div className="flex items-center gap-2 flex-shrink-0">
+                {(["S", "A", "B", "C"] as const).map((tier) => {
+                  const count = category.posts.filter((p) => p.tier === tier).length;
+                  if (count === 0) return null;
+                  return (
+                    <span
+                      key={tier}
+                      className={`px-2 py-0.5 text-xs font-medium rounded ${tierConfig[tier].bgColor} ${tierConfig[tier].textColor}`}
+                    >
+                      {tier}:{count}
+                    </span>
+                  );
+                })}
+              </div>
+            )}
+
+            <ChevronRight className="w-5 h-5 text-zinc-400 group-hover:text-zinc-600 transition-colors flex-shrink-0" />
+          </button>
         ))}
       </div>
 
       {/* Empty State */}
-      {categories.length === 0 && (
-        <div className="flex flex-col items-center justify-center py-16 text-center">
-          <div className="w-16 h-16 rounded-2xl bg-zinc-50 flex items-center justify-center mb-4">
+      {posts.length === 0 && (
+        <div className="bg-white p-12 rounded-2xl border border-zinc-200 text-center mt-6">
+          <div className="w-16 h-16 rounded-2xl bg-zinc-100 flex items-center justify-center mx-auto mb-4">
             <FolderOpen className="w-8 h-8 text-zinc-400" />
           </div>
-          <p className="text-zinc-500 mb-1">カテゴリーがありません</p>
-          <p className="text-sm text-zinc-400 mb-6">
-            新しいカテゴリーを作成して、投稿を整理しましょう
-          </p>
-          <button
-            onClick={() => handleOpenModal()}
-            className="flex items-center gap-2 px-5 py-2.5 bg-emerald-500 text-white text-sm font-medium rounded-xl hover:bg-emerald-600 transition-colors btn-press"
+          <p className="text-lg text-zinc-600 mb-2">投稿がありません</p>
+          <p className="text-sm text-zinc-400 mb-6">CSVをインポートして投稿を追加してください</p>
+          <a
+            href="/import"
+            className="inline-flex items-center gap-2 px-6 py-3 bg-emerald-500 text-white font-semibold rounded-xl hover:bg-emerald-600 transition-colors"
           >
-            <Plus className="w-4 h-4" />
-            カテゴリーを作成
-          </button>
-        </div>
-      )}
-
-      {/* Modal */}
-      {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div
-            className="absolute inset-0 bg-black/50 backdrop-blur-sm"
-            onClick={() => setIsModalOpen(false)}
-          />
-          <div className="relative w-full max-w-md p-6 bg-white border border-zinc-300 rounded-2xl shadow-2xl">
-            <div className="flex items-center justify-between mb-6">
-              <h3 className="text-lg font-semibold text-zinc-900">
-                {editingCategory ? "カテゴリーを編集" : "カテゴリーを作成"}
-              </h3>
-              <button
-                onClick={() => setIsModalOpen(false)}
-                className="p-2 rounded-lg text-zinc-400 hover:text-zinc-900 hover:bg-zinc-100 transition-colors"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <div className="space-y-4 mb-6">
-              <div>
-                <label className="block text-sm font-medium text-zinc-500 mb-2">
-                  カテゴリー名
-                </label>
-                <input
-                  type="text"
-                  value={newName}
-                  onChange={(e) => setNewName(e.target.value)}
-                  placeholder="例：マインド"
-                  className="w-full h-11 px-4 bg-zinc-50 border border-zinc-200 rounded-xl text-zinc-900 placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-colors"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-zinc-500 mb-2">
-                  説明
-                </label>
-                <input
-                  type="text"
-                  value={newDescription}
-                  onChange={(e) => setNewDescription(e.target.value)}
-                  placeholder="例：エンジニアとしての考え方"
-                  className="w-full h-11 px-4 bg-zinc-50 border border-zinc-200 rounded-xl text-zinc-900 placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-colors"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-zinc-500 mb-2">
-                  カラー
-                </label>
-                <div className="flex gap-2">
-                  {colorOptions.map((color) => (
-                    <button
-                      key={color}
-                      onClick={() => setNewColor(color)}
-                      className={`w-9 h-9 rounded-lg transition-all ${
-                        newColor === color
-                          ? "ring-2 ring-zinc-900 ring-offset-2 ring-offset-white"
-                          : ""
-                      }`}
-                      style={{ backgroundColor: color }}
-                    />
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-3">
-              <button
-                onClick={() => setIsModalOpen(false)}
-                className="flex-1 px-4 py-3 text-zinc-500 text-sm font-medium rounded-xl hover:text-zinc-900 hover:bg-zinc-100 transition-colors"
-              >
-                キャンセル
-              </button>
-              <button
-                onClick={handleSave}
-                disabled={!newName}
-                className="flex-1 flex items-center justify-center gap-2 px-4 py-3 bg-emerald-500 text-white text-sm font-semibold rounded-xl hover:bg-emerald-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors btn-press"
-              >
-                <CheckCircle2 className="w-4 h-4" />
-                保存
-              </button>
-            </div>
-          </div>
+            CSVをインポート
+          </a>
         </div>
       )}
     </div>
