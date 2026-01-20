@@ -33,17 +33,19 @@ interface ContextPost {
   createdAt?: string;
 }
 
-// 10+ categories
+// Practical X post categories
 const CATEGORIES = [
-  "マインドセット",
-  "キャリア・転職",
-  "技術・プログラミング",
-  "ツール・サービス",
-  "ニュース・速報",
-  "学習・勉強法",
-  "仕事術・生産性",
-  "日常・雑談",
-  "お知らせ・告知",
+  "速報・ニュース系",
+  "Tips・ノウハウ系",
+  "記事・コンテンツ紹介系",
+  "ツール・サービス紹介系",
+  "動画・メディア紹介系",
+  "プロンプト・AI活用系",
+  "プロダクト・リリース系",
+  "イベント・登壇系",
+  "プレゼント・キャンペーン系",
+  "採用・メンバー募集系",
+  "日常・つぶやき系",
   "その他",
 ];
 
@@ -127,19 +129,32 @@ export default function ContextPage() {
 
     setIsCategorizing(true);
     try {
-      // Simple keyword-based categorization (can be replaced with API call)
-      const text = manualText.toLowerCase();
+      const text = manualText;
+      const lowerText = manualText.toLowerCase();
       let category = "その他";
 
-      if (/マインド|考え方|大切|重要|気づ|学んだ/.test(manualText)) category = "マインドセット";
-      else if (/転職|キャリア|年収|副業|フリーランス/.test(manualText)) category = "キャリア・転職";
-      else if (/react|typescript|javascript|python|api|コード|実装|開発|エンジニア/.test(text)) category = "技術・プログラミング";
-      else if (/chatgpt|copilot|notion|figma|ツール|サービス|アプリ/.test(text)) category = "ツール・サービス";
-      else if (/速報|朗報|悲報|発表|リリース|アップデート/.test(manualText)) category = "ニュース・速報";
-      else if (/勉強|学習|読書|本|おすすめ|入門/.test(manualText)) category = "学習・勉強法";
-      else if (/効率|時短|生産性|タスク|習慣|仕事/.test(manualText)) category = "仕事術・生産性";
-      else if (/今日|日記|つぶやき|思った/.test(manualText)) category = "日常・雑談";
-      else if (/お知らせ|告知|イベント|募集/.test(manualText)) category = "お知らせ・告知";
+      // プレゼント・キャンペーン系 (check first)
+      if (/プレゼント|🎁|抽選|当選|RT.*フォロー|フォロー.*RT|いいね.*RT|RT.*いいね|キャンペーン/.test(text)) category = "プレゼント・キャンペーン系";
+      // 採用・メンバー募集系
+      else if (/募集|採用|hiring|求人|メンバー募集|仲間募集|一緒に働|エンジニア募集/.test(text)) category = "採用・メンバー募集系";
+      // プロダクト・リリース系
+      else if (/リリース|ローンチ|公開しました|作りました|開発しました|β版|プロダクト|サービス開始|新機能/.test(text)) category = "プロダクト・リリース系";
+      // 速報・ニュース系
+      else if (/速報|朗報|悲報|ニュース|発表|話題|最新|緊急|ヤバい/.test(text)) category = "速報・ニュース系";
+      // イベント・登壇系
+      else if (/イベント|登壇|カンファレンス|勉強会|セミナー|ウェビナー|connpass/.test(text)) category = "イベント・登壇系";
+      // プロンプト・AI活用系
+      else if (/プロンプト|prompt|chatgpt|gpt-4|claude|gemini|ai|生成ai|llm|copilot|cursor/.test(lowerText)) category = "プロンプト・AI活用系";
+      // 動画・メディア紹介系
+      else if (/youtube|動画|video|podcast|配信|ライブ|アーカイブ/.test(lowerText)) category = "動画・メディア紹介系";
+      // 記事・コンテンツ紹介系
+      else if (/記事|ブログ|note|zenn|qiita|書きました|まとめ|解説|紹介/.test(lowerText)) category = "記事・コンテンツ紹介系";
+      // ツール・サービス紹介系
+      else if (/ツール|サービス|アプリ|拡張機能|便利|おすすめツール|神ツール/.test(text)) category = "ツール・サービス紹介系";
+      // Tips・ノウハウ系
+      else if (/tips|コツ|方法|やり方|ノウハウ|テクニック|裏技|効率|生産性|時短/.test(lowerText)) category = "Tips・ノウハウ系";
+      // 日常・つぶやき系
+      else if (/今日|おはよう|おやすみ|疲れた|嬉しい|楽しい|思った|感じた/.test(text)) category = "日常・つぶやき系";
 
       setManualCategory(category);
     } finally {
@@ -236,19 +251,32 @@ export default function ContextPage() {
         const likes = parseInt(values[likesIdx]) || 0;
         const impressions = parseInt(values[impressionsIdx]) || 0;
 
-        // AI Categorization
+        // AI Categorization (practical X post categories)
         let category = "その他";
         const lowerText = postText.toLowerCase();
 
-        if (/マインド|考え方|大切|重要|気づ|学んだ/.test(postText)) category = "マインドセット";
-        else if (/転職|キャリア|年収|副業|フリーランス/.test(postText)) category = "キャリア・転職";
-        else if (/react|typescript|javascript|python|api|コード|実装|開発|エンジニア/.test(lowerText)) category = "技術・プログラミング";
-        else if (/chatgpt|copilot|notion|figma|ツール|サービス|アプリ/.test(lowerText)) category = "ツール・サービス";
-        else if (/速報|朗報|悲報|発表|リリース|アップデート/.test(postText)) category = "ニュース・速報";
-        else if (/勉強|学習|読書|本|おすすめ|入門/.test(postText)) category = "学習・勉強法";
-        else if (/効率|時短|生産性|タスク|習慣|仕事/.test(postText)) category = "仕事術・生産性";
-        else if (/今日|日記|つぶやき|思った/.test(postText)) category = "日常・雑談";
-        else if (/お知らせ|告知|イベント|募集/.test(postText)) category = "お知らせ・告知";
+        // プレゼント・キャンペーン系 (check first)
+        if (/プレゼント|🎁|抽選|当選|RT.*フォロー|フォロー.*RT|いいね.*RT|RT.*いいね|キャンペーン/.test(postText)) category = "プレゼント・キャンペーン系";
+        // 採用・メンバー募集系
+        else if (/募集|採用|hiring|求人|メンバー募集|仲間募集|一緒に働|エンジニア募集/.test(postText)) category = "採用・メンバー募集系";
+        // プロダクト・リリース系
+        else if (/リリース|ローンチ|公開しました|作りました|開発しました|β版|プロダクト|サービス開始|新機能/.test(postText)) category = "プロダクト・リリース系";
+        // 速報・ニュース系
+        else if (/速報|朗報|悲報|ニュース|発表|話題|最新|緊急|ヤバい/.test(postText)) category = "速報・ニュース系";
+        // イベント・登壇系
+        else if (/イベント|登壇|カンファレンス|勉強会|セミナー|ウェビナー|connpass/.test(postText)) category = "イベント・登壇系";
+        // プロンプト・AI活用系
+        else if (/プロンプト|prompt|chatgpt|gpt-4|claude|gemini|ai|生成ai|llm|copilot|cursor/.test(lowerText)) category = "プロンプト・AI活用系";
+        // 動画・メディア紹介系
+        else if (/youtube|動画|video|podcast|配信|ライブ|アーカイブ/.test(lowerText)) category = "動画・メディア紹介系";
+        // 記事・コンテンツ紹介系
+        else if (/記事|ブログ|note|zenn|qiita|書きました|まとめ|解説|紹介/.test(lowerText)) category = "記事・コンテンツ紹介系";
+        // ツール・サービス紹介系
+        else if (/ツール|サービス|アプリ|拡張機能|便利|おすすめツール|神ツール/.test(postText)) category = "ツール・サービス紹介系";
+        // Tips・ノウハウ系
+        else if (/tips|コツ|方法|やり方|ノウハウ|テクニック|裏技|効率|生産性|時短/.test(lowerText)) category = "Tips・ノウハウ系";
+        // 日常・つぶやき系
+        else if (/今日|おはよう|おやすみ|疲れた|嬉しい|楽しい|思った|感じた/.test(postText)) category = "日常・つぶやき系";
 
         newPosts.push({
           text: postText,

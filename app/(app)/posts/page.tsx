@@ -42,19 +42,21 @@ const tierConfig = {
   C: { label: "Tier C", bgColor: "bg-zinc-100", textColor: "text-zinc-700", borderColor: "border-zinc-300", description: "保存のみ" },
 };
 
+// Practical X post categories
 const CATEGORIES = [
   "すべて",
-  "マインドセット",
-  "キャリア・転職",
-  "技術・プログラミング",
-  "ツール・サービス",
-  "ニュース・速報",
-  "学習・勉強法",
-  "仕事術・生産性",
-  "日常・雑談",
-  "お知らせ・告知",
+  "速報・ニュース系",
+  "Tips・ノウハウ系",
+  "記事・コンテンツ紹介系",
+  "ツール・サービス紹介系",
+  "動画・メディア紹介系",
+  "プロンプト・AI活用系",
+  "プロダクト・リリース系",
+  "イベント・登壇系",
+  "プレゼント・キャンペーン系",
+  "採用・メンバー募集系",
+  "日常・つぶやき系",
   "その他",
-  "未分類",
 ];
 
 const roleColors: Record<string, string> = {

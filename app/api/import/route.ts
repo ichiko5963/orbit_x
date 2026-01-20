@@ -95,33 +95,58 @@ async function getAdminDb() {
   }
 }
 
-// 10 categories for auto-categorization
+// Practical X post categories
 const CATEGORIES = [
-  "マインドセット",
-  "キャリア・転職",
-  "技術・プログラミング",
-  "ツール・サービス",
-  "ニュース・速報",
-  "学習・勉強法",
-  "仕事術・生産性",
-  "日常・雑談",
-  "お知らせ・告知",
+  "速報・ニュース系",
+  "Tips・ノウハウ系",
+  "記事・コンテンツ紹介系",
+  "ツール・サービス紹介系",
+  "動画・メディア紹介系",
+  "プロンプト・AI活用系",
+  "プロダクト・リリース系",
+  "イベント・登壇系",
+  "プレゼント・キャンペーン系",
+  "採用・メンバー募集系",
+  "日常・つぶやき系",
   "その他",
 ];
 
-// Simple keyword-based categorization
+// Keyword-based categorization for X posts
 function categorizeByKeywords(text: string): string {
   const lowerText = text.toLowerCase();
 
-  if (/マインド|考え方|大切|重要|本当に|気づ|学んだ|意識/.test(text)) return "マインドセット";
-  if (/転職|キャリア|年収|副業|フリーランス|独立|会社員/.test(text)) return "キャリア・転職";
-  if (/react|typescript|javascript|python|api|コード|実装|開発|エンジニア|プログラミング/.test(lowerText)) return "技術・プログラミング";
-  if (/chatgpt|copilot|notion|figma|ツール|サービス|アプリ|使って/.test(lowerText)) return "ツール・サービス";
-  if (/速報|朗報|悲報|発表|リリース|対応|アップデート|新機能/.test(text)) return "ニュース・速報";
-  if (/勉強|学習|読書|本|おすすめ|入門|初心者|始め/.test(text)) return "学習・勉強法";
-  if (/効率|時短|生産性|タスク|習慣|朝活|ルーティン|仕事/.test(text)) return "仕事術・生産性";
-  if (/今日|日記|つぶやき|思った|感じた/.test(text)) return "日常・雑談";
-  if (/お知らせ|告知|イベント|募集|登壇|参加/.test(text)) return "お知らせ・告知";
+  // プレゼント・キャンペーン系 (check first - has specific patterns)
+  if (/プレゼント|🎁|抽選|当選|RT.*フォロー|フォロー.*RT|いいね.*RT|RT.*いいね|キャンペーン|プレゼント企画/.test(text)) return "プレゼント・キャンペーン系";
+
+  // 採用・メンバー募集系
+  if (/募集|採用|hiring|求人|メンバー募集|仲間募集|一緒に働|エンジニア募集|デザイナー募集|積極採用|正社員|業務委託/.test(text)) return "採用・メンバー募集系";
+
+  // プロダクト・リリース系
+  if (/リリース|ローンチ|公開しました|作りました|開発しました|β版|ベータ版|プロダクト|サービス開始|新機能|アップデート/.test(text)) return "プロダクト・リリース系";
+
+  // 速報・ニュース系
+  if (/速報|朗報|悲報|ニュース|発表|話題|最新|緊急|重大発表|公式発表|ついに|ヤバい/.test(text)) return "速報・ニュース系";
+
+  // イベント・登壇系
+  if (/イベント|登壇|カンファレンス|勉強会|セミナー|ウェビナー|参加|開催|connpass|meetup|オフ会/.test(text)) return "イベント・登壇系";
+
+  // プロンプト・AI活用系
+  if (/プロンプト|prompt|chatgpt|gpt-4|claude|gemini|ai|生成ai|llm|copilot|cursor/.test(lowerText)) return "プロンプト・AI活用系";
+
+  // 動画・メディア紹介系
+  if (/youtube|動画|video|podcast|ポッドキャスト|配信|ライブ|アーカイブ|見て|聴いて/.test(lowerText)) return "動画・メディア紹介系";
+
+  // 記事・コンテンツ紹介系
+  if (/記事|ブログ|note|zenn|qiita|書きました|投稿しました|まとめ|解説|紹介|おすすめ|読んで/.test(lowerText)) return "記事・コンテンツ紹介系";
+
+  // ツール・サービス紹介系
+  if (/ツール|サービス|アプリ|拡張機能|extension|便利|使える|おすすめツール|神ツール|無料で/.test(text)) return "ツール・サービス紹介系";
+
+  // Tips・ノウハウ系
+  if (/tips|コツ|方法|やり方|ノウハウ|知識|テクニック|裏技|選$|個$|つ$|効率|生産性|時短/.test(lowerText)) return "Tips・ノウハウ系";
+
+  // 日常・つぶやき系
+  if (/今日|おはよう|おやすみ|疲れた|嬉しい|楽しい|思った|感じた|つぶやき|日記/.test(text)) return "日常・つぶやき系";
 
   return "その他";
 }

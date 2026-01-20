@@ -37,20 +37,20 @@ interface CategoryData {
   description: string;
 }
 
-// 10+ categories with colors
+// Practical X post categories with colors
 const CATEGORY_CONFIG: Record<string, { color: string; description: string }> = {
-  "マインドセット": { color: "#8b5cf6", description: "考え方・心構え・哲学" },
-  "キャリア・転職": { color: "#f59e0b", description: "転職・キャリアアップ・副業" },
-  "技術・プログラミング": { color: "#3b82f6", description: "コード・実装・技術解説" },
-  "ツール・サービス": { color: "#ec4899", description: "開発ツール・サービス紹介" },
-  "ニュース・速報": { color: "#ef4444", description: "最新ニュース・アップデート" },
-  "学習・勉強法": { color: "#10b981", description: "学習方法・書籍・リソース" },
-  "仕事術・生産性": { color: "#06b6d4", description: "効率化・タスク管理・習慣" },
-  "日常・雑談": { color: "#84cc16", description: "日記・つぶやき・感想" },
-  "お知らせ・告知": { color: "#f97316", description: "イベント・告知・募集" },
-  "記事": { color: "#6366f1", description: "外部記事からの投稿" },
+  "速報・ニュース系": { color: "#ef4444", description: "最新ニュース・話題の速報" },
+  "Tips・ノウハウ系": { color: "#10b981", description: "コツ・方法・テクニック" },
+  "記事・コンテンツ紹介系": { color: "#6366f1", description: "ブログ・note・Zenn記事" },
+  "ツール・サービス紹介系": { color: "#ec4899", description: "便利ツール・サービス紹介" },
+  "動画・メディア紹介系": { color: "#f59e0b", description: "YouTube・Podcast紹介" },
+  "プロンプト・AI活用系": { color: "#8b5cf6", description: "ChatGPT・Claude活用" },
+  "プロダクト・リリース系": { color: "#3b82f6", description: "新機能・サービスリリース" },
+  "イベント・登壇系": { color: "#06b6d4", description: "勉強会・カンファレンス" },
+  "プレゼント・キャンペーン系": { color: "#f97316", description: "RT企画・プレゼント" },
+  "採用・メンバー募集系": { color: "#84cc16", description: "求人・チームメンバー募集" },
+  "日常・つぶやき系": { color: "#a1a1aa", description: "日記・感想・つぶやき" },
   "その他": { color: "#71717a", description: "その他の投稿" },
-  "未分類": { color: "#a1a1aa", description: "カテゴリー未設定" },
 };
 
 const tierConfig = {
