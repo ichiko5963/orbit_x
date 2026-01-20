@@ -1,16 +1,18 @@
 import { CSVRow, Post, ImportResult } from "./types";
 
 /**
- * Parse CSV text into rows
+ * Parse CSV text into rows (handles multi-line quoted fields)
  */
 export function parseCSV(csvText: string): CSVRow[] {
-  const lines = csvText.split("\n");
-  if (lines.length < 2) {
+  // Parse all rows handling multi-line quoted fields
+  const allRows = parseCSVWithMultiline(csvText);
+
+  if (allRows.length < 2) {
     throw new Error("CSVファイルが空か、データが不足しています");
   }
 
-  // Parse header
-  const header = parseCSVLine(lines[0]);
+  // First row is header
+  const header = allRows[0];
 
   // Column mapping (Japanese column names from X Premium CSV)
   const columnMapping: Record<string, string> = {
@@ -38,13 +40,11 @@ export function parseCSV(csvText: string): CSVRow[] {
     return acc;
   }, {} as Record<string, number>);
 
-  // Parse data rows
+  // Parse data rows (skip header at index 0)
   const rows: CSVRow[] = [];
-  for (let i = 1; i < lines.length; i++) {
-    const line = lines[i].trim();
-    if (!line) continue;
-
-    const values = parseCSVLine(line);
+  for (let i = 1; i < allRows.length; i++) {
+    const values = allRows[i];
+    if (values.length === 0 || values.every(v => !v.trim())) continue;
 
     rows.push({
       date: values[columnIndices.date] || "",
@@ -60,35 +60,66 @@ export function parseCSV(csvText: string): CSVRow[] {
 }
 
 /**
- * Parse a single CSV line, handling quoted fields
+ * Parse CSV with proper handling of multi-line quoted fields
  */
-function parseCSVLine(line: string): string[] {
-  const result: string[] = [];
-  let current = "";
+function parseCSVWithMultiline(csvText: string): string[][] {
+  const rows: string[][] = [];
+  let currentRow: string[] = [];
+  let currentField = "";
   let inQuotes = false;
 
-  for (let i = 0; i < line.length; i++) {
-    const char = line[i];
+  for (let i = 0; i < csvText.length; i++) {
+    const char = csvText[i];
+    const nextChar = csvText[i + 1];
 
-    if (char === '"') {
-      if (inQuotes && line[i + 1] === '"') {
-        // Escaped quote
-        current += '"';
-        i++;
+    if (inQuotes) {
+      if (char === '"') {
+        if (nextChar === '"') {
+          // Escaped quote ("") -> single quote
+          currentField += '"';
+          i++;
+        } else {
+          // End of quoted field
+          inQuotes = false;
+        }
       } else {
-        // Toggle quote mode
-        inQuotes = !inQuotes;
+        // Inside quotes, include everything (including newlines)
+        currentField += char;
       }
-    } else if (char === "," && !inQuotes) {
-      result.push(current.trim());
-      current = "";
     } else {
-      current += char;
+      if (char === '"') {
+        // Start of quoted field
+        inQuotes = true;
+      } else if (char === ',') {
+        // End of field
+        currentRow.push(currentField.trim());
+        currentField = "";
+      } else if (char === '\n' || (char === '\r' && nextChar === '\n')) {
+        // End of row
+        currentRow.push(currentField.trim());
+        rows.push(currentRow);
+        currentRow = [];
+        currentField = "";
+        if (char === '\r') i++; // Skip \n after \r
+      } else if (char === '\r') {
+        // End of row (old Mac style)
+        currentRow.push(currentField.trim());
+        rows.push(currentRow);
+        currentRow = [];
+        currentField = "";
+      } else {
+        currentField += char;
+      }
     }
   }
 
-  result.push(current.trim());
-  return result;
+  // Don't forget the last field and row
+  if (currentField || currentRow.length > 0) {
+    currentRow.push(currentField.trim());
+    rows.push(currentRow);
+  }
+
+  return rows;
 }
 
 /**

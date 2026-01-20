@@ -339,10 +339,10 @@ export default function ContextPage() {
       <div className="flex items-end justify-between mb-8">
         <div>
           <h1 className="text-3xl font-bold text-zinc-900 tracking-tight mb-2">
-            バズ投稿参考
+            他者バズ投稿一覧
           </h1>
           <p className="text-lg text-zinc-500">
-            他アカウントのバズ投稿を追加して、AI生成の参考に
+            他アカウントのバズ投稿を追加して、構造を参考にAI生成
           </p>
         </div>
         <button
@@ -473,7 +473,14 @@ export default function ContextPage() {
                 </div>
 
                 {/* Actions */}
-                <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
+                <div className="flex items-center gap-1 flex-shrink-0">
+                  <a
+                    href={`/compose/imitate?context=${post.id}`}
+                    className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-violet-600 bg-violet-50 rounded-lg hover:bg-violet-100 transition-colors"
+                  >
+                    <Sparkles className="w-4 h-4" />
+                    この構造で生成
+                  </a>
                   <button
                     onClick={() => handleCopy(post.text, post.id)}
                     className="p-2 rounded-lg text-zinc-400 hover:text-zinc-600 hover:bg-zinc-100 transition-colors"

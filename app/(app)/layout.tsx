@@ -30,7 +30,7 @@ const mainNav = [
   { name: "AI投稿作成", href: "/compose", icon: Sparkles },
   { name: "予約投稿", href: "/schedule", icon: Calendar },
   { name: "過去投稿一覧", href: "/posts", icon: TrendingUp },
-  { name: "バズ投稿参考", href: "/context", icon: Users },
+  { name: "他者バズ投稿", href: "/context", icon: Users },
   { name: "外部コンテンツ", href: "/external", icon: Globe },
 ];
 

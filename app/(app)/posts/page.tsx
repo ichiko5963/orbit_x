@@ -467,7 +467,7 @@ export default function PostsPage() {
                   </div>
                   <div className="grid grid-cols-2 gap-3 mt-3">
                     <a
-                      href={`/compose?imitate=${selectedPost.id}`}
+                      href={`/compose/imitate?post=${selectedPost.id}`}
                       className="flex items-center justify-center gap-2 px-4 py-3 bg-violet-100 text-violet-700 font-medium rounded-xl hover:bg-violet-200 transition-colors"
                     >
                       <Sparkles className="w-5 h-5" />

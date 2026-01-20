@@ -93,6 +93,26 @@ export const getPosts = async (userId: string) => {
   }
 };
 
+// Get single post by ID
+export const getPost = async (userId: string, postId: string) => {
+  try {
+    const postRef = doc(db, "users", userId, "posts", postId);
+    const snapshot = await getDoc(postRef);
+    if (!snapshot.exists()) {
+      return null;
+    }
+    const data = snapshot.data();
+    return {
+      id: snapshot.id,
+      ...data,
+      createdAt: data.createdAt?.toDate?.()?.toISOString?.() || data.createdAt || new Date().toISOString(),
+    };
+  } catch (error) {
+    console.error("Get post error:", error);
+    throw error;
+  }
+};
+
 // Firestore functions - Viral Posts
 export const saveViralPost = async (userId: string, post: any) => {
   try {
@@ -271,6 +291,26 @@ export const getContextPosts = async (userId: string) => {
     });
   } catch (error) {
     console.error("Get context posts error:", error);
+    throw error;
+  }
+};
+
+// Get single context post by ID
+export const getContextPost = async (userId: string, postId: string) => {
+  try {
+    const postRef = doc(db, "users", userId, "contextPosts", postId);
+    const snapshot = await getDoc(postRef);
+    if (!snapshot.exists()) {
+      return null;
+    }
+    const data = snapshot.data();
+    return {
+      id: snapshot.id,
+      ...data,
+      importedAt: data.importedAt?.toDate?.()?.toISOString?.() || data.importedAt || new Date().toISOString(),
+    };
+  } catch (error) {
+    console.error("Get context post error:", error);
     throw error;
   }
 };
