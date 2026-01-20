@@ -30,13 +30,13 @@ const mainNav = [
   { name: "AI投稿作成", href: "/compose", icon: Sparkles },
   { name: "予約投稿", href: "/schedule", icon: Calendar },
   { name: "過去投稿一覧", href: "/posts", icon: TrendingUp },
-  { name: "バズ投稿参考", href: "/viral", icon: Users },
+  { name: "バズ投稿参考", href: "/context", icon: Users },
   { name: "外部コンテンツ", href: "/external", icon: Globe },
 ];
 
 const subNav = [
-  { name: "Xコンテキスト", href: "/context", icon: Upload },
-  { name: "カテゴリー", href: "/categories", icon: FolderOpen },
+  { name: "CSVインポート", href: "/import", icon: Upload },
+  { name: "カテゴリー管理", href: "/categories", icon: FolderOpen },
   { name: "口調・絵文字", href: "/styles", icon: Palette },
   { name: "設定", href: "/settings", icon: Settings },
 ];

@@ -154,6 +154,11 @@ export default function ExternalPage() {
     }
   }, [selectedSource, articles]);
 
+  // Auto-fetch on mount and when source changes
+  useEffect(() => {
+    fetchArticles();
+  }, [selectedSource]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const handleRefresh = () => {
     fetchArticles();
   };
