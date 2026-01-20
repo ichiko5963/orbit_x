@@ -17,6 +17,7 @@ import {
   ChevronDown,
   ChevronUp,
   Tag,
+  Pencil,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 import { getContextPosts, getPosts, saveScheduledPost } from "@/lib/firebase";
@@ -559,7 +560,7 @@ export default function GeneratePage() {
                       {copiedId === card.id ? (
                         <>
                           <CheckCircle2 className="w-4 h-4 text-emerald-500" />
-                          <span className="text-emerald-600">コピー済み</span>
+                          <span className="text-emerald-600">コピー済</span>
                         </>
                       ) : (
                         <>
@@ -568,6 +569,13 @@ export default function GeneratePage() {
                         </>
                       )}
                     </button>
+                    <Link
+                      href={`/compose/editor?text=${encodeURIComponent(card.text)}`}
+                      className="flex-1 flex items-center justify-center gap-1.5 py-3 text-sm font-medium text-emerald-600 hover:bg-emerald-50 transition-colors border-r border-zinc-100"
+                    >
+                      <Pencil className="w-4 h-4" />
+                      編集
+                    </Link>
                     <button
                       onClick={() => handleSchedule(card.id, card.text)}
                       disabled={schedulingId === card.id}

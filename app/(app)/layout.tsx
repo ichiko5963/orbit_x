@@ -22,6 +22,7 @@ import {
   Plus,
   LogOut,
   Calendar,
+  CalendarDays,
 } from "lucide-react";
 import { AuthProvider, useAuth } from "@/lib/auth-context";
 
@@ -29,6 +30,7 @@ const mainNav = [
   { name: "ダッシュボード", href: "/dashboard", icon: LayoutDashboard },
   { name: "AI投稿作成", href: "/compose", icon: Sparkles },
   { name: "予約投稿", href: "/schedule", icon: Calendar },
+  { name: "投稿カレンダー", href: "/calendar", icon: CalendarDays },
   { name: "過去投稿一覧", href: "/posts", icon: TrendingUp },
   { name: "他者バズ投稿", href: "/context", icon: Users },
   { name: "外部コンテンツ", href: "/external", icon: Globe },

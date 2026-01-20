@@ -563,5 +563,119 @@ export const resetArticlePatternsToDefault = async (userId: string) => {
   }
 };
 
+// ==========================================
+// Firestore functions - Quote Tweets (引用ツイート)
+// ==========================================
+
+export interface QuoteTweet {
+  id?: string;
+  url: string;         // X post URL
+  title: string;       // User-defined title for easy identification
+  authorName?: string; // Tweet author name
+  authorHandle?: string; // @handle
+  previewText?: string; // Tweet preview text
+  imageUrl?: string;   // OG image or tweet image
+  usageCount: number;  // How many times used
+  createdAt?: any;
+  updatedAt?: any;
+}
+
+// Save a new quote tweet
+export const saveQuoteTweet = async (userId: string, quoteTweet: Omit<QuoteTweet, "id" | "createdAt" | "updatedAt" | "usageCount">) => {
+  try {
+    const qtRef = doc(collection(db, "users", userId, "quoteTweets"));
+    await setDoc(qtRef, {
+      ...quoteTweet,
+      usageCount: 0,
+      createdAt: Timestamp.now(),
+      updatedAt: Timestamp.now(),
+    });
+    return qtRef.id;
+  } catch (error) {
+    console.error("Save quote tweet error:", error);
+    throw error;
+  }
+};
+
+// Get all quote tweets
+export const getQuoteTweets = async (userId: string) => {
+  try {
+    const qtRef = collection(db, "users", userId, "quoteTweets");
+    const snapshot = await getDocs(qtRef);
+    const quoteTweets = snapshot.docs.map((doc) => ({
+      id: doc.id,
+      ...doc.data(),
+    })) as QuoteTweet[];
+    // Sort by usage count descending (most used first)
+    return quoteTweets.sort((a, b) => (b.usageCount || 0) - (a.usageCount || 0));
+  } catch (error) {
+    console.error("Get quote tweets error:", error);
+    throw error;
+  }
+};
+
+// Increment usage count when quote tweet is used
+export const incrementQuoteTweetUsage = async (userId: string, qtId: string) => {
+  try {
+    const qtRef = doc(db, "users", userId, "quoteTweets", qtId);
+    const snapshot = await getDoc(qtRef);
+    if (snapshot.exists()) {
+      const currentCount = snapshot.data().usageCount || 0;
+      await updateDoc(qtRef, {
+        usageCount: currentCount + 1,
+        updatedAt: Timestamp.now(),
+      });
+    }
+  } catch (error) {
+    console.error("Increment quote tweet usage error:", error);
+    throw error;
+  }
+};
+
+// Update quote tweet
+export const updateQuoteTweet = async (userId: string, qtId: string, updates: Partial<QuoteTweet>) => {
+  try {
+    const qtRef = doc(db, "users", userId, "quoteTweets", qtId);
+    await updateDoc(qtRef, {
+      ...updates,
+      updatedAt: Timestamp.now(),
+    });
+  } catch (error) {
+    console.error("Update quote tweet error:", error);
+    throw error;
+  }
+};
+
+// Delete quote tweet
+export const deleteQuoteTweet = async (userId: string, qtId: string) => {
+  try {
+    const qtRef = doc(db, "users", userId, "quoteTweets", qtId);
+    await deleteDoc(qtRef);
+  } catch (error) {
+    console.error("Delete quote tweet error:", error);
+    throw error;
+  }
+};
+
+// ==========================================
+// Extended Scheduled Post with Quote Tweet
+// ==========================================
+
+export interface ScheduledPostExtended {
+  id?: string;
+  text: string;
+  scheduledAt: Date | any;
+  status: "scheduled" | "posted" | "failed";
+  category?: string;
+  imageUrls?: string[];
+  quoteTweetUrl?: string;  // Quote tweet URL if any
+  quoteTweetId?: string;   // Reference to saved quote tweet
+  threadPost?: string;     // Thread/reply post if any
+  aiSuggestedTime?: boolean; // Was this time suggested by AI?
+  suggestedReason?: string;  // Why AI suggested this time
+  createdAt?: any;
+  updatedAt?: any;
+}
+
 export { auth, db, onAuthStateChanged };
 export type { User };
