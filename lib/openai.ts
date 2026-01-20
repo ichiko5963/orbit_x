@@ -459,77 +459,181 @@ interface GenerateWithReferenceOptions {
   referenceText: string;
   category?: string;
   tone?: string;
-  userStyle?: string; // User's learned style from their own posts
+  userStyle?: string;
 }
 
 /**
- * Generate a post using reference post structure + user's own style
- * STRICT MODE: Copy structure EXACTLY, only change the content/topic
+ * Analyze the detailed structure of a reference post
  */
-export async function generateWithReference(
-  options: GenerateWithReferenceOptions
-): Promise<string> {
-  const { content, referenceText, category, userStyle } = options;
+async function analyzeStructureForCopy(referenceText: string): Promise<string> {
+  const prompt = `以下の投稿の構造を詳細に分析してください。
 
-  // Analyze reference post structure
-  const refHasEmoji = /[\u{1F300}-\u{1F9FF}]/u.test(referenceText);
-  const refLineCount = referenceText.split("\n").filter(l => l.trim()).length;
-  const refHasBullets = referenceText.includes("・") || referenceText.includes("・");
-  const refHasArrow = referenceText.includes("→") || referenceText.includes("👇") || referenceText.includes("↓");
-
-  const prompt = `【構造完コピ生成】参考投稿の構造を「マジで完コピ」して、内容だけ入れ替えてください。
-
-■ 参考投稿（この構造を参考にする）：
+投稿：
 """
 ${referenceText}
 """
 
-■ 新しい内容（これを上記の構造に当てはめる）：
-"""
-${content}
-"""
+以下を分析して出力：
+1. 行数と各行の役割（例：1行目=フック、2行目=空行、3行目=本題...）
+2. 句読点パターン（「。」「！」「?」の使用頻度と位置）
+3. 絵文字の有無と位置（なければ「なし」）
+4. 箇条書きの有無とスタイル（「・」「-」など）
+5. 特殊記号（→、↓、👇など）の有無と位置
+6. 書き出しパターン（どんな形式で始まるか）
+7. 終わり方パターン（どんな形式で終わるか）
+8. 全体の文字数と各ブロックの文字数目安
 
-【完コピルール - 絶対厳守】
-1. 参考投稿の構造パターン（導入→本題→結論など）を完全にコピー
-2. 参考投稿に絵文字が${refHasEmoji ? "ある→同じ位置に同種の絵文字を入れる" : "ない→絶対に絵文字を入れない"}
-3. 参考投稿に箇条書きが${refHasBullets ? "ある→同じ形式（「・」）で箇条書きにする" : "ない→箇条書きにしない"}
-4. 参考投稿に矢印/誘導が${refHasArrow ? "ある→同じ位置に同じ記号を入れる" : "ない→入れない"}
-5. 書き出しの形式を完全にコピー（「〇〇が〜」で始まるなら同じ形式で）
-6. 終わり方の形式を完全にコピー
-
-【改行ルール - 必須】
-- 文の区切りで必ず改行を入れる
-- 「。」の後は基本的に改行
-- 箇条書きの各項目は改行で区切る
-- 読みやすさを重視して適切に改行を入れる
-- 長い文は2〜3文ごとに改行
-
-【絶対禁止 - これをやったら失敗】
-- 参考投稿にない絵文字を勝手に追加する
-- 参考投稿にない「！」を大量に追加
-- 「〜ですね」「〜しましょう」「素晴らしい」「ぜひ」「必見」
-- 参考投稿より熱量を上げる
-- 改行なしで長文を書く
-
-投稿本文のみを出力（説明や前置き不要）。`;
+JSON形式で回答：
+{
+  "lineCount": 数字,
+  "lineRoles": ["フック", "空行", "本題", ...],
+  "punctuation": {"period": 数, "exclamation": 数, "question": 数},
+  "hasEmoji": true/false,
+  "emojiPositions": "なし" または "1行目末、3行目末",
+  "hasBullets": true/false,
+  "bulletStyle": "・" または "なし",
+  "bulletCount": 数字,
+  "specialSymbols": ["→", "↓"] または [],
+  "openingPattern": "〇〇が〜という形式" など,
+  "closingPattern": "〜だ。で終わる" など,
+  "totalLength": 数字,
+  "blockLengths": [50, 30, 80, ...],
+  "originalStructure": "投稿の構造テンプレート（内容を抽象化したもの）"
+}`;
 
   const response = await openai.chat.completions.create({
-    model: "gpt-4o-mini",
+    model: "gpt-4o",
     messages: [
       {
         role: "system",
-        content: `あなたは投稿構造の完コピマシンです。参考投稿の構造パターンを完全にコピーし、内容だけ入れ替えます。
-絵文字は参考投稿に存在する場合のみ使用。参考投稿にない要素は一切追加しない。
-熱量も参考投稿と完全に同じにする。勝手に盛らない。
-【重要】読みやすさのために「。」の後や文の区切りで必ず改行を入れる。`,
+        content: "投稿構造分析の専門家。投稿の構造を詳細に分析し、再現可能な形式で出力する。",
       },
       {
         role: "user",
         content: prompt,
       },
     ],
-    temperature: 0.3, // Lower temperature for more faithful reproduction
-    max_tokens: 600,
+    temperature: 0.1,
+    response_format: { type: "json_object" },
+  });
+
+  return response.choices[0]?.message?.content || "{}";
+}
+
+/**
+ * Generate a post using reference post structure + user's own style
+ * TWO-STEP PROCESS: First analyze structure, then generate with strict adherence
+ */
+export async function generateWithReference(
+  options: GenerateWithReferenceOptions
+): Promise<string> {
+  const { content, referenceText } = options;
+
+  // Step 1: Analyze the reference post structure in detail
+  const structureAnalysis = await analyzeStructureForCopy(referenceText);
+  let structureInfo;
+  try {
+    structureInfo = JSON.parse(structureAnalysis);
+  } catch {
+    structureInfo = {};
+  }
+
+  // Step 2: Generate with EXACT structure matching
+  const prompt = `【超重要】参考投稿の構造を「文字通り完コピ」して、内容だけ入れ替える。
+
+━━━━━━━━━━━━━━━━━━━━
+■ 参考投稿（この構造を完全コピー）
+━━━━━━━━━━━━━━━━━━━━
+${referenceText}
+
+━━━━━━━━━━━━━━━━━━━━
+■ 構造分析結果
+━━━━━━━━━━━━━━━━━━━━
+- 行数: ${structureInfo.lineCount || "不明"}行
+- 各行の役割: ${JSON.stringify(structureInfo.lineRoles || [])}
+- 絵文字: ${structureInfo.hasEmoji ? `あり（位置: ${structureInfo.emojiPositions}）` : "なし→絶対入れるな"}
+- 箇条書き: ${structureInfo.hasBullets ? `あり（${structureInfo.bulletStyle}を${structureInfo.bulletCount}個）` : "なし"}
+- 特殊記号: ${(structureInfo.specialSymbols || []).length > 0 ? structureInfo.specialSymbols.join(", ") : "なし"}
+- 書き出し: ${structureInfo.openingPattern || "不明"}
+- 終わり方: ${structureInfo.closingPattern || "不明"}
+- 文字数目安: ${structureInfo.totalLength || "不明"}文字
+
+━━━━━━━━━━━━━━━━━━━━
+■ 新しい内容（これを上の構造に当てはめる）
+━━━━━━━━━━━━━━━━━━━━
+${content}
+
+━━━━━━━━━━━━━━━━━━━━
+■ 生成ルール【絶対厳守】
+━━━━━━━━━━━━━━━━━━━━
+1. 参考投稿と【同じ行数】で書く
+2. 参考投稿と【同じ改行位置】で改行する
+3. 参考投稿に絵文字が${structureInfo.hasEmoji ? "【ある】→同じ位置に似た絵文字を1つだけ入れる" : "【ない】→絶対に絵文字を入れない"}
+4. 参考投稿に箇条書きが${structureInfo.hasBullets ? `【ある】→「${structureInfo.bulletStyle}」で${structureInfo.bulletCount}項目書く` : "【ない】→箇条書きにしない"}
+5. 参考投稿の書き出しパターン「${structureInfo.openingPattern}」を模倣
+6. 参考投稿の終わり方パターン「${structureInfo.closingPattern}」を模倣
+7. 文字数は参考投稿と同程度（${structureInfo.totalLength || 200}文字前後）
+
+━━━━━━━━━━━━━━━━━━━━
+■ 絶対禁止【これやったら0点】
+━━━━━━━━━━━━━━━━━━━━
+- 参考投稿にない絵文字を追加
+- 参考投稿にない「！」を追加
+- 参考投稿より行数を増やす/減らす
+- 「〜ですね」「〜しましょう」「素晴らしい」「ぜひ」「必見」「驚き」
+- 参考投稿より熱量を上げる
+- 入力内容をそのまま出力（必ず構造に当てはめて変換する）
+
+投稿本文のみを出力。説明不要。`;
+
+  const response = await openai.chat.completions.create({
+    model: "gpt-4o",
+    messages: [
+      {
+        role: "system",
+        content: `あなたは「構造完コピマシン」です。
+
+【あなたの仕事】
+参考投稿の「構造」を完全にコピーし、「内容」だけ入れ替える。
+
+【具体例】
+参考投稿が：
+「〇〇って知ってた？
+
+実は△△なんだよね。
+
+・ポイント1
+・ポイント2
+・ポイント3
+
+これマジで大事。」
+
+なら、生成する投稿も：
+「□□って知ってた？
+
+実は■■なんだよね。
+
+・ポイントA
+・ポイントB
+・ポイントC
+
+これマジで大事。」
+
+という形式になる。構造は完全一致。内容だけ違う。
+
+【絶対ルール】
+- 参考投稿に絵文字がなければ、生成投稿にも絵文字は入れない
+- 参考投稿と同じ行数、同じ改行パターン
+- 参考投稿と同じ句読点パターン
+- AIっぽい言い回し（〜ですね、素晴らしい、ぜひ等）は絶対禁止`,
+      },
+      {
+        role: "user",
+        content: prompt,
+      },
+    ],
+    temperature: 0.2,
+    max_tokens: 800,
   });
 
   const responseContent = response.choices[0]?.message?.content?.trim();
