@@ -1,26 +1,86 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+html {
+  color-scheme: dark;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: #09090b;
+  color: #fafafa;
+  font-family: var(--font-geist-sans), -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  line-height: 1.6;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #27272a;
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #3f3f46;
+}
+
+/* Selection */
+::selection {
+  background: rgba(139, 92, 246, 0.3);
+}
+
+/* Focus */
+:focus-visible {
+  outline: 2px solid rgba(139, 92, 246, 0.5);
+  outline-offset: 2px;
+}
+
+/* CSS Variables for components */
+:root {
+  --muted: #27272a;
+  --muted-foreground: #71717a;
+  --border: #27272a;
+  --card: #18181b;
+  --success: #22c55e;
+  --warning: #eab308;
+  --destructive: #ef4444;
+  --info: #3b82f6;
+}
+
+/* Tier Badges */
+.tier-s {
+  background: linear-gradient(135deg, #fbbf24, #f59e0b);
+  color: #000;
+  font-weight: 700;
+}
+
+.tier-a {
+  background: linear-gradient(135deg, #a78bfa, #8b5cf6);
+  color: #fff;
+  font-weight: 600;
+}
+
+.tier-b {
+  background: linear-gradient(135deg, #60a5fa, #3b82f6);
+  color: #fff;
+  font-weight: 600;
+}
+
+.tier-c {
+  background: #3f3f46;
+  color: #a1a1aa;
 }
