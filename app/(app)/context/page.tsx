@@ -152,20 +152,20 @@ export default function ContextPage() {
     }
   };
 
-  // Add Single Post
+  // Add Single Post - 他者バズ投稿は全部Sティア
   const handleAddPost = async () => {
     if (!user || !manualText.trim()) return;
 
     setIsAdding(true);
     try {
-      const likes = parseInt(manualLikes) || 0;
-      const impressions = parseInt(manualImpressions) || 0;
+      const likes = parseInt(manualLikes) || 200; // Default 200 for S tier
+      const impressions = parseInt(manualImpressions) || 10000;
 
       const newPost = {
         text: manualText.trim(),
         likes,
         impressions,
-        tier: calculateTier(likes),
+        tier: "S" as const, // 他者バズ投稿は全部Sティア
         category: manualCategory,
         source: "manual",
         createdAt: new Date().toISOString(),
@@ -195,7 +195,8 @@ export default function ContextPage() {
     return text.replace(/\s+/g, " ").trim().toLowerCase();
   };
 
-  // CSV Import with AI categorization and duplicate prevention
+  // Excel/CSV Import - find all cells with 30+ characters as posts
+  // All imported posts are S tier (バズ投稿)
   const handleCSVImport = async () => {
     if (!user || !csvFile) return;
 
@@ -203,63 +204,57 @@ export default function ContextPage() {
     setImportProgress(0);
 
     try {
-      const text = await csvFile.text();
-      const lines = text.split("\n");
-      const header = lines[0].toLowerCase();
+      // Dynamic import of xlsx library
+      const XLSX = await import("xlsx");
 
-      // Find column indices
-      const cols = header.split(",").map(c => c.trim().replace(/"/g, ""));
-      const textIdx = cols.findIndex(c => c.includes("本文") || c.includes("text") || c.includes("ポスト"));
-      const likesIdx = cols.findIndex(c => c.includes("いいね") || c.includes("like"));
-      const impressionsIdx = cols.findIndex(c => c.includes("インプレッション") || c.includes("impression"));
-
-      if (textIdx === -1) {
-        throw new Error("投稿本文のカラムが見つかりません");
-      }
+      const arrayBuffer = await csvFile.arrayBuffer();
+      const workbook = XLSX.read(arrayBuffer, { type: "array" });
 
       // Create set of existing post texts for duplicate checking
       const existingTexts = new Set(posts.map(p => normalizeText(p.text)));
+      const foundTexts: string[] = [];
 
-      const rawPosts: { text: string; likes: number; impressions: number }[] = [];
+      setImportProgress(20);
 
-      for (let i = 1; i < lines.length; i++) {
-        const line = lines[i].trim();
-        if (!line || line.includes("@")) continue; // Skip empty lines and replies
+      // Iterate through all sheets
+      for (const sheetName of workbook.SheetNames) {
+        const sheet = workbook.Sheets[sheetName];
+        if (!sheet) continue;
 
-        // Parse CSV line properly
-        const values: string[] = [];
-        let current = "";
-        let inQuotes = false;
+        // Get range of cells
+        const range = XLSX.utils.decode_range(sheet["!ref"] || "A1");
 
-        for (const char of line) {
-          if (char === '"') {
-            inQuotes = !inQuotes;
-          } else if (char === "," && !inQuotes) {
-            values.push(current.trim());
-            current = "";
-          } else {
-            current += char;
+        // Iterate through all cells
+        for (let row = range.s.r; row <= range.e.r; row++) {
+          for (let col = range.s.c; col <= range.e.c; col++) {
+            const cellAddress = XLSX.utils.encode_cell({ r: row, c: col });
+            const cell = sheet[cellAddress];
+
+            if (cell && cell.v) {
+              const cellValue = String(cell.v).trim();
+
+              // Check if cell has 30+ characters (potential post)
+              if (cellValue.length >= 30) {
+                // Skip if it looks like a URL only
+                if (cellValue.startsWith("http") && !cellValue.includes(" ")) continue;
+                // Skip if it's a reply (starts with @)
+                if (cellValue.startsWith("@")) continue;
+                // Skip duplicates
+                if (existingTexts.has(normalizeText(cellValue))) continue;
+                // Skip if already found
+                if (foundTexts.some(t => normalizeText(t) === normalizeText(cellValue))) continue;
+
+                foundTexts.push(cellValue);
+              }
+            }
           }
         }
-        values.push(current.trim());
-
-        const postText = values[textIdx]?.replace(/^"|"$/g, "");
-        if (!postText) continue;
-
-        // Skip duplicates
-        if (existingTexts.has(normalizeText(postText))) {
-          continue;
-        }
-
-        const likes = parseInt(values[likesIdx]) || 0;
-        const impressions = parseInt(values[impressionsIdx]) || 0;
-
-        rawPosts.push({ text: postText, likes, impressions });
-        setImportProgress(Math.round((i / lines.length) * 50)); // First 50% for parsing
       }
 
-      if (rawPosts.length === 0) {
-        throw new Error("インポートできる新しい投稿が見つかりませんでした（すべて重複）");
+      setImportProgress(50);
+
+      if (foundTexts.length === 0) {
+        throw new Error("30文字以上のテキストが見つかりませんでした");
       }
 
       // Call AI categorization API
@@ -268,7 +263,7 @@ export default function ContextPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          posts: rawPosts.map((p, idx) => ({ id: String(idx), text: p.text })),
+          posts: foundTexts.map((text, idx) => ({ id: String(idx), text })),
         }),
       });
 
@@ -279,14 +274,14 @@ export default function ContextPage() {
       const { categories: categoryResults } = await categorizeResponse.json();
       setImportProgress(85);
 
-      // Create posts with AI-determined categories
-      const newPosts = rawPosts.map((post, idx) => ({
-        text: post.text,
-        likes: post.likes,
-        impressions: post.impressions,
-        tier: calculateTier(post.likes),
+      // Create posts - ALL S tier since these are バズ投稿
+      const newPosts = foundTexts.map((text, idx) => ({
+        text,
+        likes: 200, // Default high likes for S tier
+        impressions: 10000,
+        tier: "S" as const, // 他者バズ投稿は全部Sティア
         category: categoryResults[String(idx)] || "日常・つぶやき系",
-        source: "csv",
+        source: "excel",
         createdAt: new Date().toISOString(),
       }));
 
@@ -301,7 +296,7 @@ export default function ContextPage() {
       setImportProgress(100);
 
       // Show success message
-      alert(`${newPosts.length}件の投稿をインポートしました（AIがカテゴリを自動分類）`);
+      alert(`${newPosts.length}件のバズ投稿をSティアとしてインポートしました`);
     } catch (error) {
       console.error("Failed to import:", error);
       alert(error instanceof Error ? error.message : "インポートに失敗しました");
@@ -327,6 +322,36 @@ export default function ContextPage() {
     navigator.clipboard.writeText(text);
     setCopiedId(id);
     setTimeout(() => setCopiedId(null), 2000);
+  };
+
+  // Reset all context posts
+  const handleResetPosts = async () => {
+    if (!user) return;
+
+    const confirmed = window.confirm(
+      "本当にすべての他者バズ投稿を削除しますか？\n\nこの操作は取り消せません。Googleアカウントに紐づいているすべての他者バズ投稿データが完全に削除されます。"
+    );
+
+    if (!confirmed) return;
+
+    // Double confirmation
+    const doubleConfirmed = window.confirm(
+      "最終確認：本当に削除してよろしいですか？"
+    );
+
+    if (!doubleConfirmed) return;
+
+    setIsLoading(true);
+    try {
+      await clearContextPosts(user.uid);
+      setPosts([]);
+      alert("すべての他者バズ投稿を削除しました");
+    } catch (error) {
+      console.error("Failed to reset posts:", error);
+      alert("削除に失敗しました");
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   // Filter posts
@@ -371,13 +396,25 @@ export default function ContextPage() {
             他アカウントのバズ投稿を追加して、構造を参考にAI生成
           </p>
         </div>
-        <button
-          onClick={() => setShowAddModal(true)}
-          className="flex items-center gap-2 px-5 py-3 bg-emerald-500 text-white font-semibold rounded-xl hover:bg-emerald-600 transition-colors shadow-lg shadow-emerald-500/25"
-        >
-          <Plus className="w-5 h-5" />
-          投稿を追加
-        </button>
+        <div className="flex items-center gap-3">
+          {posts.length > 0 && (
+            <button
+              onClick={handleResetPosts}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-zinc-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+              title="すべての投稿を削除"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              リセット
+            </button>
+          )}
+          <button
+            onClick={() => setShowAddModal(true)}
+            className="flex items-center gap-2 px-5 py-3 bg-emerald-500 text-white font-semibold rounded-xl hover:bg-emerald-600 transition-colors shadow-lg shadow-emerald-500/25"
+          >
+            <Plus className="w-5 h-5" />
+            投稿を追加
+          </button>
+        </div>
       </div>
 
       {/* Stats */}
@@ -532,10 +569,10 @@ export default function ContextPage() {
 
       {/* Add Modal */}
       {showAddModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center">
-          <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setShowAddModal(false)} />
+        <div className="fixed inset-0 z-50 flex items-start justify-center pt-20 overflow-y-auto">
+          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setShowAddModal(false)} />
 
-          <div className="relative w-full max-w-2xl bg-white rounded-2xl shadow-xl mx-4 max-h-[90vh] overflow-hidden flex flex-col">
+          <div className="relative w-full max-w-2xl bg-white rounded-2xl shadow-xl mx-4 mb-20 overflow-hidden flex flex-col">
             {/* Modal Header */}
             <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-200">
               <h2 className="text-xl font-semibold text-zinc-900">バズ投稿を追加</h2>
@@ -704,15 +741,15 @@ export default function ContextPage() {
                   </div>
 
                   {/* Import Info */}
-                  <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl">
+                  <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-xl">
                     <div className="flex items-start gap-3">
-                      <AlertCircle className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
-                      <div className="text-sm text-amber-800">
-                        <p className="font-medium mb-1">CSVの必須カラム:</p>
+                      <CheckCircle2 className="w-5 h-5 text-emerald-600 flex-shrink-0 mt-0.5" />
+                      <div className="text-sm text-emerald-800">
+                        <p className="font-medium mb-1">自動インポート</p>
                         <ul className="list-disc list-inside space-y-0.5">
-                          <li>ポスト本文（または「text」）</li>
-                          <li>いいね（または「likes」）- オプション</li>
-                          <li>インプレッション数 - オプション</li>
+                          <li>30文字以上のセルを自動で投稿として認識</li>
+                          <li>複数シートにも対応</li>
+                          <li>全てSティアとしてインポート</li>
                         </ul>
                         <p className="mt-2">AIが自動でカテゴリーを判定します</p>
                       </div>

@@ -337,6 +337,19 @@ export const clearContextPosts = async (userId: string) => {
   }
 };
 
+// Clear all posts (過去投稿一覧)
+export const clearPosts = async (userId: string) => {
+  try {
+    const postsRef = collection(db, "users", userId, "posts");
+    const snapshot = await getDocs(postsRef);
+    const deletePromises = snapshot.docs.map((doc) => deleteDoc(doc.ref));
+    await Promise.all(deletePromises);
+  } catch (error) {
+    console.error("Clear posts error:", error);
+    throw error;
+  }
+};
+
 // Firestore functions - Drafts
 export const saveDraft = async (userId: string, draft: any) => {
   try {

@@ -21,6 +21,8 @@ import {
   Loader2,
   RotateCcw,
   Settings,
+  Pencil,
+  Image as ImageIcon,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 import { saveScheduledPost, getArticlePatterns, initializeArticlePatterns, ArticlePattern, DEFAULT_ARTICLE_PATTERNS } from "@/lib/firebase";
@@ -507,22 +509,60 @@ export default function ExternalPage() {
             key={article.id}
             className="group bg-white border border-zinc-200 rounded-2xl overflow-hidden hover:shadow-lg transition-all"
           >
-            {/* OG Image */}
-            {article.imageUrl && (
-              <div className="relative aspect-[1.91/1] bg-zinc-100 overflow-hidden">
+            {/* OG Image - Clickable */}
+            <a
+              href={article.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="block relative aspect-[1.91/1] bg-gradient-to-br from-zinc-100 to-zinc-200 overflow-hidden cursor-pointer"
+            >
+              {article.imageUrl ? (
                 <img
                   src={article.imageUrl}
                   alt={article.title}
-                  className="w-full h-full object-cover"
+                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                   onError={(e) => {
-                    (e.target as HTMLImageElement).style.display = "none";
+                    (e.target as HTMLImageElement).src = `https://via.placeholder.com/600x314/f4f4f5/a1a1aa?text=${encodeURIComponent(article.source === "qiita" ? "Qiita" : "Zenn")}`;
                   }}
                 />
+              ) : (
+                <div className="w-full h-full flex items-center justify-center">
+                  <div className="text-center">
+                    <FileText className="w-12 h-12 text-zinc-300 mx-auto mb-2" />
+                    <span className="text-sm text-zinc-400">{sourceConfig[article.source].name}</span>
+                  </div>
+                </div>
+              )}
+              {/* Hover overlay */}
+              <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors flex items-center justify-center opacity-0 group-hover:opacity-100">
+                <span className="px-3 py-1.5 bg-white/90 rounded-lg text-sm font-medium text-zinc-700">
+                  記事を開く
+                </span>
               </div>
-            )}
+              {/* Copy image button */}
+              {article.imageUrl && (
+                <button
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    navigator.clipboard.writeText(article.imageUrl!);
+                    alert("画像URLをコピーしました");
+                  }}
+                  className="absolute bottom-2 right-2 p-2 bg-black/60 rounded-lg text-white opacity-0 group-hover:opacity-100 transition-opacity hover:bg-black/80"
+                  title="画像URLをコピー"
+                >
+                  <ImageIcon className="w-4 h-4" />
+                </button>
+              )}
+            </a>
 
-            {/* Article Header */}
-            <div className="p-5">
+            {/* Article Header - Clickable */}
+            <a
+              href={article.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="block p-5 hover:bg-zinc-50 transition-colors"
+            >
               <div className="flex items-start justify-between gap-3 mb-3">
                 <div className="flex items-center gap-2">
                   <span className={`px-2.5 py-1 text-xs font-medium rounded-lg border ${sourceConfig[article.source].color}`}>
@@ -534,7 +574,7 @@ export default function ExternalPage() {
                   </span>
                 </div>
                 <button
-                  onClick={() => toggleSave(article.id)}
+                  onClick={(e) => { e.preventDefault(); e.stopPropagation(); toggleSave(article.id); }}
                   className={`p-2 rounded-lg transition-all ${
                     article.saved
                       ? "bg-amber-100 text-amber-600"
@@ -545,14 +585,14 @@ export default function ExternalPage() {
                 </button>
               </div>
 
-              <h3 className="text-lg font-semibold text-zinc-900 leading-snug mb-2 line-clamp-2">
+              <h3 className="text-lg font-semibold text-zinc-900 leading-snug mb-2 line-clamp-2 group-hover:text-emerald-600 transition-colors">
                 {article.title}
               </h3>
 
               <p className="text-sm text-zinc-500 leading-relaxed line-clamp-3">
                 {article.description}
               </p>
-            </div>
+            </a>
 
             {/* Tags */}
             <div className="px-5 py-3 border-t border-zinc-100 bg-zinc-50">
@@ -575,24 +615,14 @@ export default function ExternalPage() {
               </div>
             </div>
 
-            {/* Action Buttons */}
-            <div className="p-4 flex items-center justify-between border-t border-zinc-100 bg-zinc-50">
-              <a
-                href={article.url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-zinc-600 hover:text-zinc-900 bg-white border border-zinc-200 rounded-lg hover:bg-zinc-100 transition-colors"
-              >
-                <ExternalLink className="w-4 h-4" />
-                記事を読む
-              </a>
-
+            {/* Action Button - Generate Only */}
+            <div className="p-4 border-t border-zinc-100 bg-zinc-50">
               <button
                 onClick={() => handleGenerateFromArticle(article)}
-                className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-emerald-600 bg-emerald-50 border border-emerald-200 rounded-lg hover:bg-emerald-100 transition-colors"
+                className="w-full flex items-center justify-center gap-1.5 px-4 py-2.5 text-sm font-medium text-white bg-emerald-500 rounded-lg hover:bg-emerald-600 transition-colors"
               >
                 <Sparkles className="w-4 h-4" />
-                AIで生成
+                AIで投稿を生成
               </button>
             </div>
           </div>
@@ -760,35 +790,21 @@ export default function ExternalPage() {
                               ) : (
                                 <>
                                   <Copy className="w-4 h-4" />
-                                  1投稿目
+                                  コピー
                                 </>
                               )}
                             </button>
-                            {pattern.threadPost && (
-                              <button
-                                onClick={() => handleCopyThread(pattern.id, pattern.threadPost)}
-                                className="flex-1 flex items-center justify-center gap-1.5 py-2.5 text-sm font-medium text-blue-600 hover:bg-blue-50 transition-colors"
-                              >
-                                {copiedId === pattern.id + 100 ? (
-                                  <>
-                                    <CheckCircle2 className="w-4 h-4 text-emerald-500" />
-                                    <span className="text-emerald-600">済</span>
-                                  </>
-                                ) : (
-                                  <>
-                                    <Copy className="w-4 h-4" />
-                                    2投稿目
-                                  </>
-                                )}
-                              </button>
-                            )}
-                          </div>
-                          {/* Action buttons row */}
-                          <div className="flex">
+                            <Link
+                              href={`/compose/editor?text=${encodeURIComponent(pattern.text)}${pattern.threadPost ? "&thread=true" : ""}`}
+                              className="flex-1 flex items-center justify-center gap-1.5 py-2.5 text-sm font-medium text-emerald-600 hover:bg-emerald-50 transition-colors border-r border-zinc-100"
+                            >
+                              <Pencil className="w-4 h-4" />
+                              編集
+                            </Link>
                             <button
                               onClick={() => handleSchedule(pattern.id, pattern.text, pattern.threadPost)}
                               disabled={schedulingId === pattern.id}
-                              className="flex-1 flex items-center justify-center gap-1.5 py-2.5 text-sm font-medium text-violet-600 hover:bg-violet-50 transition-colors border-r border-zinc-100 disabled:opacity-50"
+                              className="flex-1 flex items-center justify-center gap-1.5 py-2.5 text-sm font-medium text-violet-600 hover:bg-violet-50 transition-colors disabled:opacity-50"
                             >
                               {schedulingId === pattern.id ? (
                                 <Loader2 className="w-4 h-4 animate-spin" />
@@ -797,12 +813,15 @@ export default function ExternalPage() {
                               )}
                               予約
                             </button>
+                          </div>
+                          {/* Post button row */}
+                          <div className="flex">
                             <button
                               onClick={() => handlePost(pattern.text, pattern.threadPost)}
                               className="flex-1 flex items-center justify-center gap-1.5 py-2.5 text-sm font-medium text-zinc-900 hover:bg-zinc-100 transition-colors"
                             >
                               <ExternalLink className="w-4 h-4" />
-                              投稿
+                              Xでポストする
                             </button>
                           </div>
                         </div>

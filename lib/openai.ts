@@ -464,79 +464,71 @@ interface GenerateWithReferenceOptions {
 
 /**
  * Generate a post using reference post structure + user's own style
+ * STRICT MODE: Copy structure EXACTLY, only change the content/topic
  */
 export async function generateWithReference(
   options: GenerateWithReferenceOptions
 ): Promise<string> {
   const { content, referenceText, category, userStyle } = options;
 
-  // Build user style section if available
-  const userStyleSection = userStyle
-    ? `
-【ユーザーの口調・スタイル（必ず適用）】
-${userStyle}
+  // Analyze reference post structure
+  const refHasEmoji = /[\u{1F300}-\u{1F9FF}]/u.test(referenceText);
+  const refLineCount = referenceText.split("\n").filter(l => l.trim()).length;
+  const refHasBullets = referenceText.includes("・") || referenceText.includes("・");
+  const refHasArrow = referenceText.includes("→") || referenceText.includes("👇") || referenceText.includes("↓");
 
-上記のユーザースタイルを必ず適用してください。ユーザーが絵文字を使っていれば絵文字を使い、使っていなければ使わない。`
-    : "";
+  const prompt = `【構造完コピ生成】参考投稿の構造を「マジで完コピ」して、内容だけ入れ替えてください。
 
-  const prompt = `X（Twitter）用の投稿を作成してください。
+■ 参考投稿（この構造を参考にする）：
+"""
+${referenceText}
+"""
 
-【最重要 - 入力コンテンツを必ず使う】
-以下の入力コンテンツの情報・要点を必ず投稿に含めてください。
-入力コンテンツの内容が投稿の主題です。
-
-入力コンテンツ：
+■ 新しい内容（これを上記の構造に当てはめる）：
 """
 ${content}
 """
 
-【参考投稿の構造を完全に模倣】
-参考投稿の構造を100%コピーしてください：
-- 文の区切り方、改行の位置
-- 段落の数と長さ
-- 箇条書きがあれば同じ形式で（「・」を使用）
-- 書き出し方のパターン
-- 結び方のパターン
+【完コピルール - 絶対厳守】
+1. 参考投稿の構造パターン（導入→本題→結論など）を完全にコピー
+2. 参考投稿に絵文字が${refHasEmoji ? "ある→同じ位置に同種の絵文字を入れる" : "ない→絶対に絵文字を入れない"}
+3. 参考投稿に箇条書きが${refHasBullets ? "ある→同じ形式（「・」）で箇条書きにする" : "ない→箇条書きにしない"}
+4. 参考投稿に矢印/誘導が${refHasArrow ? "ある→同じ位置に同じ記号を入れる" : "ない→入れない"}
+5. 書き出しの形式を完全にコピー（「〇〇が〜」で始まるなら同じ形式で）
+6. 終わり方の形式を完全にコピー
 
-参考投稿（この構造を完全にコピー）：
-"""
-${referenceText}
-"""
-${userStyleSection}
+【改行ルール - 必須】
+- 文の区切りで必ず改行を入れる
+- 「。」の後は基本的に改行
+- 箇条書きの各項目は改行で区切る
+- 読みやすさを重視して適切に改行を入れる
+- 長い文は2〜3文ごとに改行
 
-${category ? `カテゴリー：${category}` : ""}
+【絶対禁止 - これをやったら失敗】
+- 参考投稿にない絵文字を勝手に追加する
+- 参考投稿にない「！」を大量に追加
+- 「〜ですね」「〜しましょう」「素晴らしい」「ぜひ」「必見」
+- 参考投稿より熱量を上げる
+- 改行なしで長文を書く
 
-【生成ルール】
-1. 入力コンテンツの情報を投稿の中心にする（これが最も重要）
-2. 参考投稿の「構造・フォーマット」を完全にコピーする
-3. ユーザースタイルがあれば、そのスタイル（絵文字・口調）を適用
-4. ユーザースタイルがなければ、参考投稿のスタイルを使う
-
-【絶対禁止】
-- 「〜ですね」「〜しましょう」「〜してみてください」
-- 「素晴らしい」「驚くべき」「画期的」「ぜひ」「必見」
-- 入力コンテンツと関係ない内容を書く
-- ユーザースタイルを無視する
-
-投稿本文のみを出力。`;
-
-  const systemPrompt = userStyle
-    ? `あなたはX投稿を作成するライターです。【最重要】入力コンテンツの情報を必ず投稿に含める。参考投稿の構造を完全にコピーし、ユーザーの口調・スタイルを適用する。AIっぽい表現は絶対禁止。`
-    : `あなたはX投稿を作成するライターです。【最重要】入力コンテンツの情報を必ず投稿に含める。参考投稿からは構造・フォーマットだけを借りる。絵文字は参考投稿にある場合のみ。AIっぽい表現は絶対禁止。淡々と事実を書く。`;
+投稿本文のみを出力（説明や前置き不要）。`;
 
   const response = await openai.chat.completions.create({
     model: "gpt-4o-mini",
     messages: [
       {
         role: "system",
-        content: systemPrompt,
+        content: `あなたは投稿構造の完コピマシンです。参考投稿の構造パターンを完全にコピーし、内容だけ入れ替えます。
+絵文字は参考投稿に存在する場合のみ使用。参考投稿にない要素は一切追加しない。
+熱量も参考投稿と完全に同じにする。勝手に盛らない。
+【重要】読みやすさのために「。」の後や文の区切りで必ず改行を入れる。`,
       },
       {
         role: "user",
         content: prompt,
       },
     ],
-    temperature: 0.4,
+    temperature: 0.3, // Lower temperature for more faithful reproduction
     max_tokens: 600,
   });
 

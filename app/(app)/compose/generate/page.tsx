@@ -53,6 +53,8 @@ interface GeneratedCard {
   error?: string;
 }
 
+type PostSource = "myPosts" | "othersPosts";
+
 export default function GeneratePage() {
   const router = useRouter();
   const { user } = useAuth();
@@ -60,7 +62,11 @@ export default function GeneratePage() {
   const [content, setContent] = useState("");
   const [isContentExpanded, setIsContentExpanded] = useState(false);
 
-  // Reference posts from contextPosts ONLY (他者バズ投稿)
+  // Source toggle: 過去投稿一覧 (myPosts) or 他者バズ投稿 (othersPosts)
+  const [postSource, setPostSource] = useState<PostSource>("myPosts");
+
+  // Reference posts from both sources
+  const [myReferencePosts, setMyReferencePosts] = useState<ReferencePost[]>([]);
   const [contextReferencePosts, setContextReferencePosts] = useState<ReferencePost[]>([]);
   // User's own style (learned from their posts)
   const [userStyle, setUserStyle] = useState<string>("");
@@ -83,21 +89,20 @@ export default function GeneratePage() {
     }
   }, []);
 
-  // Load reference posts from contextPosts ONLY (他者バズ投稿)
-  // AND learn user style from their own posts
+  // Load reference posts from BOTH sources
   useEffect(() => {
     const loadPosts = async () => {
       if (!user) return;
       setIsLoadingPosts(true);
       try {
-        // Load SEPARATELY - contextPosts for reference, userPosts for style learning
+        // Load BOTH - userPosts for reference AND style, contextPosts for reference
         const [contextPosts, userPosts] = await Promise.all([
           getContextPosts(user.uid),
           getPosts(user.uid),
         ]);
 
-        // === REFERENCE POSTS: ONLY from contextPosts (他者バズ投稿) ===
-        const refPosts = contextPosts
+        // === REFERENCE POSTS FROM 他者バズ投稿 (contextPosts) ===
+        const ctxRefPosts = contextPosts
           .filter((p: any) => p.tier === "S" || p.tier === "A")
           .map((p: any) => ({
             id: p.id,
@@ -107,35 +112,33 @@ export default function GeneratePage() {
             category: p.category || "日常・つぶやき系",
           }))
           .sort((a, b) => b.likes - a.likes);
+        setContextReferencePosts(ctxRefPosts);
 
-        setContextReferencePosts(refPosts);
-
-        // Count posts by category for selection UI
-        const categoryCounts: Record<string, number> = {};
-        refPosts.forEach(p => {
-          categoryCounts[p.category] = (categoryCounts[p.category] || 0) + 1;
-        });
-
-        const cats = Object.entries(categoryCounts)
-          .map(([name, count]) => ({ name, count }))
-          .sort((a, b) => b.count - a.count);
-        setAvailableCategories(cats);
+        // === REFERENCE POSTS FROM 過去投稿一覧 (userPosts) ===
+        const myRefPosts = userPosts
+          .filter((p: any) => p.tier === "S" || p.tier === "A")
+          .map((p: any) => ({
+            id: p.id,
+            text: p.text,
+            likes: p.likes || 0,
+            tier: p.tier as "S" | "A" | "B" | "C",
+            category: p.category || "日常・つぶやき系",
+          }))
+          .sort((a, b) => b.likes - a.likes);
+        setMyReferencePosts(myRefPosts);
 
         // === USER STYLE: Learn from their OWN posts ===
         if (userPosts.length > 0) {
-          // Analyze user's top posts for style patterns
           const topUserPosts = userPosts
             .filter((p: any) => p.tier === "S" || p.tier === "A")
             .slice(0, 10)
             .map((p: any) => p.text);
 
           if (topUserPosts.length > 0) {
-            // Extract style characteristics
             const hasEmoji = topUserPosts.some((t: string) => /[\u{1F300}-\u{1F9FF}]/u.test(t));
             const avgLength = Math.round(topUserPosts.reduce((acc: number, t: string) => acc + t.length, 0) / topUserPosts.length);
             const usesExclamation = topUserPosts.filter((t: string) => t.includes("！")).length > topUserPosts.length / 2;
 
-            // Build style description for AI
             let styleDesc = "";
             if (hasEmoji) styleDesc += "絵文字を適度に使用。";
             else styleDesc += "絵文字は使用しない。";
@@ -143,7 +146,6 @@ export default function GeneratePage() {
             else styleDesc += "落ち着いた口調。";
             styleDesc += `平均${avgLength}文字程度。`;
 
-            // Sample actual phrases from user's posts
             const samplePhrases = topUserPosts.slice(0, 3).join("\n---\n");
             setUserStyle(`${styleDesc}\n\n【ユーザーの実際の投稿例】\n${samplePhrases}`);
           }
@@ -158,10 +160,37 @@ export default function GeneratePage() {
     loadPosts();
   }, [user]);
 
+  // Update category counts when source changes
+  useEffect(() => {
+    const refPosts = postSource === "myPosts" ? myReferencePosts : contextReferencePosts;
+
+    const categoryCounts: Record<string, number> = {};
+    CATEGORIES.forEach(cat => {
+      categoryCounts[cat] = 0;
+    });
+    refPosts.forEach(p => {
+      if (categoryCounts[p.category] !== undefined) {
+        categoryCounts[p.category] = (categoryCounts[p.category] || 0) + 1;
+      }
+    });
+
+    const cats = CATEGORIES.map(name => ({
+      name,
+      count: categoryCounts[name] || 0,
+    })).sort((a, b) => b.count - a.count);
+    setAvailableCategories(cats);
+
+    // Reset selected category when source changes
+    setSelectedCategory("");
+  }, [postSource, myReferencePosts, contextReferencePosts]);
+
+  // Get active reference posts based on source selection
+  const activeReferencePosts = postSource === "myPosts" ? myReferencePosts : contextReferencePosts;
+
   // Get filtered reference posts for selected category
   const getFilteredReferencePosts = () => {
     if (!selectedCategory) return [];
-    return contextReferencePosts
+    return activeReferencePosts
       .filter(p => p.category === selectedCategory)
       .slice(0, 6); // Top 6 from this category
   };
@@ -171,10 +200,18 @@ export default function GeneratePage() {
     if (!content.trim() || !selectedCategory) return;
 
     // Get top 6 posts from selected category
-    const categoryPosts = getFilteredReferencePosts();
+    let categoryPosts = getFilteredReferencePosts();
+
+    // If no posts in this category, use all S/A tier posts from selected source
+    if (categoryPosts.length === 0) {
+      categoryPosts = activeReferencePosts.slice(0, 6);
+    }
 
     if (categoryPosts.length === 0) {
-      alert("選択したカテゴリーに参考投稿がありません。他のカテゴリーを選んでください。");
+      alert(postSource === "myPosts"
+        ? "参考投稿がありません。過去投稿をインポートしてください。"
+        : "参考投稿がありません。他者バズ投稿を追加してください。"
+      );
       return;
     }
 
@@ -387,10 +424,50 @@ export default function GeneratePage() {
       {/* Category Selection (if not yet generated) */}
       {!hasGenerated && (
         <div className="bg-white rounded-xl border border-zinc-200 shadow-sm mb-6 p-6">
+          {/* Source Toggle */}
+          <div className="flex items-center justify-between mb-6">
+            <div className="flex items-center gap-2">
+              <Tag className="w-5 h-5 text-emerald-600" />
+              <h3 className="font-semibold text-zinc-900">参考投稿ソース</h3>
+            </div>
+            <div className="flex items-center p-1 bg-zinc-100 rounded-xl">
+              <button
+                onClick={() => setPostSource("myPosts")}
+                className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                  postSource === "myPosts"
+                    ? "bg-white text-emerald-700 shadow-sm"
+                    : "text-zinc-500 hover:text-zinc-700"
+                }`}
+              >
+                過去投稿一覧
+              </button>
+              <button
+                onClick={() => setPostSource("othersPosts")}
+                className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                  postSource === "othersPosts"
+                    ? "bg-white text-emerald-700 shadow-sm"
+                    : "text-zinc-500 hover:text-zinc-700"
+                }`}
+              >
+                他者バズ投稿
+              </button>
+            </div>
+          </div>
+
+          {/* Source Info */}
+          <div className={`mb-4 p-3 rounded-lg ${
+            postSource === "myPosts" ? "bg-blue-50 border border-blue-100" : "bg-violet-50 border border-violet-100"
+          }`}>
+            <p className={`text-sm ${postSource === "myPosts" ? "text-blue-700" : "text-violet-700"}`}>
+              {postSource === "myPosts"
+                ? `📝 あなたの過去投稿（S/A tier）から構造を参考にします（${myReferencePosts.length}件）`
+                : `🌟 他者のバズ投稿（S/A tier）から構造を参考にします（${contextReferencePosts.length}件）`
+              }
+            </p>
+          </div>
+
           <div className="flex items-center gap-2 mb-4">
-            <Tag className="w-5 h-5 text-emerald-600" />
-            <h3 className="font-semibold text-zinc-900">カテゴリーを選択</h3>
-            <span className="text-sm text-zinc-500">（他者バズ投稿から）</span>
+            <h4 className="font-medium text-zinc-700">カテゴリーを選択</h4>
           </div>
 
           {isLoadingPosts ? (
@@ -398,11 +475,14 @@ export default function GeneratePage() {
               <Loader2 className="w-6 h-6 animate-spin text-emerald-500" />
               <span className="ml-2 text-zinc-500">読み込み中...</span>
             </div>
-          ) : availableCategories.length === 0 ? (
+          ) : activeReferencePosts.length === 0 ? (
             <div className="text-center py-8 text-zinc-500">
-              <p>他者バズ投稿がありません</p>
-              <Link href="/context" className="text-emerald-600 hover:underline mt-2 inline-block">
-                他者バズ投稿を追加する
+              <p>{postSource === "myPosts" ? "過去投稿（S/A tier）がありません" : "他者バズ投稿がありません"}</p>
+              <Link
+                href={postSource === "myPosts" ? "/import" : "/context"}
+                className="text-emerald-600 hover:underline mt-2 inline-block"
+              >
+                {postSource === "myPosts" ? "過去投稿をインポートする" : "他者バズ投稿を追加する"}
               </Link>
             </div>
           ) : (
@@ -432,7 +512,7 @@ export default function GeneratePage() {
           {selectedCategory && (
             <div className="mt-4 p-4 bg-zinc-50 rounded-xl">
               <p className="text-sm font-medium text-zinc-700 mb-2">
-                「{selectedCategory}」の上位投稿で6パターン生成
+                「{selectedCategory}」の{postSource === "myPosts" ? "あなたの" : ""}上位投稿で6パターン生成
               </p>
               <div className="space-y-2">
                 {getFilteredReferencePosts().slice(0, 3).map((post, idx) => (

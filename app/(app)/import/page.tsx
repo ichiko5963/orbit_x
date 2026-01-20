@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import {
   Upload,
   FileText,
@@ -13,6 +13,7 @@ import {
   Info,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
+import { useImport } from "@/lib/import-context";
 
 interface ProcessStep {
   name: string;
@@ -46,21 +47,18 @@ const tiers = [
 
 export default function ImportPage() {
   const { user } = useAuth();
+  const { progress, startImport, resetImport } = useImport();
   const [file, setFile] = useState<File | null>(null);
   const [isDragging, setIsDragging] = useState(false);
-  const [isProcessing, setIsProcessing] = useState(false);
-  const [currentStep, setCurrentStep] = useState(-1);
-  const [completedSteps, setCompletedSteps] = useState<number[]>([]);
-  const [error, setError] = useState<string | null>(null);
-  const [filteredCount, setFilteredCount] = useState(0);
-  const [result, setResult] = useState<{
-    total: number;
-    tierS: number;
-    tierA: number;
-    tierB: number;
-    tierC: number;
-    categories: number;
-  } | null>(null);
+  const [localError, setLocalError] = useState<string | null>(null);
+
+  // Sync file with progress state
+  useEffect(() => {
+    if (progress.fileName && !file) {
+      // Import is running but page was navigated away and back
+      // We don't have the file reference anymore, but we can show progress
+    }
+  }, [progress.fileName, file]);
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -77,9 +75,9 @@ export default function ImportPage() {
     const droppedFile = e.dataTransfer.files[0];
     if (droppedFile?.name.endsWith(".csv")) {
       setFile(droppedFile);
-      setError(null);
+      setLocalError(null);
     } else {
-      setError("CSVファイルのみアップロード可能です");
+      setLocalError("CSVファイルのみアップロード可能です");
     }
   }, []);
 
@@ -87,93 +85,36 @@ export default function ImportPage() {
     const selectedFile = e.target.files?.[0];
     if (selectedFile) {
       setFile(selectedFile);
-      setError(null);
+      setLocalError(null);
     }
   };
 
   const handleRemoveFile = () => {
     setFile(null);
-    setCompletedSteps([]);
-    setCurrentStep(-1);
-    setResult(null);
-    setError(null);
-    setFilteredCount(0);
+    setLocalError(null);
+    resetImport();
   };
 
   const handleImport = async () => {
     if (!file || !user) return;
-
-    setIsProcessing(true);
-    setCompletedSteps([]);
-    setError(null);
-    setResult(null);
-    setFilteredCount(0);
-
-    try {
-      // Step 0: ファイル読み込み
-      setCurrentStep(0);
-
-      // @を含む行をフィルタリング
-      const text = await file.text();
-      const lines = text.split("\n");
-      const header = lines[0];
-      let filtered = 0;
-      const filteredLines = [header];
-
-      for (let i = 1; i < lines.length; i++) {
-        if (lines[i].includes("@")) {
-          filtered++;
-        } else if (lines[i].trim()) {
-          filteredLines.push(lines[i]);
-        }
-      }
-
-      setFilteredCount(filtered);
-
-      await new Promise((resolve) => setTimeout(resolve, 500));
-      setCompletedSteps((prev) => [...prev, 0]);
-
-      // Step 1: データ検証
-      setCurrentStep(1);
-      const filteredCsv = filteredLines.join("\n");
-      const blob = new Blob([filteredCsv], { type: "text/csv" });
-      const filteredFile = new File([blob], file.name, { type: "text/csv" });
-
-      const formData = new FormData();
-      formData.append("file", filteredFile);
-      formData.append("userId", user.uid);
-
-      const response = await fetch("/api/import", {
-        method: "POST",
-        body: formData,
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error || "インポートに失敗しました");
-      }
-
-      setCompletedSteps((prev) => [...prev, 1]);
-
-      // Step 2-5: AI処理のシミュレーション
-      for (let i = 2; i < steps.length; i++) {
-        setCurrentStep(i);
-        await new Promise((resolve) => setTimeout(resolve, 800 + Math.random() * 400));
-        setCompletedSteps((prev) => [...prev, i]);
-      }
-
-      setResult(data.stats);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "エラーが発生しました";
-      setError(message);
-    } finally {
-      setCurrentStep(-1);
-      setIsProcessing(false);
-    }
+    startImport(file, user.uid);
   };
 
-  const isComplete = result !== null;
+  const isProcessing = progress.isProcessing;
+  const isComplete = progress.result !== null;
+  const error = localError || progress.error;
+  const result = progress.result;
+
+  // Calculate which steps are completed based on percentage
+  const completedSteps = steps.map((_, index) => {
+    const stepPercentage = ((index + 1) / steps.length) * 100;
+    return progress.percentage >= stepPercentage;
+  }).reduce<number[]>((acc, completed, index) => {
+    if (completed) acc.push(index);
+    return acc;
+  }, []);
+
+  const currentStep = isProcessing ? Math.floor((progress.percentage / 100) * steps.length) : -1;
 
   return (
     <div className="max-w-5xl mx-auto animate-fade-in">
@@ -195,7 +136,7 @@ export default function ImportPage() {
         <div className="lg:col-span-3 space-y-6">
           {/* Upload Area */}
           <div className="bg-white p-6 rounded-2xl border border-zinc-200 shadow-sm">
-            {!file ? (
+            {!file && !isProcessing ? (
               <div
                 onDragOver={handleDragOver}
                 onDragLeave={handleDragLeave}
@@ -240,9 +181,9 @@ export default function ImportPage() {
                     <FileText className="w-6 h-6 text-emerald-600" />
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="font-medium text-zinc-900 truncate">{file.name}</p>
+                    <p className="font-medium text-zinc-900 truncate">{file?.name || progress.fileName}</p>
                     <p className="text-sm text-zinc-500">
-                      {(file.size / 1024).toFixed(1)} KB
+                      {file ? `${(file.size / 1024).toFixed(1)} KB` : "処理中..."}
                     </p>
                   </div>
                   {!isProcessing && !isComplete && (
@@ -254,6 +195,52 @@ export default function ImportPage() {
                     </button>
                   )}
                 </div>
+
+                {/* Progress Bar - Main Feature */}
+                {(isProcessing || isComplete) && (
+                  <div className="p-5 bg-gradient-to-br from-emerald-50 to-teal-50 rounded-xl border border-emerald-100">
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="flex items-center gap-2">
+                        {isProcessing ? (
+                          <Loader2 className="w-5 h-5 text-emerald-500 animate-spin" />
+                        ) : (
+                          <CheckCircle2 className="w-5 h-5 text-emerald-500" />
+                        )}
+                        <span className="text-base font-semibold text-zinc-900">
+                          {isProcessing ? progress.stepName || "処理中..." : "完了"}
+                        </span>
+                      </div>
+                      <span className="text-2xl font-bold text-emerald-600">
+                        {Math.round(progress.percentage)}%
+                      </span>
+                    </div>
+
+                    {/* Large Progress Bar */}
+                    <div className="relative h-4 bg-white rounded-full overflow-hidden shadow-inner">
+                      <div
+                        className="absolute inset-y-0 left-0 bg-gradient-to-r from-emerald-400 to-emerald-500 rounded-full transition-all duration-500 ease-out"
+                        style={{ width: `${progress.percentage}%` }}
+                      >
+                        {/* Animated shine effect */}
+                        <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/30 to-transparent animate-shimmer" />
+                      </div>
+                    </div>
+
+                    {/* Progress Details */}
+                    {isProcessing && progress.totalCount > 0 && (
+                      <p className="mt-3 text-sm text-zinc-500">
+                        {progress.processedCount} / {progress.totalCount} 件処理中
+                      </p>
+                    )}
+
+                    {/* Navigation Hint */}
+                    {isProcessing && (
+                      <p className="mt-2 text-xs text-emerald-600 bg-emerald-100 rounded-lg px-3 py-2">
+                        💡 このページを離れても処理は継続します。右下に進捗が表示されます。
+                      </p>
+                    )}
+                  </div>
+                )}
 
                 {/* Error Message */}
                 {error && (
@@ -305,15 +292,6 @@ export default function ImportPage() {
                   </div>
                 )}
 
-                {/* Filtered Count */}
-                {filteredCount > 0 && (isProcessing || isComplete) && (
-                  <div className="flex items-center gap-3 p-4 bg-amber-50 border border-amber-200 rounded-xl">
-                    <AlertCircle className="w-5 h-5 text-amber-600 flex-shrink-0" />
-                    <p className="text-base text-amber-700">
-                      @を含む{filteredCount}件の行を除外しました（リプライ等）
-                    </p>
-                  </div>
-                )}
 
                 {/* Results */}
                 {result && (
@@ -324,10 +302,10 @@ export default function ImportPage() {
                         インポート完了
                       </span>
                     </div>
-                    <div className="grid grid-cols-3 gap-4">
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
                       <div>
-                        <p className="text-3xl font-bold text-zinc-900">{result.total}</p>
-                        <p className="text-base text-zinc-500">総投稿数</p>
+                        <p className="text-3xl font-bold text-zinc-900">{result.savedCount || result.total}</p>
+                        <p className="text-base text-zinc-500">新規追加</p>
                       </div>
                       <div>
                         <p className="text-3xl font-bold text-zinc-900">{result.tierS}</p>
@@ -337,7 +315,18 @@ export default function ImportPage() {
                         <p className="text-3xl font-bold text-zinc-900">{result.categories}</p>
                         <p className="text-base text-zinc-500">カテゴリー</p>
                       </div>
+                      {result.duplicateCount !== undefined && result.duplicateCount > 0 && (
+                        <div>
+                          <p className="text-3xl font-bold text-amber-600">{result.duplicateCount}</p>
+                          <p className="text-base text-zinc-500">重複スキップ</p>
+                        </div>
+                      )}
                     </div>
+                    {result.duplicateCount !== undefined && result.duplicateCount > 0 && (
+                      <p className="text-sm text-zinc-500 mt-3">
+                        ※{result.duplicateCount}件は既にインポート済みのためスキップされました
+                      </p>
+                    )}
                   </div>
                 )}
 

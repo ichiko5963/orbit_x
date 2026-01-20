@@ -23,8 +23,12 @@ import {
   LogOut,
   Calendar,
   CalendarDays,
+  Loader2,
+  CheckCircle2,
+  X,
 } from "lucide-react";
 import { AuthProvider, useAuth } from "@/lib/auth-context";
+import { ImportProvider, useImport } from "@/lib/import-context";
 
 const mainNav = [
   { name: "ダッシュボード", href: "/dashboard", icon: LayoutDashboard },
@@ -42,6 +46,91 @@ const subNav = [
   { name: "口調・絵文字", href: "/styles", icon: Palette },
   { name: "設定", href: "/settings", icon: Settings },
 ];
+
+// Background Import Indicator Component
+function BackgroundImportIndicator() {
+  const { progress, resetImport } = useImport();
+  const pathname = usePathname();
+
+  // Don't show on import page (it has its own UI)
+  if (pathname === "/import") return null;
+
+  // Don't show if not processing and no result
+  if (!progress.isProcessing && !progress.result && !progress.error) return null;
+
+  return (
+    <div className="fixed bottom-6 right-6 z-50 animate-fade-in">
+      <div className="bg-white rounded-2xl shadow-2xl border border-zinc-200 p-4 min-w-[320px]">
+        {progress.isProcessing ? (
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Loader2 className="w-5 h-5 text-emerald-500 animate-spin" />
+                <span className="text-sm font-medium text-zinc-900">インポート中...</span>
+              </div>
+              <span className="text-sm font-bold text-emerald-600">{Math.round(progress.percentage)}%</span>
+            </div>
+            <div className="relative h-2 bg-zinc-100 rounded-full overflow-hidden">
+              <div
+                className="absolute inset-y-0 left-0 bg-emerald-500 rounded-full transition-all duration-300"
+                style={{ width: `${progress.percentage}%` }}
+              />
+            </div>
+            <p className="text-xs text-zinc-500">{progress.stepName}</p>
+            {progress.fileName && (
+              <p className="text-xs text-zinc-400 truncate">{progress.fileName}</p>
+            )}
+          </div>
+        ) : progress.result ? (
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <CheckCircle2 className="w-5 h-5 text-emerald-500" />
+                <span className="text-sm font-medium text-emerald-700">インポート完了</span>
+              </div>
+              <button
+                onClick={resetImport}
+                className="p-1 rounded-lg text-zinc-400 hover:text-zinc-600 hover:bg-zinc-100"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="flex items-center gap-4 text-sm">
+              <span className="text-zinc-600">
+                <strong className="text-zinc-900">{progress.result.savedCount || progress.result.total}</strong> 件追加
+              </span>
+              {progress.result.duplicateCount && progress.result.duplicateCount > 0 && (
+                <span className="text-amber-600">{progress.result.duplicateCount}件スキップ</span>
+              )}
+            </div>
+            <Link
+              href="/posts"
+              className="block w-full text-center py-2 text-sm font-medium text-emerald-600 bg-emerald-50 rounded-lg hover:bg-emerald-100 transition-colors"
+            >
+              投稿一覧を見る
+            </Link>
+          </div>
+        ) : progress.error ? (
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <X className="w-5 h-5 text-red-500" />
+                <span className="text-sm font-medium text-red-700">エラー</span>
+              </div>
+              <button
+                onClick={resetImport}
+                className="p-1 rounded-lg text-zinc-400 hover:text-zinc-600 hover:bg-zinc-100"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <p className="text-sm text-red-600">{progress.error}</p>
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
 
 function AppLayoutContent({ children }: { children: ReactNode }) {
   const [collapsed, setCollapsed] = useState(false);
@@ -313,6 +402,9 @@ function AppLayoutContent({ children }: { children: ReactNode }) {
             {children}
           </div>
         </main>
+
+        {/* Background Import Indicator */}
+        <BackgroundImportIndicator />
       </div>
     </div>
   );
@@ -321,7 +413,9 @@ function AppLayoutContent({ children }: { children: ReactNode }) {
 export default function AppLayout({ children }: { children: ReactNode }) {
   return (
     <AuthProvider>
-      <AppLayoutContent>{children}</AppLayoutContent>
+      <ImportProvider>
+        <AppLayoutContent>{children}</AppLayoutContent>
+      </ImportProvider>
     </AuthProvider>
   );
 }

@@ -18,9 +18,10 @@ import {
   Loader2,
   Tag,
   Plus,
+  Trash2,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
-import { getPosts } from "@/lib/firebase";
+import { getPosts, clearPosts } from "@/lib/firebase";
 
 interface Post {
   id: string;
@@ -143,6 +144,36 @@ export default function PostsPage() {
     alert("コンテキスト投稿に追加しました");
   };
 
+  // Reset all posts
+  const handleResetPosts = async () => {
+    if (!user) return;
+
+    const confirmed = window.confirm(
+      "本当にすべての過去投稿を削除しますか？\n\nこの操作は取り消せません。Googleアカウントに紐づいているすべての過去投稿データが完全に削除されます。"
+    );
+
+    if (!confirmed) return;
+
+    // Double confirmation
+    const doubleConfirmed = window.confirm(
+      "最終確認：本当に削除してよろしいですか？"
+    );
+
+    if (!doubleConfirmed) return;
+
+    setIsLoading(true);
+    try {
+      await clearPosts(user.uid);
+      setPosts([]);
+      alert("すべての過去投稿を削除しました");
+    } catch (error) {
+      console.error("Failed to reset posts:", error);
+      alert("削除に失敗しました");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
@@ -168,6 +199,16 @@ export default function PostsPage() {
             <span className="text-sm text-zinc-500">総投稿数:</span>
             <span className="text-lg font-bold text-zinc-900">{stats.total}</span>
           </div>
+          {posts.length > 0 && (
+            <button
+              onClick={handleResetPosts}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-zinc-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+              title="すべての投稿を削除"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              リセット
+            </button>
+          )}
         </div>
       </div>
 
