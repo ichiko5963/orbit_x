@@ -4,10 +4,10 @@ import { generatePost, imitatePost, generateWithReference } from "@/lib/openai";
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { mode, template, templateId, topic, content, category, tone, emojiSet, referenceText } = body;
+    const { mode, template, templateId, topic, content, category, tone, emojiSet, referenceText, userStyle } = body;
 
-    // New mode: reference - uses template + reference post
-    if (mode === "reference" && referenceText && templateId) {
+    // Reference mode - uses reference post structure + user's content + optional user style
+    if (mode === "reference" && referenceText) {
       if (!content) {
         return NextResponse.json(
           { error: "コンテンツを入力してください" },
@@ -17,10 +17,11 @@ export async function POST(request: NextRequest) {
 
       const generatedText = await generateWithReference({
         content,
-        templateId,
+        templateId: templateId || "reference", // Default if not provided
         referenceText,
         category,
         tone,
+        userStyle, // Pass user's learned style
       });
 
       return NextResponse.json({

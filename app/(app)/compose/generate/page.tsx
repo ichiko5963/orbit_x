@@ -7,11 +7,6 @@ import {
   ArrowLeft,
   Sparkles,
   CheckCircle2,
-  Lightbulb,
-  Newspaper,
-  List,
-  MessageSquare,
-  Wrench,
   Loader2,
   Copy,
   ExternalLink,
@@ -21,17 +16,24 @@ import {
   FileText,
   ChevronDown,
   ChevronUp,
+  Tag,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 import { getContextPosts, getPosts, saveScheduledPost } from "@/lib/firebase";
 
-// 5 active templates (video removed for now)
-const TEMPLATES = [
-  { id: "insight", name: "気づき共有", icon: Lightbulb, color: "text-amber-600", bgColor: "bg-amber-50" },
-  { id: "news", name: "速報", icon: Newspaper, color: "text-red-600", bgColor: "bg-red-50" },
-  { id: "list", name: "リスト", icon: List, color: "text-blue-600", bgColor: "bg-blue-50" },
-  { id: "thread", name: "スレッド", icon: MessageSquare, color: "text-purple-600", bgColor: "bg-purple-50" },
-  { id: "problem-solving", name: "問題解決", icon: Wrench, color: "text-emerald-600", bgColor: "bg-emerald-50" },
+// Practical X post categories (must match database)
+const CATEGORIES = [
+  "速報・ニュース系",
+  "Tips・ノウハウ系",
+  "記事・コンテンツ紹介系",
+  "ツール・サービス紹介系",
+  "動画・メディア紹介系",
+  "プロンプト・AI活用系",
+  "プロダクト・リリース系",
+  "イベント・登壇系",
+  "プレゼント・キャンペーン系",
+  "採用・メンバー募集系",
+  "日常・つぶやき系",
 ];
 
 interface ReferencePost {
@@ -45,9 +47,7 @@ interface ReferencePost {
 interface GeneratedCard {
   id: number;
   text: string;
-  templateId: string;
-  templateName: string;
-  referencePost?: ReferencePost;
+  referencePost: ReferencePost;
   isLoading: boolean;
   error?: string;
 }
@@ -58,8 +58,16 @@ export default function GeneratePage() {
 
   const [content, setContent] = useState("");
   const [isContentExpanded, setIsContentExpanded] = useState(false);
-  const [referencePosts, setReferencePosts] = useState<ReferencePost[]>([]);
+
+  // Reference posts from contextPosts ONLY (他者バズ投稿)
+  const [contextReferencePosts, setContextReferencePosts] = useState<ReferencePost[]>([]);
+  // User's own style (learned from their posts)
+  const [userStyle, setUserStyle] = useState<string>("");
   const [isLoadingPosts, setIsLoadingPosts] = useState(true);
+
+  // Category selection
+  const [selectedCategory, setSelectedCategory] = useState<string>("");
+  const [availableCategories, setAvailableCategories] = useState<{name: string; count: number}[]>([]);
 
   // 6 cards state
   const [cards, setCards] = useState<GeneratedCard[]>([]);
@@ -74,29 +82,72 @@ export default function GeneratePage() {
     }
   }, []);
 
-  // Load reference posts (S/A tier)
+  // Load reference posts from contextPosts ONLY (他者バズ投稿)
+  // AND learn user style from their own posts
   useEffect(() => {
     const loadPosts = async () => {
       if (!user) return;
       setIsLoadingPosts(true);
       try {
+        // Load SEPARATELY - contextPosts for reference, userPosts for style learning
         const [contextPosts, userPosts] = await Promise.all([
           getContextPosts(user.uid),
           getPosts(user.uid),
         ]);
 
-        const allPosts = [...contextPosts, ...userPosts]
+        // === REFERENCE POSTS: ONLY from contextPosts (他者バズ投稿) ===
+        const refPosts = contextPosts
           .filter((p: any) => p.tier === "S" || p.tier === "A")
           .map((p: any) => ({
             id: p.id,
             text: p.text,
             likes: p.likes || 0,
-            tier: p.tier,
-            category: p.category || "その他",
+            tier: p.tier as "S" | "A" | "B" | "C",
+            category: p.category || "日常・つぶやき系",
           }))
           .sort((a, b) => b.likes - a.likes);
 
-        setReferencePosts(allPosts);
+        setContextReferencePosts(refPosts);
+
+        // Count posts by category for selection UI
+        const categoryCounts: Record<string, number> = {};
+        refPosts.forEach(p => {
+          categoryCounts[p.category] = (categoryCounts[p.category] || 0) + 1;
+        });
+
+        const cats = Object.entries(categoryCounts)
+          .map(([name, count]) => ({ name, count }))
+          .sort((a, b) => b.count - a.count);
+        setAvailableCategories(cats);
+
+        // === USER STYLE: Learn from their OWN posts ===
+        if (userPosts.length > 0) {
+          // Analyze user's top posts for style patterns
+          const topUserPosts = userPosts
+            .filter((p: any) => p.tier === "S" || p.tier === "A")
+            .slice(0, 10)
+            .map((p: any) => p.text);
+
+          if (topUserPosts.length > 0) {
+            // Extract style characteristics
+            const hasEmoji = topUserPosts.some((t: string) => /[\u{1F300}-\u{1F9FF}]/u.test(t));
+            const avgLength = Math.round(topUserPosts.reduce((acc: number, t: string) => acc + t.length, 0) / topUserPosts.length);
+            const usesExclamation = topUserPosts.filter((t: string) => t.includes("！")).length > topUserPosts.length / 2;
+
+            // Build style description for AI
+            let styleDesc = "";
+            if (hasEmoji) styleDesc += "絵文字を適度に使用。";
+            else styleDesc += "絵文字は使用しない。";
+            if (usesExclamation) styleDesc += "「！」を使う元気な口調。";
+            else styleDesc += "落ち着いた口調。";
+            styleDesc += `平均${avgLength}文字程度。`;
+
+            // Sample actual phrases from user's posts
+            const samplePhrases = topUserPosts.slice(0, 3).join("\n---\n");
+            setUserStyle(`${styleDesc}\n\n【ユーザーの実際の投稿例】\n${samplePhrases}`);
+          }
+        }
+
       } catch (err) {
         console.error("Failed to load posts:", err);
       } finally {
@@ -106,24 +157,36 @@ export default function GeneratePage() {
     loadPosts();
   }, [user]);
 
-  // Generate all 6 cards
+  // Get filtered reference posts for selected category
+  const getFilteredReferencePosts = () => {
+    if (!selectedCategory) return [];
+    return contextReferencePosts
+      .filter(p => p.category === selectedCategory)
+      .slice(0, 6); // Top 6 from this category
+  };
+
+  // Generate all 6 cards using top 6 posts from selected category
   const handleGenerateAll = async () => {
-    if (!content.trim()) return;
+    if (!content.trim() || !selectedCategory) return;
+
+    // Get top 6 posts from selected category
+    const categoryPosts = getFilteredReferencePosts();
+
+    if (categoryPosts.length === 0) {
+      alert("選択したカテゴリーに参考投稿がありません。他のカテゴリーを選んでください。");
+      return;
+    }
 
     // Initialize 6 cards with loading state
     const initialCards: GeneratedCard[] = [];
-    const templatesForCards = [...TEMPLATES];
 
-    // Use top 6 reference posts (or repeat templates if not enough)
     for (let i = 0; i < 6; i++) {
-      const template = templatesForCards[i % templatesForCards.length];
-      const refPost = referencePosts[i];
+      // Use posts from the category, cycling if less than 6
+      const refPost = categoryPosts[i % categoryPosts.length];
 
       initialCards.push({
         id: i + 1,
         text: "",
-        templateId: template.id,
-        templateName: template.name,
         referencePost: refPost,
         isLoading: true,
       });
@@ -131,22 +194,16 @@ export default function GeneratePage() {
 
     setCards(initialCards);
 
-    // Generate all 6 in parallel
+    // Generate all 6 in parallel - each using a different reference post's structure
     const promises = initialCards.map(async (card, index) => {
       try {
         const body: any = {
-          templateId: card.templateId,
+          mode: "reference",
           content,
-          tone: "casual",
+          referenceText: card.referencePost.text,
+          // Pass user's learned style
+          userStyle: userStyle || undefined,
         };
-
-        // Use reference post if available
-        if (card.referencePost) {
-          body.mode = "reference";
-          body.referenceText = card.referencePost.text;
-        } else {
-          body.mode = "template";
-        }
 
         const response = await fetch("/api/generate", {
           method: "POST",
@@ -195,17 +252,11 @@ export default function GeneratePage() {
 
     try {
       const body: any = {
-        templateId: card.templateId,
+        mode: "reference",
         content,
-        tone: "casual",
+        referenceText: card.referencePost.text,
+        userStyle: userStyle || undefined,
       };
-
-      if (card.referencePost) {
-        body.mode = "reference";
-        body.referenceText = card.referencePost.text;
-      } else {
-        body.mode = "template";
-      }
 
       const response = await fetch("/api/generate", {
         method: "POST",
@@ -332,35 +383,101 @@ export default function GeneratePage() {
         )}
       </div>
 
+      {/* Category Selection (if not yet generated) */}
+      {!hasGenerated && (
+        <div className="bg-white rounded-xl border border-zinc-200 shadow-sm mb-6 p-6">
+          <div className="flex items-center gap-2 mb-4">
+            <Tag className="w-5 h-5 text-emerald-600" />
+            <h3 className="font-semibold text-zinc-900">カテゴリーを選択</h3>
+            <span className="text-sm text-zinc-500">（他者バズ投稿から）</span>
+          </div>
+
+          {isLoadingPosts ? (
+            <div className="flex items-center justify-center py-8">
+              <Loader2 className="w-6 h-6 animate-spin text-emerald-500" />
+              <span className="ml-2 text-zinc-500">読み込み中...</span>
+            </div>
+          ) : availableCategories.length === 0 ? (
+            <div className="text-center py-8 text-zinc-500">
+              <p>他者バズ投稿がありません</p>
+              <Link href="/context" className="text-emerald-600 hover:underline mt-2 inline-block">
+                他者バズ投稿を追加する
+              </Link>
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+              {availableCategories.map(cat => (
+                <button
+                  key={cat.name}
+                  onClick={() => setSelectedCategory(cat.name)}
+                  className={`p-3 rounded-xl border-2 text-left transition-all ${
+                    selectedCategory === cat.name
+                      ? "border-emerald-500 bg-emerald-50"
+                      : "border-zinc-200 hover:border-zinc-300 bg-white"
+                  }`}
+                >
+                  <p className={`font-medium text-sm ${
+                    selectedCategory === cat.name ? "text-emerald-700" : "text-zinc-700"
+                  }`}>
+                    {cat.name}
+                  </p>
+                  <p className="text-xs text-zinc-400 mt-1">{cat.count}件の参考投稿</p>
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* Selected category preview */}
+          {selectedCategory && (
+            <div className="mt-4 p-4 bg-zinc-50 rounded-xl">
+              <p className="text-sm font-medium text-zinc-700 mb-2">
+                「{selectedCategory}」の上位投稿で6パターン生成
+              </p>
+              <div className="space-y-2">
+                {getFilteredReferencePosts().slice(0, 3).map((post, idx) => (
+                  <div key={post.id} className="flex items-start gap-2 text-xs">
+                    <span className={`px-1.5 py-0.5 rounded font-bold ${
+                      post.tier === "S" ? "bg-amber-100 text-amber-700" : "bg-violet-100 text-violet-700"
+                    }`}>
+                      {post.tier}
+                    </span>
+                    <p className="text-zinc-600 line-clamp-1 flex-1">{post.text}</p>
+                    <span className="text-zinc-400 flex items-center gap-1">
+                      <Heart className="w-3 h-3" />
+                      {post.likes}
+                    </span>
+                  </div>
+                ))}
+                {getFilteredReferencePosts().length > 3 && (
+                  <p className="text-xs text-zinc-400">...他 {getFilteredReferencePosts().length - 3}件</p>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Generate Button (if not yet generated) */}
       {!hasGenerated && (
         <div className="flex justify-center mb-8">
           <button
             onClick={handleGenerateAll}
-            disabled={!content.trim() || isLoadingPosts}
+            disabled={!content.trim() || !selectedCategory || isLoadingPosts}
             className="flex items-center gap-3 px-8 py-4 bg-emerald-500 text-white text-lg font-semibold rounded-xl hover:bg-emerald-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-lg shadow-emerald-500/25"
           >
             <Sparkles className="w-6 h-6" />
-            6パターン生成する
+            {selectedCategory ? `「${selectedCategory}」で6パターン生成` : "カテゴリーを選択してください"}
           </button>
         </div>
       )}
 
-      {/* Reference Posts Info */}
-      {!hasGenerated && (
+      {/* User Style Info */}
+      {!hasGenerated && userStyle && (
         <div className="text-center text-sm text-zinc-500 mb-8">
-          {isLoadingPosts ? (
-            <span className="flex items-center justify-center gap-2">
-              <Loader2 className="w-4 h-4 animate-spin" />
-              参考投稿を読み込み中...
-            </span>
-          ) : (
-            <span>
-              {referencePosts.length > 0
-                ? `${referencePosts.length}件のS/Aティア投稿を参考に生成します`
-                : "参考投稿がないため、テンプレートベースで生成します"}
-            </span>
-          )}
+          <span className="flex items-center justify-center gap-2">
+            <CheckCircle2 className="w-4 h-4 text-emerald-500" />
+            あなたの投稿スタイルを学習済み
+          </span>
         </div>
       )}
 
@@ -368,9 +485,6 @@ export default function GeneratePage() {
       {hasGenerated && (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
           {cards.map((card) => {
-            const template = TEMPLATES.find(t => t.id === card.templateId);
-            const TemplateIcon = template?.icon || Lightbulb;
-
             return (
               <div
                 key={card.id}
@@ -382,23 +496,18 @@ export default function GeneratePage() {
                     <span className="w-7 h-7 rounded-full bg-emerald-500 text-white flex items-center justify-center text-sm font-bold">
                       {card.id}
                     </span>
-                    <div className={`flex items-center gap-1.5 px-2 py-1 rounded-lg ${template?.bgColor || "bg-zinc-50"}`}>
-                      <TemplateIcon className={`w-4 h-4 ${template?.color || "text-zinc-500"}`} />
-                      <span className={`text-xs font-medium ${template?.color || "text-zinc-500"}`}>
-                        {card.templateName}
-                      </span>
-                    </div>
+                    <span className="px-2 py-1 text-xs font-medium bg-zinc-100 text-zinc-600 rounded-lg">
+                      {selectedCategory}
+                    </span>
                   </div>
 
-                  {card.referencePost && (
-                    <span className={`px-2 py-0.5 text-xs font-bold rounded ${
-                      card.referencePost.tier === "S"
-                        ? "bg-amber-100 text-amber-700"
-                        : "bg-violet-100 text-violet-700"
-                    }`}>
-                      {card.referencePost.tier}
-                    </span>
-                  )}
+                  <span className={`px-2 py-0.5 text-xs font-bold rounded ${
+                    card.referencePost.tier === "S"
+                      ? "bg-amber-100 text-amber-700"
+                      : "bg-violet-100 text-violet-700"
+                  }`}>
+                    {card.referencePost.tier}
+                  </span>
                 </div>
 
                 {/* Card Body */}
@@ -505,8 +614,9 @@ export default function GeneratePage() {
           </div>
           <p className="text-lg text-zinc-600 mb-2">投稿内容を入力してください</p>
           <p className="text-sm text-zinc-400">
-            記事URL、アイデア、テーマなどを入力すると<br />
-            6パターンの投稿案を生成します
+            1. 上の「投稿内容」に記事URL/アイデアを入力<br />
+            2. カテゴリーを選択（他者バズ投稿から参考）<br />
+            3. 6パターンの投稿案を生成
           </p>
         </div>
       )}

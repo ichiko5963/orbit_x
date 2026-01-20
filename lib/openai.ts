@@ -459,25 +459,25 @@ interface GenerateWithReferenceOptions {
   referenceText: string;
   category?: string;
   tone?: string;
+  userStyle?: string; // User's learned style from their own posts
 }
 
 /**
- * Generate a post using both template structure and reference post style
+ * Generate a post using reference post structure + user's own style
  */
 export async function generateWithReference(
   options: GenerateWithReferenceOptions
 ): Promise<string> {
-  const { content, templateId, referenceText, category, tone = "casual" } = options;
+  const { content, referenceText, category, userStyle } = options;
 
-  const templateStructures: Record<string, string> = {
-    insight: "逆説的な気づき→本当に大切なこと→理由説明",
-    news: "【速報/朗報】→メインニュース→補足情報→詳細への誘導",
-    list: "タイトル（〇〇で気づいたこと等）→箇条書き（3-5項目）",
-    thread: "導入文→問題提起or興味喚起→スレッド誘導",
-    "problem-solving": "問題提起（「」で課題を表現）→共感→解決策→具体例",
-  };
+  // Build user style section if available
+  const userStyleSection = userStyle
+    ? `
+【ユーザーの口調・スタイル（必ず適用）】
+${userStyle}
 
-  const structure = templateStructures[templateId] || "";
+上記のユーザースタイルを必ず適用してください。ユーザーが絵文字を使っていれば絵文字を使い、使っていなければ使わない。`
+    : "";
 
   const prompt = `X（Twitter）用の投稿を作成してください。
 
@@ -490,41 +490,46 @@ export async function generateWithReference(
 ${content}
 """
 
-【参考投稿の構造を模倣】
-参考投稿の以下だけをコピーしてください：
+【参考投稿の構造を完全に模倣】
+参考投稿の構造を100%コピーしてください：
 - 文の区切り方、改行の位置
 - 段落の数と長さ
 - 箇条書きがあれば同じ形式で（「・」を使用）
 - 書き出し方のパターン
+- 結び方のパターン
 
-参考投稿：
+参考投稿（この構造を完全にコピー）：
 """
 ${referenceText}
 """
+${userStyleSection}
 
 ${category ? `カテゴリー：${category}` : ""}
 
 【生成ルール】
 1. 入力コンテンツの情報を投稿の中心にする（これが最も重要）
-2. 参考投稿の「構造・フォーマット」だけを借りる
-3. 参考投稿に絵文字がなければ絵文字は使わない
-4. 参考投稿の口調を維持（「！」の数も同程度に）
+2. 参考投稿の「構造・フォーマット」を完全にコピーする
+3. ユーザースタイルがあれば、そのスタイル（絵文字・口調）を適用
+4. ユーザースタイルがなければ、参考投稿のスタイルを使う
 
 【絶対禁止】
-- 絵文字を勝手に追加
 - 「〜ですね」「〜しましょう」「〜してみてください」
 - 「素晴らしい」「驚くべき」「画期的」「ぜひ」「必見」
 - 入力コンテンツと関係ない内容を書く
+- ユーザースタイルを無視する
 
 投稿本文のみを出力。`;
+
+  const systemPrompt = userStyle
+    ? `あなたはX投稿を作成するライターです。【最重要】入力コンテンツの情報を必ず投稿に含める。参考投稿の構造を完全にコピーし、ユーザーの口調・スタイルを適用する。AIっぽい表現は絶対禁止。`
+    : `あなたはX投稿を作成するライターです。【最重要】入力コンテンツの情報を必ず投稿に含める。参考投稿からは構造・フォーマットだけを借りる。絵文字は参考投稿にある場合のみ。AIっぽい表現は絶対禁止。淡々と事実を書く。`;
 
   const response = await openai.chat.completions.create({
     model: "gpt-4o-mini",
     messages: [
       {
         role: "system",
-        content:
-          "あなたはX投稿を作成するライターです。【最重要】入力コンテンツの情報を必ず投稿に含める。参考投稿からは構造・フォーマットだけを借りる。絵文字は参考投稿にある場合のみ。AIっぽい表現（〜ですね、素晴らしい、ぜひ等）は絶対禁止。淡々と事実を書く。",
+        content: systemPrompt,
       },
       {
         role: "user",
