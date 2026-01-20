@@ -1,18 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import OpenAI from "openai";
-import { initializeApp, getApps, cert } from "firebase-admin/app";
-import { getFirestore } from "firebase-admin/firestore";
+import * as admin from "firebase-admin";
 
 // Initialize Firebase Admin (server-side)
 const getFirebaseAdmin = () => {
-  if (getApps().length === 0) {
+  if (admin.apps.length === 0) {
     // For development, use service account or emulator
     // In production, this would use proper credentials
-    initializeApp({
+    admin.initializeApp({
       projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
     });
   }
-  return getFirestore();
+  return admin.firestore();
 };
 
 const openai = new OpenAI({
