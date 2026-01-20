@@ -4,6 +4,7 @@ import {
   convertRowsToPosts,
   calculateImportStats,
 } from "@/lib/csv-parser";
+import { batchCategorizePosts } from "@/lib/openai";
 
 // Dynamic import to avoid build-time errors
 let adminDb: FirebaseFirestore.Firestore | null = null;
@@ -95,7 +96,7 @@ async function getAdminDb() {
   }
 }
 
-// Practical X post categories
+// Practical X post categories (AI determines categories - no "その他")
 const CATEGORIES = [
   "速報・ニュース系",
   "Tips・ノウハウ系",
@@ -108,47 +109,14 @@ const CATEGORIES = [
   "プレゼント・キャンペーン系",
   "採用・メンバー募集系",
   "日常・つぶやき系",
-  "その他",
 ];
 
-// Keyword-based categorization for X posts
-function categorizeByKeywords(text: string): string {
-  const lowerText = text.toLowerCase();
-
-  // プレゼント・キャンペーン系 (check first - has specific patterns)
-  if (/プレゼント|🎁|抽選|当選|RT.*フォロー|フォロー.*RT|いいね.*RT|RT.*いいね|キャンペーン|プレゼント企画/.test(text)) return "プレゼント・キャンペーン系";
-
-  // 採用・メンバー募集系
-  if (/募集|採用|hiring|求人|メンバー募集|仲間募集|一緒に働|エンジニア募集|デザイナー募集|積極採用|正社員|業務委託/.test(text)) return "採用・メンバー募集系";
-
-  // プロダクト・リリース系
-  if (/リリース|ローンチ|公開しました|作りました|開発しました|β版|ベータ版|プロダクト|サービス開始|新機能|アップデート/.test(text)) return "プロダクト・リリース系";
-
-  // 速報・ニュース系
-  if (/速報|朗報|悲報|ニュース|発表|話題|最新|緊急|重大発表|公式発表|ついに|ヤバい/.test(text)) return "速報・ニュース系";
-
-  // イベント・登壇系
-  if (/イベント|登壇|カンファレンス|勉強会|セミナー|ウェビナー|参加|開催|connpass|meetup|オフ会/.test(text)) return "イベント・登壇系";
-
-  // プロンプト・AI活用系
-  if (/プロンプト|prompt|chatgpt|gpt-4|claude|gemini|ai|生成ai|llm|copilot|cursor/.test(lowerText)) return "プロンプト・AI活用系";
-
-  // 動画・メディア紹介系
-  if (/youtube|動画|video|podcast|ポッドキャスト|配信|ライブ|アーカイブ|見て|聴いて/.test(lowerText)) return "動画・メディア紹介系";
-
-  // 記事・コンテンツ紹介系
-  if (/記事|ブログ|note|zenn|qiita|書きました|投稿しました|まとめ|解説|紹介|おすすめ|読んで/.test(lowerText)) return "記事・コンテンツ紹介系";
-
-  // ツール・サービス紹介系
-  if (/ツール|サービス|アプリ|拡張機能|extension|便利|使える|おすすめツール|神ツール|無料で/.test(text)) return "ツール・サービス紹介系";
-
-  // Tips・ノウハウ系
-  if (/tips|コツ|方法|やり方|ノウハウ|知識|テクニック|裏技|選$|個$|つ$|効率|生産性|時短/.test(lowerText)) return "Tips・ノウハウ系";
-
-  // 日常・つぶやき系
-  if (/今日|おはよう|おやすみ|疲れた|嬉しい|楽しい|思った|感じた|つぶやき|日記/.test(text)) return "日常・つぶやき系";
-
-  return "その他";
+// Normalize text for duplicate comparison (remove whitespace variations)
+function normalizeText(text: string): string {
+  return text
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
 }
 
 export async function POST(request: NextRequest) {
@@ -191,27 +159,73 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Convert to posts with auto-categorization
-    const posts = convertRowsToPosts(rows).map(post => ({
+    // Convert to posts (without category yet)
+    const rawPosts = convertRowsToPosts(rows);
+
+    // Get Firebase instance
+    const db = await getAdminDb();
+    const { Timestamp } = await import("firebase-admin/firestore");
+    const postsRef = db.collection("users").doc(userId).collection("posts");
+
+    // === DUPLICATE CHECK ===
+    // Fetch existing posts to check for duplicates
+    const existingPostsSnapshot = await postsRef.get();
+    const existingTexts = new Set<string>();
+    existingPostsSnapshot.forEach((doc) => {
+      const data = doc.data();
+      if (data.text) {
+        existingTexts.add(normalizeText(data.text));
+      }
+    });
+
+    // Filter out duplicates
+    const newPosts = rawPosts.filter((post) => {
+      const normalized = normalizeText(post.text);
+      return !existingTexts.has(normalized);
+    });
+
+    const duplicateCount = rawPosts.length - newPosts.length;
+
+    if (newPosts.length === 0) {
+      return NextResponse.json({
+        success: true,
+        stats: {
+          total: 0,
+          categories: 0,
+        },
+        categoryCounts: {},
+        savedCount: 0,
+        duplicateCount,
+        message: "すべての投稿が既にインポート済みでした",
+      });
+    }
+
+    // === AI CATEGORIZATION ===
+    // Prepare posts for batch categorization
+    const postsForCategorization = newPosts.map((post, idx) => ({
+      id: String(idx),
+      text: post.text,
+    }));
+
+    console.log(`Categorizing ${postsForCategorization.length} posts with AI...`);
+    const categoryResults = await batchCategorizePosts(postsForCategorization);
+
+    // Apply AI-determined categories
+    const categorizedPosts = newPosts.map((post, idx) => ({
       ...post,
-      category: categorizeByKeywords(post.text),
+      category: categoryResults[String(idx)] || "日常・つぶやき系",
     }));
 
     // Calculate statistics
-    const stats = calculateImportStats(posts);
+    const stats = calculateImportStats(categorizedPosts);
 
-    // Save posts to Firebase
-    const db = await getAdminDb();
-    const { Timestamp } = await import("firebase-admin/firestore");
-
+    // === SAVE TO FIREBASE ===
     // Firestore batch has a limit of 500 operations, so we chunk if needed
     const batchSize = 500;
     const chunks = [];
-    for (let i = 0; i < posts.length; i += batchSize) {
-      chunks.push(posts.slice(i, i + batchSize));
+    for (let i = 0; i < categorizedPosts.length; i += batchSize) {
+      chunks.push(categorizedPosts.slice(i, i + batchSize));
     }
-
-    const postsRef = db.collection("users").doc(userId).collection("posts");
 
     for (const chunk of chunks) {
       const batch = db.batch();
@@ -236,7 +250,7 @@ export async function POST(request: NextRequest) {
 
     // Update category counts
     const categoryCounts: Record<string, number> = {};
-    posts.forEach(post => {
+    categorizedPosts.forEach((post) => {
       categoryCounts[post.category] = (categoryCounts[post.category] || 0) + 1;
     });
 
@@ -247,7 +261,8 @@ export async function POST(request: NextRequest) {
         categories: Object.keys(categoryCounts).length,
       },
       categoryCounts,
-      savedCount: posts.length,
+      savedCount: categorizedPosts.length,
+      duplicateCount,
     });
   } catch (error) {
     console.error("Import error:", error);

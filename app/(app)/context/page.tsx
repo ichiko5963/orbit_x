@@ -33,7 +33,7 @@ interface ContextPost {
   createdAt?: string;
 }
 
-// Practical X post categories
+// Practical X post categories (no "その他" - AI determines proper category)
 const CATEGORIES = [
   "速報・ニュース系",
   "Tips・ノウハウ系",
@@ -46,7 +46,6 @@ const CATEGORIES = [
   "プレゼント・キャンペーン系",
   "採用・メンバー募集系",
   "日常・つぶやき系",
-  "その他",
 ];
 
 const tierConfig = {
@@ -123,40 +122,31 @@ export default function ContextPage() {
     loadPosts();
   }, [user]);
 
-  // AI Categorize
+  // AI Categorize using API
   const handleAICategorize = async () => {
     if (!manualText.trim()) return;
 
     setIsCategorizing(true);
     try {
-      const text = manualText;
-      const lowerText = manualText.toLowerCase();
-      let category = "その他";
+      const response = await fetch("/api/categorize", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          posts: [{ id: "0", text: manualText }],
+        }),
+      });
 
-      // プレゼント・キャンペーン系 (check first)
-      if (/プレゼント|🎁|抽選|当選|RT.*フォロー|フォロー.*RT|いいね.*RT|RT.*いいね|キャンペーン/.test(text)) category = "プレゼント・キャンペーン系";
-      // 採用・メンバー募集系
-      else if (/募集|採用|hiring|求人|メンバー募集|仲間募集|一緒に働|エンジニア募集/.test(text)) category = "採用・メンバー募集系";
-      // プロダクト・リリース系
-      else if (/リリース|ローンチ|公開しました|作りました|開発しました|β版|プロダクト|サービス開始|新機能/.test(text)) category = "プロダクト・リリース系";
-      // 速報・ニュース系
-      else if (/速報|朗報|悲報|ニュース|発表|話題|最新|緊急|ヤバい/.test(text)) category = "速報・ニュース系";
-      // イベント・登壇系
-      else if (/イベント|登壇|カンファレンス|勉強会|セミナー|ウェビナー|connpass/.test(text)) category = "イベント・登壇系";
-      // プロンプト・AI活用系
-      else if (/プロンプト|prompt|chatgpt|gpt-4|claude|gemini|ai|生成ai|llm|copilot|cursor/.test(lowerText)) category = "プロンプト・AI活用系";
-      // 動画・メディア紹介系
-      else if (/youtube|動画|video|podcast|配信|ライブ|アーカイブ/.test(lowerText)) category = "動画・メディア紹介系";
-      // 記事・コンテンツ紹介系
-      else if (/記事|ブログ|note|zenn|qiita|書きました|まとめ|解説|紹介/.test(lowerText)) category = "記事・コンテンツ紹介系";
-      // ツール・サービス紹介系
-      else if (/ツール|サービス|アプリ|拡張機能|便利|おすすめツール|神ツール/.test(text)) category = "ツール・サービス紹介系";
-      // Tips・ノウハウ系
-      else if (/tips|コツ|方法|やり方|ノウハウ|テクニック|裏技|効率|生産性|時短/.test(lowerText)) category = "Tips・ノウハウ系";
-      // 日常・つぶやき系
-      else if (/今日|おはよう|おやすみ|疲れた|嬉しい|楽しい|思った|感じた/.test(text)) category = "日常・つぶやき系";
+      if (!response.ok) {
+        throw new Error("カテゴリ分類に失敗しました");
+      }
 
+      const { categories } = await response.json();
+      const category = categories["0"] || "日常・つぶやき系";
       setManualCategory(category);
+    } catch (error) {
+      console.error("Categorization failed:", error);
+      // Fallback to default
+      setManualCategory("日常・つぶやき系");
     } finally {
       setIsCategorizing(false);
     }
@@ -200,7 +190,12 @@ export default function ContextPage() {
     }
   };
 
-  // CSV Import
+  // Normalize text for duplicate comparison
+  const normalizeText = (text: string): string => {
+    return text.replace(/\s+/g, " ").trim().toLowerCase();
+  };
+
+  // CSV Import with AI categorization and duplicate prevention
   const handleCSVImport = async () => {
     if (!user || !csvFile) return;
 
@@ -222,7 +217,10 @@ export default function ContextPage() {
         throw new Error("投稿本文のカラムが見つかりません");
       }
 
-      const newPosts: any[] = [];
+      // Create set of existing post texts for duplicate checking
+      const existingTexts = new Set(posts.map(p => normalizeText(p.text)));
+
+      const rawPosts: { text: string; likes: number; impressions: number }[] = [];
 
       for (let i = 1; i < lines.length; i++) {
         const line = lines[i].trim();
@@ -248,52 +246,49 @@ export default function ContextPage() {
         const postText = values[textIdx]?.replace(/^"|"$/g, "");
         if (!postText) continue;
 
+        // Skip duplicates
+        if (existingTexts.has(normalizeText(postText))) {
+          continue;
+        }
+
         const likes = parseInt(values[likesIdx]) || 0;
         const impressions = parseInt(values[impressionsIdx]) || 0;
 
-        // AI Categorization (practical X post categories)
-        let category = "その他";
-        const lowerText = postText.toLowerCase();
-
-        // プレゼント・キャンペーン系 (check first)
-        if (/プレゼント|🎁|抽選|当選|RT.*フォロー|フォロー.*RT|いいね.*RT|RT.*いいね|キャンペーン/.test(postText)) category = "プレゼント・キャンペーン系";
-        // 採用・メンバー募集系
-        else if (/募集|採用|hiring|求人|メンバー募集|仲間募集|一緒に働|エンジニア募集/.test(postText)) category = "採用・メンバー募集系";
-        // プロダクト・リリース系
-        else if (/リリース|ローンチ|公開しました|作りました|開発しました|β版|プロダクト|サービス開始|新機能/.test(postText)) category = "プロダクト・リリース系";
-        // 速報・ニュース系
-        else if (/速報|朗報|悲報|ニュース|発表|話題|最新|緊急|ヤバい/.test(postText)) category = "速報・ニュース系";
-        // イベント・登壇系
-        else if (/イベント|登壇|カンファレンス|勉強会|セミナー|ウェビナー|connpass/.test(postText)) category = "イベント・登壇系";
-        // プロンプト・AI活用系
-        else if (/プロンプト|prompt|chatgpt|gpt-4|claude|gemini|ai|生成ai|llm|copilot|cursor/.test(lowerText)) category = "プロンプト・AI活用系";
-        // 動画・メディア紹介系
-        else if (/youtube|動画|video|podcast|配信|ライブ|アーカイブ/.test(lowerText)) category = "動画・メディア紹介系";
-        // 記事・コンテンツ紹介系
-        else if (/記事|ブログ|note|zenn|qiita|書きました|まとめ|解説|紹介/.test(lowerText)) category = "記事・コンテンツ紹介系";
-        // ツール・サービス紹介系
-        else if (/ツール|サービス|アプリ|拡張機能|便利|おすすめツール|神ツール/.test(postText)) category = "ツール・サービス紹介系";
-        // Tips・ノウハウ系
-        else if (/tips|コツ|方法|やり方|ノウハウ|テクニック|裏技|効率|生産性|時短/.test(lowerText)) category = "Tips・ノウハウ系";
-        // 日常・つぶやき系
-        else if (/今日|おはよう|おやすみ|疲れた|嬉しい|楽しい|思った|感じた/.test(postText)) category = "日常・つぶやき系";
-
-        newPosts.push({
-          text: postText,
-          likes,
-          impressions,
-          tier: calculateTier(likes),
-          category,
-          source: "csv",
-          createdAt: new Date().toISOString(),
-        });
-
-        setImportProgress(Math.round((i / lines.length) * 100));
+        rawPosts.push({ text: postText, likes, impressions });
+        setImportProgress(Math.round((i / lines.length) * 50)); // First 50% for parsing
       }
 
-      if (newPosts.length === 0) {
-        throw new Error("インポートできる投稿が見つかりませんでした");
+      if (rawPosts.length === 0) {
+        throw new Error("インポートできる新しい投稿が見つかりませんでした（すべて重複）");
       }
+
+      // Call AI categorization API
+      setImportProgress(55);
+      const categorizeResponse = await fetch("/api/categorize", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          posts: rawPosts.map((p, idx) => ({ id: String(idx), text: p.text })),
+        }),
+      });
+
+      if (!categorizeResponse.ok) {
+        throw new Error("カテゴリ分類に失敗しました");
+      }
+
+      const { categories: categoryResults } = await categorizeResponse.json();
+      setImportProgress(85);
+
+      // Create posts with AI-determined categories
+      const newPosts = rawPosts.map((post, idx) => ({
+        text: post.text,
+        likes: post.likes,
+        impressions: post.impressions,
+        tier: calculateTier(post.likes),
+        category: categoryResults[String(idx)] || "日常・つぶやき系",
+        source: "csv",
+        createdAt: new Date().toISOString(),
+      }));
 
       await saveContextPosts(user.uid, newPosts);
 
@@ -304,6 +299,9 @@ export default function ContextPage() {
       setCsvFile(null);
       setShowAddModal(false);
       setImportProgress(100);
+
+      // Show success message
+      alert(`${newPosts.length}件の投稿をインポートしました（AIがカテゴリを自動分類）`);
     } catch (error) {
       console.error("Failed to import:", error);
       alert(error instanceof Error ? error.message : "インポートに失敗しました");

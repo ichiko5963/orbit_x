@@ -42,7 +42,7 @@ const tierConfig = {
   C: { label: "Tier C", bgColor: "bg-zinc-100", textColor: "text-zinc-700", borderColor: "border-zinc-300", description: "保存のみ" },
 };
 
-// Practical X post categories
+// Practical X post categories (AI determines proper category - no "その他")
 const CATEGORIES = [
   "すべて",
   "速報・ニュース系",
@@ -56,7 +56,6 @@ const CATEGORIES = [
   "プレゼント・キャンペーン系",
   "採用・メンバー募集系",
   "日常・つぶやき系",
-  "その他",
 ];
 
 const roleColors: Record<string, string> = {

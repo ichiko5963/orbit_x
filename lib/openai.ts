@@ -70,50 +70,164 @@ JSON形式で回答してください。例：
   }
 }
 
+// Practical X post categories
+const PRACTICAL_CATEGORIES = [
+  "速報・ニュース系",
+  "Tips・ノウハウ系",
+  "記事・コンテンツ紹介系",
+  "ツール・サービス紹介系",
+  "動画・メディア紹介系",
+  "プロンプト・AI活用系",
+  "プロダクト・リリース系",
+  "イベント・登壇系",
+  "プレゼント・キャンペーン系",
+  "採用・メンバー募集系",
+  "日常・つぶやき系",
+];
+
+const CATEGORY_DESCRIPTIONS = `
+- 速報・ニュース系: 最新ニュース、話題の速報、〇〇が発表、朗報/悲報など
+- Tips・ノウハウ系: コツ、方法、やり方、テクニック、〇〇選、効率化など
+- 記事・コンテンツ紹介系: ブログ記事、note、Zenn、Qiita、書きました、まとめ記事の紹介など
+- ツール・サービス紹介系: 便利ツール、サービス、アプリ、拡張機能の紹介など
+- 動画・メディア紹介系: YouTube動画、Podcast、配信、ライブ、動画コンテンツの紹介など
+- プロンプト・AI活用系: ChatGPT、Claude、プロンプト、AI活用法、LLM関連など
+- プロダクト・リリース系: 新サービスリリース、新機能公開、作りました、ローンチなど
+- イベント・登壇系: 勉強会、カンファレンス、セミナー、登壇、イベント告知など
+- プレゼント・キャンペーン系: RT企画、フォロー&RT、プレゼント、抽選、キャンペーンなど
+- 採用・メンバー募集系: 求人、採用、メンバー募集、一緒に働きませんか、hiring など
+- 日常・つぶやき系: 日記、感想、つぶやき、今日〜した、おはよう、個人的な内容など
+`;
+
 /**
- * Categorize a post based on its content
+ * Categorize a single post based on its content using AI
  */
 export async function categorizePost(text: string): Promise<string> {
-  const categories = [
-    "マインド",
-    "速報",
-    "ノウハウ",
-    "キャリア",
-    "技術",
-    "ツール",
-    "その他",
-  ];
-
   const prompt = `以下のX（Twitter）の投稿を最も適切なカテゴリーに分類してください。
 
-カテゴリー一覧：
-${categories.map((c) => `- ${c}`).join("\n")}
+【カテゴリー一覧と判定基準】
+${CATEGORY_DESCRIPTIONS}
+
+【重要な判定ルール】
+1. URLが含まれている場合は記事・動画・ツールの紹介系である可能性が高い
+2. 「RT」「フォロー」「プレゼント」「抽選」が含まれていたらほぼ確実にプレゼント・キャンペーン系
+3. 「募集」「採用」「hiring」が含まれていたらほぼ確実に採用・メンバー募集系
+4. 「リリース」「公開しました」「作りました」が含まれていたらプロダクト・リリース系
+5. 迷ったら投稿の主目的を考える（何を伝えたいのか）
 
 投稿本文：
 """
 ${text}
 """
 
-カテゴリー名のみを回答してください。`;
+カテゴリー名のみを回答してください（上記リストから1つだけ選ぶ）。`;
 
   const response = await openai.chat.completions.create({
     model: "gpt-4o-mini",
     messages: [
       {
         role: "system",
-        content: "あなたはSNS投稿のカテゴリー分類のエキスパートです。",
+        content: "あなたはX（Twitter）投稿のカテゴリー分類エキスパートです。投稿内容を正確に分析し、最も適切なカテゴリーに分類してください。必ず指定されたカテゴリーの中から1つだけ選んでください。",
       },
       {
         role: "user",
         content: prompt,
       },
     ],
-    temperature: 0.2,
+    temperature: 0.1,
     max_tokens: 50,
   });
 
   const content = response.choices[0]?.message?.content?.trim();
-  return content && categories.includes(content) ? content : "その他";
+  // Ensure we return a valid category
+  if (content && PRACTICAL_CATEGORIES.includes(content)) {
+    return content;
+  }
+  // Try to find a partial match
+  for (const cat of PRACTICAL_CATEGORIES) {
+    if (content?.includes(cat) || cat.includes(content || "")) {
+      return cat;
+    }
+  }
+  return "日常・つぶやき系"; // Default to つぶやき instead of その他
+}
+
+/**
+ * Batch categorize multiple posts using AI (more efficient)
+ */
+export async function batchCategorizePosts(
+  posts: { id: string; text: string }[]
+): Promise<Record<string, string>> {
+  if (posts.length === 0) return {};
+
+  // Process in batches of 20 for efficiency
+  const batchSize = 20;
+  const results: Record<string, string> = {};
+
+  for (let i = 0; i < posts.length; i += batchSize) {
+    const batch = posts.slice(i, i + batchSize);
+
+    const postsText = batch
+      .map((p, idx) => `[${idx}] ${p.text.slice(0, 300)}`)
+      .join("\n\n---\n\n");
+
+    const prompt = `以下の複数のX（Twitter）投稿をそれぞれ最も適切なカテゴリーに分類してください。
+
+【カテゴリー一覧と判定基準】
+${CATEGORY_DESCRIPTIONS}
+
+【重要な判定ルール】
+1. URLが含まれている場合は記事・動画・ツールの紹介系である可能性が高い
+2. 「RT」「フォロー」「プレゼント」「抽選」が含まれていたらほぼ確実にプレゼント・キャンペーン系
+3. 「募集」「採用」「hiring」が含まれていたらほぼ確実に採用・メンバー募集系
+4. 「リリース」「公開しました」「作りました」が含まれていたらプロダクト・リリース系
+5. 迷ったら投稿の主目的を考える（何を伝えたいのか）
+
+【投稿一覧】
+${postsText}
+
+JSON形式で回答してください。例：
+{"0": "速報・ニュース系", "1": "Tips・ノウハウ系", "2": "記事・コンテンツ紹介系"}`;
+
+    try {
+      const response = await openai.chat.completions.create({
+        model: "gpt-4o-mini",
+        messages: [
+          {
+            role: "system",
+            content: "あなたはX（Twitter）投稿のカテゴリー分類エキスパートです。各投稿を正確に分析し、最も適切なカテゴリーに分類してください。必ず指定されたカテゴリーの中から選んでください。",
+          },
+          {
+            role: "user",
+            content: prompt,
+          },
+        ],
+        temperature: 0.1,
+        response_format: { type: "json_object" },
+      });
+
+      const content = response.choices[0]?.message?.content;
+      if (content) {
+        const parsed = JSON.parse(content);
+        batch.forEach((post, idx) => {
+          const category = parsed[String(idx)];
+          if (category && PRACTICAL_CATEGORIES.includes(category)) {
+            results[post.id] = category;
+          } else {
+            results[post.id] = "日常・つぶやき系";
+          }
+        });
+      }
+    } catch (error) {
+      console.error("Batch categorization error:", error);
+      // Fallback: assign default category
+      batch.forEach((post) => {
+        results[post.id] = "日常・つぶやき系";
+      });
+    }
+  }
+
+  return results;
 }
 
 interface GeneratePostOptions {

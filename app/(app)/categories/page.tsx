@@ -37,7 +37,7 @@ interface CategoryData {
   description: string;
 }
 
-// Practical X post categories with colors
+// Practical X post categories with colors (AI determines proper category - no "その他")
 const CATEGORY_CONFIG: Record<string, { color: string; description: string }> = {
   "速報・ニュース系": { color: "#ef4444", description: "最新ニュース・話題の速報" },
   "Tips・ノウハウ系": { color: "#10b981", description: "コツ・方法・テクニック" },
@@ -50,7 +50,6 @@ const CATEGORY_CONFIG: Record<string, { color: string; description: string }> = 
   "プレゼント・キャンペーン系": { color: "#f97316", description: "RT企画・プレゼント" },
   "採用・メンバー募集系": { color: "#84cc16", description: "求人・チームメンバー募集" },
   "日常・つぶやき系": { color: "#a1a1aa", description: "日記・感想・つぶやき" },
-  "その他": { color: "#71717a", description: "その他の投稿" },
 };
 
 const tierConfig = {
