@@ -180,10 +180,13 @@ export default function ImportPage() {
       {/* Page Header */}
       <div className="mb-8">
         <h1 className="text-3xl font-bold text-zinc-900 tracking-tight mb-2">
-          CSVインポート
+          自分の投稿をインポート
         </h1>
         <p className="text-lg text-zinc-500">
-          X PremiumからエクスポートしたCSVを取り込んで、投稿を自動分析
+          X PremiumからエクスポートしたCSVを取り込んで、<strong>あなたの過去投稿</strong>を自動分析
+        </p>
+        <p className="text-sm text-zinc-400 mt-1">
+          ※インポートした投稿は「過去投稿一覧」に表示されます
         </p>
       </div>
 
