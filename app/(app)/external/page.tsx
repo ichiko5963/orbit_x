@@ -336,12 +336,25 @@ export default function ExternalPage() {
     setTimeout(() => setCopiedId(null), 2000);
   };
 
-  const handlePost = (text: string) => {
+  const handlePost = (text: string, threadPost?: string) => {
+    // Copy thread post to clipboard first if exists
+    if (threadPost) {
+      navigator.clipboard.writeText(threadPost);
+    }
+
+    // Open the first tweet
     const tweetUrl = `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}`;
     window.open(tweetUrl, "_blank");
+
+    // Show instruction for thread post
+    if (threadPost) {
+      setTimeout(() => {
+        alert("1投稿目を投稿した後、2投稿目（ツリー）がクリップボードにコピーされています。\n投稿に返信として貼り付けてください。");
+      }, 500);
+    }
   };
 
-  const handleSchedule = async (id: number, text: string) => {
+  const handleSchedule = async (id: number, text: string, threadPost?: string) => {
     if (!user) return;
 
     setSchedulingId(id);
@@ -354,9 +367,13 @@ export default function ExternalPage() {
         scheduledAt,
         status: "scheduled",
         category: "記事",
+        threadPost: threadPost || undefined, // Save thread post for later
       });
 
-      alert("1時間後に予約投稿しました");
+      alert(threadPost
+        ? "1時間後にスレッド投稿（2投稿）を予約しました"
+        : "1時間後に予約投稿しました"
+      );
     } catch (err) {
       console.error("Schedule failed:", err);
     } finally {
@@ -769,7 +786,7 @@ export default function ExternalPage() {
                           {/* Action buttons row */}
                           <div className="flex">
                             <button
-                              onClick={() => handleSchedule(pattern.id, pattern.text)}
+                              onClick={() => handleSchedule(pattern.id, pattern.text, pattern.threadPost)}
                               disabled={schedulingId === pattern.id}
                               className="flex-1 flex items-center justify-center gap-1.5 py-2.5 text-sm font-medium text-violet-600 hover:bg-violet-50 transition-colors border-r border-zinc-100 disabled:opacity-50"
                             >
@@ -781,7 +798,7 @@ export default function ExternalPage() {
                               予約
                             </button>
                             <button
-                              onClick={() => handlePost(pattern.text)}
+                              onClick={() => handlePost(pattern.text, pattern.threadPost)}
                               className="flex-1 flex items-center justify-center gap-1.5 py-2.5 text-sm font-medium text-zinc-900 hover:bg-zinc-100 transition-colors"
                             >
                               <ExternalLink className="w-4 h-4" />

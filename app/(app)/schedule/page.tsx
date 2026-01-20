@@ -25,6 +25,7 @@ import { Timestamp } from "firebase/firestore";
 interface ScheduledPost {
   id: string;
   text: string;
+  threadPost?: string; // Thread post (2nd post in thread)
   scheduledAt: Date;
   status: "scheduled" | "posted" | "failed";
 }
@@ -73,6 +74,7 @@ export default function SchedulePage() {
         const formattedPosts: ScheduledPost[] = fetchedPosts.map((post: any) => ({
           id: post.id,
           text: post.text,
+          threadPost: post.threadPost || undefined,
           scheduledAt: post.scheduledAt instanceof Timestamp
             ? post.scheduledAt.toDate()
             : new Date(post.scheduledAt),
@@ -381,14 +383,21 @@ export default function SchedulePage() {
                     className="p-4 bg-zinc-50 rounded-xl"
                   >
                     <div className="flex items-center justify-between mb-2">
-                      <span className="text-sm font-medium text-emerald-600">
-                        {new Date(post.scheduledAt).toLocaleDateString("ja-JP", {
-                          month: "short",
-                          day: "numeric",
-                          hour: "2-digit",
-                          minute: "2-digit",
-                        })}
-                      </span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-medium text-emerald-600">
+                          {new Date(post.scheduledAt).toLocaleDateString("ja-JP", {
+                            month: "short",
+                            day: "numeric",
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          })}
+                        </span>
+                        {post.threadPost && (
+                          <span className="px-1.5 py-0.5 text-xs bg-blue-100 text-blue-600 rounded">
+                            スレッド
+                          </span>
+                        )}
+                      </div>
                       <div className="flex items-center gap-1">
                         <button
                           onClick={() => handleEditPost(post)}
@@ -407,6 +416,11 @@ export default function SchedulePage() {
                     <p className="text-sm text-zinc-600 line-clamp-2">
                       {post.text}
                     </p>
+                    {post.threadPost && (
+                      <p className="mt-2 text-xs text-blue-600 bg-blue-50 p-2 rounded line-clamp-1">
+                        → {post.threadPost}
+                      </p>
+                    )}
                   </div>
                 ))}
               </div>
