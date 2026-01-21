@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import {
   Settings,
@@ -52,6 +52,34 @@ export default function SettingsPage() {
   });
   const [isSaving, setIsSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+
+  // X API connection state
+  const [xConnected, setXConnected] = useState(false);
+  const [xUser, setXUser] = useState<{ name: string; username: string } | null>(null);
+  const [xLoading, setXLoading] = useState(true);
+  const [xError, setXError] = useState<string | null>(null);
+
+  // Check X connection on mount
+  useEffect(() => {
+    const checkXConnection = async () => {
+      try {
+        const response = await fetch("/api/twitter/verify");
+        const data = await response.json();
+        setXConnected(data.connected);
+        if (data.user) {
+          setXUser(data.user);
+        }
+        if (!data.connected && data.message) {
+          setXError(data.message);
+        }
+      } catch (error) {
+        setXError("Failed to check X connection");
+      } finally {
+        setXLoading(false);
+      }
+    };
+    checkXConnection();
+  }, []);
 
   const handleSave = async () => {
     setIsSaving(true);
@@ -301,22 +329,74 @@ export default function SettingsPage() {
                   <div className="p-4 bg-zinc-50 border border-zinc-200 rounded-xl">
                     <div className="flex items-center justify-between mb-4">
                       <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-xl bg-blue-500/20 flex items-center justify-center">
-                          <Globe className="w-5 h-5 text-blue-400" />
+                        <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${
+                          xConnected ? "bg-blue-500/20" : "bg-zinc-200"
+                        }`}>
+                          <Globe className={`w-5 h-5 ${xConnected ? "text-blue-400" : "text-zinc-400"}`} />
                         </div>
                         <div>
                           <p className="font-medium text-zinc-900">X (Twitter) API</p>
-                          <p className="text-xs text-zinc-500">投稿の直接投稿に使用</p>
+                          <p className="text-xs text-zinc-500">
+                            {xConnected && xUser
+                              ? `@${xUser.username} として接続中`
+                              : "予約投稿の自動投稿に使用"}
+                          </p>
                         </div>
                       </div>
-                      <span className="px-2.5 py-1 text-xs bg-zinc-200 text-zinc-500 rounded-lg">
-                        未接続
-                      </span>
+                      {xLoading ? (
+                        <span className="px-2.5 py-1 text-xs bg-zinc-200 text-zinc-500 rounded-lg">
+                          確認中...
+                        </span>
+                      ) : xConnected ? (
+                        <span className="px-2.5 py-1 text-xs bg-emerald-500/20 text-emerald-600 rounded-lg">
+                          接続済み
+                        </span>
+                      ) : (
+                        <span className="px-2.5 py-1 text-xs bg-amber-500/20 text-amber-600 rounded-lg">
+                          未設定
+                        </span>
+                      )}
                     </div>
-                    <button className="flex items-center gap-2 px-4 py-2 bg-zinc-200 text-zinc-900 text-sm font-medium rounded-lg hover:bg-zinc-300 transition-colors">
-                      <ExternalLink className="w-4 h-4" />
-                      X認証を開始
-                    </button>
+                    {xConnected && xUser ? (
+                      <div className="flex items-center gap-3 p-3 bg-emerald-50 rounded-lg">
+                        <CheckCircle2 className="w-5 h-5 text-emerald-500" />
+                        <div>
+                          <p className="text-sm font-medium text-emerald-700">
+                            {xUser.name}
+                          </p>
+                          <p className="text-xs text-emerald-600">
+                            予約投稿は自動的にこのアカウントから投稿されます
+                          </p>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="space-y-3">
+                        {xError && (
+                          <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg">
+                            <p className="text-sm text-amber-700">{xError}</p>
+                          </div>
+                        )}
+                        <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                          <p className="text-sm text-blue-700 mb-2">
+                            <strong>X API の設定方法:</strong>
+                          </p>
+                          <ol className="text-xs text-blue-600 space-y-1 list-decimal list-inside">
+                            <li>X Developer Portal でアプリを作成</li>
+                            <li>APIキーとアクセストークンを取得</li>
+                            <li>.env.local に設定を追加</li>
+                          </ol>
+                        </div>
+                        <a
+                          href="https://developer.twitter.com/en/portal/dashboard"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="flex items-center gap-2 px-4 py-2 bg-zinc-200 text-zinc-900 text-sm font-medium rounded-lg hover:bg-zinc-300 transition-colors"
+                        >
+                          <ExternalLink className="w-4 h-4" />
+                          X Developer Portal を開く
+                        </a>
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>

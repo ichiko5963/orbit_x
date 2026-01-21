@@ -65,6 +65,16 @@ export default function SchedulePage() {
   const [draggedPost, setDraggedPost] = useState<ScheduledPost | null>(null);
   const [dragOverSlot, setDragOverSlot] = useState<{ day: number; hour: number } | null>(null);
 
+  // Time picker modal (for 15-min intervals after drop)
+  const [showTimePicker, setShowTimePicker] = useState(false);
+  const [timePickerPost, setTimePickerPost] = useState<ScheduledPost | null>(null);
+  const [timePickerDate, setTimePickerDate] = useState<Date | null>(null);
+  const [timePickerHour, setTimePickerHour] = useState(12);
+  const [timePickerMinute, setTimePickerMinute] = useState(0);
+
+  // Quick time change modal
+  const [showQuickTimeChange, setShowQuickTimeChange] = useState(false);
+
   // Toast
   const [showSuccess, setShowSuccess] = useState(false);
   const [successMessage, setSuccessMessage] = useState("");
@@ -124,10 +134,25 @@ export default function SchedulePage() {
     setWeekStart(today);
   };
 
+  // Helper to convert scheduledAt to Date (handles both Timestamp and Date)
+  const toDate = (scheduledAt: any): Date => {
+    if (!scheduledAt) return new Date(0);
+    // Firebase Timestamp has toDate() method
+    if (scheduledAt.toDate && typeof scheduledAt.toDate === "function") {
+      return scheduledAt.toDate();
+    }
+    // If it's a Firestore Timestamp-like object with seconds
+    if (scheduledAt.seconds !== undefined) {
+      return new Date(scheduledAt.seconds * 1000);
+    }
+    // Otherwise try to create Date directly
+    return new Date(scheduledAt);
+  };
+
   // Get posts for a specific day and hour
   const getPostsForSlot = (day: Date, hour: number) => {
     return posts.filter((post) => {
-      const postDate = new Date(post.scheduledAt);
+      const postDate = toDate(post.scheduledAt);
       return (
         postDate.getFullYear() === day.getFullYear() &&
         postDate.getMonth() === day.getMonth() &&
@@ -135,8 +160,8 @@ export default function SchedulePage() {
         postDate.getHours() === hour
       );
     }).sort((a, b) => {
-      const dateA = new Date(a.scheduledAt);
-      const dateB = new Date(b.scheduledAt);
+      const dateA = toDate(a.scheduledAt);
+      const dateB = toDate(b.scheduledAt);
       return dateA.getMinutes() - dateB.getMinutes();
     });
   };
@@ -192,7 +217,7 @@ export default function SchedulePage() {
     setDragOverSlot(null);
   };
 
-  const handleDrop = async (e: React.DragEvent, dayIndex: number, hour: number) => {
+  const handleDrop = (e: React.DragEvent, dayIndex: number, hour: number) => {
     e.preventDefault();
     setDragOverSlot(null);
 
@@ -202,26 +227,41 @@ export default function SchedulePage() {
     const newDate = new Date(targetDay);
     newDate.setHours(hour, 0, 0, 0);
 
-    // Don't move if same slot
-    const oldDate = new Date(draggedPost.scheduledAt);
+    // Show time picker modal for 15-minute selection
+    const oldDate = toDate(draggedPost.scheduledAt);
+    setTimePickerPost(draggedPost);
+    setTimePickerDate(newDate);
+    setTimePickerHour(hour);
+    // Keep the original minutes if moving within same hour
     if (
       oldDate.getFullYear() === newDate.getFullYear() &&
       oldDate.getMonth() === newDate.getMonth() &&
       oldDate.getDate() === newDate.getDate() &&
-      oldDate.getHours() === newDate.getHours()
+      oldDate.getHours() === hour
     ) {
-      setDraggedPost(null);
-      return;
+      setTimePickerMinute(oldDate.getMinutes());
+    } else {
+      setTimePickerMinute(0);
     }
+    setShowTimePicker(true);
+    setDraggedPost(null);
+  };
+
+  // Confirm time picker selection
+  const handleConfirmTimePicker = async () => {
+    if (!timePickerPost || !timePickerDate || !user) return;
+
+    const newDate = new Date(timePickerDate);
+    newDate.setHours(timePickerHour, timePickerMinute, 0, 0);
 
     try {
-      await updateScheduledPost(user.uid, draggedPost.id, {
+      await updateScheduledPost(user.uid, timePickerPost.id, {
         scheduledAt: Timestamp.fromDate(newDate),
       });
 
       setPosts((prev) =>
         prev.map((p) =>
-          p.id === draggedPost.id ? { ...p, scheduledAt: newDate } : p
+          p.id === timePickerPost.id ? { ...p, scheduledAt: newDate } : p
         )
       );
 
@@ -230,7 +270,35 @@ export default function SchedulePage() {
       console.error("Failed to move post:", error);
     }
 
-    setDraggedPost(null);
+    setShowTimePicker(false);
+    setTimePickerPost(null);
+  };
+
+  // Quick time change for selected post
+  const handleQuickTimeChange = async (minute: number) => {
+    if (!selectedPost || !user) return;
+
+    const currentDate = toDate(selectedPost.scheduledAt);
+    const newDate = new Date(currentDate);
+    newDate.setMinutes(minute);
+
+    try {
+      await updateScheduledPost(user.uid, selectedPost.id, {
+        scheduledAt: Timestamp.fromDate(newDate),
+      });
+
+      setPosts((prev) =>
+        prev.map((p) =>
+          p.id === selectedPost.id ? { ...p, scheduledAt: newDate } : p
+        )
+      );
+
+      setSelectedPost({ ...selectedPost, scheduledAt: newDate });
+      setShowQuickTimeChange(false);
+      showToast("時間を変更しました");
+    } catch (error) {
+      console.error("Failed to change time:", error);
+    }
   };
 
   // Click empty slot to create new post
@@ -298,7 +366,7 @@ export default function SchedulePage() {
   // Start editing
   const handleStartEdit = () => {
     if (!selectedPost) return;
-    const postDate = new Date(selectedPost.scheduledAt);
+    const postDate = toDate(selectedPost.scheduledAt);
     setEditText(selectedPost.text);
     setEditDate(postDate.toISOString().split("T")[0]);
     setEditTime(postDate.toTimeString().slice(0, 5));
@@ -490,7 +558,6 @@ export default function SchedulePage() {
                     }}
                   >
                     {slotPosts.map((post) => {
-                      const postDate = new Date(post.scheduledAt);
                       const isPosted = post.status === "posted";
                       const isFailed = post.status === "failed";
 
@@ -520,7 +587,7 @@ export default function SchedulePage() {
 
                           <div className="flex items-center gap-1 font-semibold pl-3">
                             <Clock className="w-3 h-3" />
-                            {formatTime(postDate)}
+                            {formatTime(toDate(post.scheduledAt))}
                             {isPosted && <CheckCircle2 className="w-3 h-3 ml-auto" />}
                           </div>
 
@@ -674,7 +741,7 @@ export default function SchedulePage() {
                 </div>
                 <div>
                   <div className="font-semibold text-zinc-900">
-                    {new Date(selectedPost.scheduledAt).toLocaleDateString("ja-JP", {
+                    {toDate(selectedPost.scheduledAt).toLocaleDateString("ja-JP", {
                       year: "numeric",
                       month: "long",
                       day: "numeric",
@@ -682,7 +749,7 @@ export default function SchedulePage() {
                     })}
                   </div>
                   <div className="text-sm text-zinc-500">
-                    {formatTime(new Date(selectedPost.scheduledAt))}
+                    {formatTime(toDate(selectedPost.scheduledAt))}
                   </div>
                 </div>
               </div>
@@ -783,13 +850,49 @@ export default function SchedulePage() {
 
             {!isEditing && (
               <div className="flex-shrink-0 border-t border-zinc-200 p-4">
-                <div className="grid grid-cols-4 gap-2">
+                {/* Quick Time Change */}
+                {showQuickTimeChange && (
+                  <div className="mb-4 p-3 bg-violet-50 rounded-xl">
+                    <p className="text-sm font-medium text-violet-700 mb-2">時間を選択（15分単位）</p>
+                    <div className="grid grid-cols-4 gap-2">
+                      {[0, 15, 30, 45].map((minute) => {
+                        const currentDate = toDate(selectedPost.scheduledAt);
+                        return (
+                          <button
+                            key={minute}
+                            onClick={() => handleQuickTimeChange(minute)}
+                            className={`py-2 text-sm font-medium rounded-lg transition-colors ${
+                              currentDate.getMinutes() === minute
+                                ? "bg-violet-500 text-white"
+                                : "bg-white border border-violet-200 text-violet-700 hover:bg-violet-100"
+                            }`}
+                          >
+                            {currentDate.getHours().toString().padStart(2, "0")}:{minute.toString().padStart(2, "0")}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                <div className="grid grid-cols-5 gap-2">
                   <button
                     onClick={() => handleDeletePost(selectedPost.id)}
                     className="flex flex-col items-center gap-1 py-3 text-red-500 hover:bg-red-50 rounded-xl"
                   >
                     <Trash2 className="w-5 h-5" />
                     <span className="text-xs">削除</span>
+                  </button>
+                  <button
+                    onClick={() => setShowQuickTimeChange(!showQuickTimeChange)}
+                    className={`flex flex-col items-center gap-1 py-3 rounded-xl ${
+                      showQuickTimeChange
+                        ? "bg-violet-100 text-violet-600"
+                        : "text-violet-600 hover:bg-violet-50"
+                    }`}
+                  >
+                    <Clock className="w-5 h-5" />
+                    <span className="text-xs">時間変更</span>
                   </button>
                   <button
                     onClick={handleStartEdit}
@@ -815,6 +918,108 @@ export default function SchedulePage() {
                 </div>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Time Picker Modal (after drag & drop) */}
+      {showTimePicker && timePickerPost && timePickerDate && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div
+            className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+            onClick={() => {
+              setShowTimePicker(false);
+              setTimePickerPost(null);
+            }}
+          />
+          <div className="relative w-full max-w-sm bg-white rounded-2xl shadow-xl mx-4 overflow-hidden">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-200">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-violet-100 rounded-lg">
+                  <Clock className="w-5 h-5 text-violet-600" />
+                </div>
+                <div>
+                  <div className="font-semibold text-zinc-900">時間を選択</div>
+                  <div className="text-sm text-zinc-500">
+                    {timePickerDate.toLocaleDateString("ja-JP", {
+                      month: "long",
+                      day: "numeric",
+                      weekday: "short",
+                    })}
+                  </div>
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  setShowTimePicker(false);
+                  setTimePickerPost(null);
+                }}
+                className="p-2 rounded-lg hover:bg-zinc-100"
+              >
+                <XIcon className="w-5 h-5 text-zinc-500" />
+              </button>
+            </div>
+
+            <div className="p-6">
+              {/* Hour selection */}
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-zinc-700 mb-2">時</label>
+                <select
+                  value={timePickerHour}
+                  onChange={(e) => setTimePickerHour(Number(e.target.value))}
+                  className="w-full h-11 px-3 bg-zinc-50 border border-zinc-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-violet-500"
+                >
+                  {TIME_SLOTS.map((hour) => (
+                    <option key={hour} value={hour}>
+                      {hour}:00
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Minute selection (15-min intervals) */}
+              <div className="mb-6">
+                <label className="block text-sm font-medium text-zinc-700 mb-2">分（15分単位）</label>
+                <div className="grid grid-cols-4 gap-2">
+                  {[0, 15, 30, 45].map((minute) => (
+                    <button
+                      key={minute}
+                      onClick={() => setTimePickerMinute(minute)}
+                      className={`py-3 text-lg font-semibold rounded-xl transition-colors ${
+                        timePickerMinute === minute
+                          ? "bg-violet-500 text-white"
+                          : "bg-zinc-100 text-zinc-700 hover:bg-zinc-200"
+                      }`}
+                    >
+                      :{minute.toString().padStart(2, "0")}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Preview */}
+              <div className="p-3 bg-zinc-50 rounded-lg mb-4">
+                <p className="text-center text-lg font-bold text-zinc-900">
+                  {timePickerHour.toString().padStart(2, "0")}:{timePickerMinute.toString().padStart(2, "0")}
+                </p>
+              </div>
+
+              {/* Post preview */}
+              <div className="p-3 bg-emerald-50 rounded-lg mb-4">
+                <p className="text-sm text-emerald-700 line-clamp-2">
+                  {timePickerPost.text.slice(0, 80)}...
+                </p>
+              </div>
+
+              {/* Confirm button */}
+              <button
+                onClick={handleConfirmTimePicker}
+                className="w-full py-3 bg-violet-500 text-white font-medium rounded-xl hover:bg-violet-600 flex items-center justify-center gap-2"
+              >
+                <CheckCircle2 className="w-5 h-5" />
+                この時間に移動
+              </button>
+            </div>
           </div>
         </div>
       )}

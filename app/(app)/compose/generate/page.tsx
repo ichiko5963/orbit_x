@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
@@ -20,7 +20,10 @@ import {
   Pencil,
   Wand2,
   Zap,
+  X as XIcon,
+  Clock,
 } from "lucide-react";
+import { Timestamp } from "firebase/firestore";
 import { useAuth } from "@/lib/auth-context";
 import { getContextPosts, getPosts, saveScheduledPost, getUserStyleAnalysis } from "@/lib/firebase";
 
@@ -90,6 +93,15 @@ export default function GeneratePage() {
   const [copiedId, setCopiedId] = useState<number | null>(null);
   const [schedulingId, setSchedulingId] = useState<number | null>(null);
 
+  // Schedule modal state
+  const [showScheduleModal, setShowScheduleModal] = useState(false);
+  const [scheduleCardId, setScheduleCardId] = useState<number | null>(null);
+  const [scheduleText, setScheduleText] = useState("");
+  const [scheduleDate, setScheduleDate] = useState("");
+  const [scheduleTime, setScheduleTime] = useState("");
+  const [isSavingSchedule, setIsSavingSchedule] = useState(false);
+  const scheduleTextareaRef = useRef<HTMLTextAreaElement>(null);
+
   // Load content and cards from sessionStorage
   useEffect(() => {
     const savedContent = sessionStorage.getItem("compose_content");
@@ -117,6 +129,14 @@ export default function GeneratePage() {
       sessionStorage.setItem("compose_generated_cards", JSON.stringify(cards));
     }
   }, [cards]);
+
+  // Auto-resize schedule textarea
+  useEffect(() => {
+    if (scheduleTextareaRef.current) {
+      scheduleTextareaRef.current.style.height = "auto";
+      scheduleTextareaRef.current.style.height = `${scheduleTextareaRef.current.scrollHeight}px`;
+    }
+  }, [scheduleText]);
 
   // Load reference posts from BOTH sources
   useEffect(() => {
@@ -456,26 +476,42 @@ export default function GeneratePage() {
     window.open(tweetUrl, "_blank");
   };
 
-  const handleSchedule = async (cardId: number, text: string) => {
-    if (!user) return;
+  // Open schedule modal with date/time picker
+  const handleSchedule = (cardId: number, text: string) => {
+    // Set default to 1 hour from now
+    const defaultDate = new Date();
+    defaultDate.setHours(defaultDate.getHours() + 1);
+    defaultDate.setMinutes(0, 0, 0);
 
-    setSchedulingId(cardId);
+    setScheduleCardId(cardId);
+    setScheduleText(text);
+    setScheduleDate(defaultDate.toISOString().split("T")[0]);
+    setScheduleTime(defaultDate.toTimeString().slice(0, 5));
+    setShowScheduleModal(true);
+  };
+
+  // Save scheduled post with selected date/time
+  const handleSaveSchedule = async () => {
+    if (!user || !scheduleText.trim()) return;
+
+    setIsSavingSchedule(true);
     try {
-      const scheduledAt = new Date();
-      scheduledAt.setHours(scheduledAt.getHours() + 1);
+      const scheduledAt = new Date(`${scheduleDate}T${scheduleTime}`);
 
       await saveScheduledPost(user.uid, {
-        text,
-        scheduledAt,
+        text: scheduleText,
+        scheduledAt: Timestamp.fromDate(scheduledAt),
         status: "scheduled",
       });
 
-      alert("1時間後に予約投稿しました");
+      setShowScheduleModal(false);
+      setScheduleCardId(null);
       router.push("/schedule");
     } catch (err) {
       console.error("Schedule failed:", err);
+      alert("予約に失敗しました");
     } finally {
-      setSchedulingId(null);
+      setIsSavingSchedule(false);
     }
   };
 
@@ -889,6 +925,124 @@ export default function GeneratePage() {
             2. カテゴリーを選択（他者バズ投稿から参考）<br />
             3. 6パターンの投稿案を生成
           </p>
+        </div>
+      )}
+
+      {/* Schedule Modal */}
+      {showScheduleModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div
+            className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+            onClick={() => setShowScheduleModal(false)}
+          />
+          <div className="relative w-full max-w-lg bg-white rounded-2xl shadow-xl mx-4 overflow-hidden">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-200">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-violet-100 rounded-lg">
+                  <Calendar className="w-5 h-5 text-violet-600" />
+                </div>
+                <div>
+                  <div className="font-semibold text-zinc-900">予約投稿</div>
+                  <div className="text-sm text-zinc-500">日時を選択してください</div>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowScheduleModal(false)}
+                className="p-2 rounded-lg hover:bg-zinc-100"
+              >
+                <XIcon className="w-5 h-5 text-zinc-500" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4">
+              {/* Date and Time */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm font-medium text-zinc-700 mb-1">日付</label>
+                  <input
+                    type="date"
+                    value={scheduleDate}
+                    onChange={(e) => setScheduleDate(e.target.value)}
+                    min={new Date().toISOString().split("T")[0]}
+                    className="w-full h-11 px-3 bg-zinc-50 border border-zinc-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-violet-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-zinc-700 mb-1">時間</label>
+                  <input
+                    type="time"
+                    value={scheduleTime}
+                    onChange={(e) => setScheduleTime(e.target.value)}
+                    className="w-full h-11 px-3 bg-zinc-50 border border-zinc-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-violet-500"
+                  />
+                </div>
+              </div>
+
+              {/* Quick time selection */}
+              <div className="flex flex-wrap gap-2">
+                {["09:00", "12:00", "18:00", "21:00"].map((time) => (
+                  <button
+                    key={time}
+                    onClick={() => setScheduleTime(time)}
+                    className={`px-3 py-1.5 text-sm rounded-lg border transition-colors ${
+                      scheduleTime === time
+                        ? "border-violet-500 bg-violet-50 text-violet-700"
+                        : "border-zinc-200 text-zinc-600 hover:border-zinc-300"
+                    }`}
+                  >
+                    <Clock className="w-3 h-3 inline-block mr-1" />
+                    {time}
+                  </button>
+                ))}
+              </div>
+
+              {/* Post content */}
+              <div>
+                <label className="block text-sm font-medium text-zinc-700 mb-1">
+                  投稿内容
+                  <span className="ml-2 text-zinc-400 font-normal">{scheduleText.length}文字</span>
+                </label>
+                <textarea
+                  ref={scheduleTextareaRef}
+                  value={scheduleText}
+                  onChange={(e) => setScheduleText(e.target.value)}
+                  className="w-full min-h-[120px] p-4 bg-zinc-50 border border-zinc-200 rounded-lg text-zinc-700 resize-none focus:outline-none focus:ring-2 focus:ring-violet-500 leading-relaxed"
+                  style={{ lineHeight: "1.8" }}
+                />
+              </div>
+
+              {/* Preview */}
+              <div className="p-3 bg-zinc-50 rounded-lg">
+                <p className="text-sm text-zinc-600">
+                  <span className="font-medium">予約日時: </span>
+                  {scheduleDate && scheduleTime
+                    ? new Date(`${scheduleDate}T${scheduleTime}`).toLocaleString("ja-JP", {
+                        year: "numeric",
+                        month: "long",
+                        day: "numeric",
+                        weekday: "short",
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })
+                    : "日時を選択してください"}
+                </p>
+              </div>
+
+              {/* Save button */}
+              <button
+                onClick={handleSaveSchedule}
+                disabled={isSavingSchedule || !scheduleText.trim() || !scheduleDate || !scheduleTime}
+                className="w-full py-3 bg-violet-500 text-white font-medium rounded-xl hover:bg-violet-600 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+              >
+                {isSavingSchedule ? (
+                  <Loader2 className="w-5 h-5 animate-spin" />
+                ) : (
+                  <Calendar className="w-5 h-5" />
+                )}
+                予約する
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
