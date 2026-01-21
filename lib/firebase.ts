@@ -171,8 +171,12 @@ export const getCategories = async (userId: string) => {
 export const saveScheduledPost = async (userId: string, post: any) => {
   try {
     const postRef = doc(collection(db, "users", userId, "scheduledPosts"));
+    // Filter out undefined values to avoid Firebase error
+    const cleanedPost = Object.fromEntries(
+      Object.entries(post).filter(([_, v]) => v !== undefined)
+    );
     await setDoc(postRef, {
-      ...post,
+      ...cleanedPost,
       createdAt: Timestamp.now(),
     });
     return postRef.id;
@@ -347,6 +351,76 @@ export const clearPosts = async (userId: string) => {
   } catch (error) {
     console.error("Clear posts error:", error);
     throw error;
+  }
+};
+
+// ============================================
+// User Style Analysis (ユーザースタイル分析)
+// ============================================
+
+export interface UserStyleAnalysis {
+  // 基本スタイル
+  avgLength: number;
+  hasEmoji: boolean;
+  emojiFrequency: string; // "none" | "low" | "medium" | "high"
+  punctuationStyle: string; // 句読点スタイル
+  exclamationFrequency: string; // 「！」の頻度
+
+  // 構造パターン
+  preferredStructures: string[]; // よく使う構造パターン
+  bulletPointStyle: string; // 箇条書きスタイル
+  lineBreakPattern: string; // 改行パターン
+
+  // 口調・トーン
+  tone: string; // "casual" | "formal" | "energetic" | "calm"
+  personalPronouns: string[]; // よく使う一人称
+  endingPatterns: string[]; // 語尾パターン
+
+  // バズ投稿の特徴
+  buzzPatterns: string[]; // バズった投稿の共通パターン
+  topPerformingStructures: string[]; // 高パフォーマンス投稿の構造
+
+  // 禁止・推奨パターン
+  avoidPatterns: string[]; // 避けるべきパターン
+  recommendedPatterns: string[]; // 推奨パターン
+
+  // 生のサンプル
+  samplePosts: string[]; // 上位投稿のサンプル
+
+  // メタデータ
+  analyzedAt: string;
+  postsAnalyzed: number;
+
+  // AIプロンプト用の要約
+  promptSummary: string;
+}
+
+// Save user style analysis
+export const saveUserStyleAnalysis = async (userId: string, analysis: UserStyleAnalysis) => {
+  try {
+    const styleRef = doc(db, "users", userId, "settings", "userStyle");
+    await setDoc(styleRef, {
+      ...analysis,
+      updatedAt: Timestamp.now(),
+    });
+  } catch (error) {
+    console.error("Save user style error:", error);
+    throw error;
+  }
+};
+
+// Get user style analysis
+export const getUserStyleAnalysis = async (userId: string): Promise<UserStyleAnalysis | null> => {
+  try {
+    const styleRef = doc(db, "users", userId, "settings", "userStyle");
+    const snapshot = await getDoc(styleRef);
+    if (snapshot.exists()) {
+      return snapshot.data() as UserStyleAnalysis;
+    }
+    return null;
+  } catch (error) {
+    console.error("Get user style error:", error);
+    return null;
   }
 };
 

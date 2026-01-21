@@ -1,597 +1,820 @@
 "use client";
 
-import { useState, useMemo, useEffect } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import {
-  Calendar,
   ChevronLeft,
   ChevronRight,
   Plus,
-  X,
-  Clock,
-  Edit3,
-  Trash2,
   CheckCircle2,
+  X as XIcon,
+  Clock,
   Loader2,
+  Pencil,
+  Trash2,
+  Copy,
+  ExternalLink,
+  Calendar,
+  Save,
+  GripVertical,
 } from "lucide-react";
+import Link from "next/link";
 import { useAuth } from "@/lib/auth-context";
-import {
-  saveScheduledPost,
-  getScheduledPosts,
-  updateScheduledPost,
-  deleteScheduledPost,
-} from "@/lib/firebase";
+import { getScheduledPosts, updateScheduledPost, deleteScheduledPost, saveScheduledPost } from "@/lib/firebase";
 import { Timestamp } from "firebase/firestore";
 
 interface ScheduledPost {
   id: string;
   text: string;
-  threadPost?: string; // Thread post (2nd post in thread)
-  scheduledAt: Date;
+  scheduledAt: any;
   status: "scheduled" | "posted" | "failed";
+  imageUrls?: string[];
+  quoteTweetUrl?: string;
 }
 
-const daysOfWeek = ["日", "月", "火", "水", "木", "金", "土"];
-const months = [
-  "1月", "2月", "3月", "4月", "5月", "6月",
-  "7月", "8月", "9月", "10月", "11月", "12月"
-];
+// Time slots from 6:00 to 23:00 (main posting hours)
+const TIME_SLOTS = Array.from({ length: 18 }, (_, i) => i + 6);
 
-function getDaysInMonth(year: number, month: number) {
-  return new Date(year, month + 1, 0).getDate();
-}
-
-function getFirstDayOfMonth(year: number, month: number) {
-  return new Date(year, month, 1).getDay();
-}
+// Days of week in Japanese
+const DAYS_JP = ["日", "月", "火", "水", "木", "金", "土"];
 
 export default function SchedulePage() {
   const { user } = useAuth();
-  const [currentDate, setCurrentDate] = useState(new Date());
-  const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [posts, setPosts] = useState<ScheduledPost[]>([]);
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [newPostText, setNewPostText] = useState("");
-  const [newPostTime, setNewPostTime] = useState("09:00");
-  const [editingPost, setEditingPost] = useState<ScheduledPost | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [weekStart, setWeekStart] = useState<Date>(() => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    return today;
+  });
+
+  // Modal states
+  const [selectedPost, setSelectedPost] = useState<ScheduledPost | null>(null);
+  const [isEditing, setIsEditing] = useState(false);
+  const [editText, setEditText] = useState("");
+  const [editDate, setEditDate] = useState("");
+  const [editTime, setEditTime] = useState("");
   const [isSaving, setIsSaving] = useState(false);
 
-  const year = currentDate.getFullYear();
-  const month = currentDate.getMonth();
-  const daysInMonth = getDaysInMonth(year, month);
-  const firstDayOfMonth = getFirstDayOfMonth(year, month);
+  // New post modal
+  const [showNewPostModal, setShowNewPostModal] = useState(false);
+  const [newPostDate, setNewPostDate] = useState<Date | null>(null);
+  const [newPostTime, setNewPostTime] = useState("12:00");
+  const [newPostText, setNewPostText] = useState("");
 
-  // Load posts from Firestore
+  // Drag state
+  const [draggedPost, setDraggedPost] = useState<ScheduledPost | null>(null);
+  const [dragOverSlot, setDragOverSlot] = useState<{ day: number; hour: number } | null>(null);
+
+  // Toast
+  const [showSuccess, setShowSuccess] = useState(false);
+  const [successMessage, setSuccessMessage] = useState("");
+
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // Get 7 days starting from weekStart
+  const weekDays = useMemo(() => {
+    return Array.from({ length: 7 }, (_, i) => {
+      const date = new Date(weekStart);
+      date.setDate(date.getDate() + i);
+      return date;
+    });
+  }, [weekStart]);
+
+  // Load scheduled posts
   useEffect(() => {
     const loadPosts = async () => {
-      if (!user) {
-        setIsLoading(false);
-        return;
-      }
-
+      if (!user) return;
+      setIsLoading(true);
       try {
         const fetchedPosts = await getScheduledPosts(user.uid);
-        const formattedPosts: ScheduledPost[] = fetchedPosts.map((post: any) => ({
-          id: post.id,
-          text: post.text,
-          threadPost: post.threadPost || undefined,
-          scheduledAt: post.scheduledAt instanceof Timestamp
-            ? post.scheduledAt.toDate()
-            : new Date(post.scheduledAt),
-          status: post.status || "scheduled",
-        }));
-        setPosts(formattedPosts);
+        setPosts(fetchedPosts as ScheduledPost[]);
       } catch (error) {
         console.error("Failed to load posts:", error);
       } finally {
         setIsLoading(false);
       }
     };
-
     loadPosts();
   }, [user]);
 
-  const calendarDays = useMemo(() => {
-    const days: (number | null)[] = [];
-
-    for (let i = 0; i < firstDayOfMonth; i++) {
-      days.push(null);
+  // Auto-resize textarea
+  useEffect(() => {
+    if (textareaRef.current) {
+      textareaRef.current.style.height = "auto";
+      textareaRef.current.style.height = `${textareaRef.current.scrollHeight}px`;
     }
+  }, [editText, newPostText]);
 
-    for (let i = 1; i <= daysInMonth; i++) {
-      days.push(i);
-    }
+  // Navigate weeks
+  const goToPrevWeek = () => {
+    const newStart = new Date(weekStart);
+    newStart.setDate(newStart.getDate() - 7);
+    setWeekStart(newStart);
+  };
 
-    return days;
-  }, [daysInMonth, firstDayOfMonth]);
+  const goToNextWeek = () => {
+    const newStart = new Date(weekStart);
+    newStart.setDate(newStart.getDate() + 7);
+    setWeekStart(newStart);
+  };
 
-  const getPostsForDate = (day: number) => {
+  const goToThisWeek = () => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    setWeekStart(today);
+  };
+
+  // Get posts for a specific day and hour
+  const getPostsForSlot = (day: Date, hour: number) => {
     return posts.filter((post) => {
       const postDate = new Date(post.scheduledAt);
       return (
-        postDate.getFullYear() === year &&
-        postDate.getMonth() === month &&
-        postDate.getDate() === day
+        postDate.getFullYear() === day.getFullYear() &&
+        postDate.getMonth() === day.getMonth() &&
+        postDate.getDate() === day.getDate() &&
+        postDate.getHours() === hour
       );
+    }).sort((a, b) => {
+      const dateA = new Date(a.scheduledAt);
+      const dateB = new Date(b.scheduledAt);
+      return dateA.getMinutes() - dateB.getMinutes();
     });
   };
 
-  const handlePrevMonth = () => {
-    setCurrentDate(new Date(year, month - 1, 1));
+  // Check if date is today
+  const isToday = (date: Date) => {
+    const today = new Date();
+    return (
+      today.getFullYear() === date.getFullYear() &&
+      today.getMonth() === date.getMonth() &&
+      today.getDate() === date.getDate()
+    );
   };
 
-  const handleNextMonth = () => {
-    setCurrentDate(new Date(year, month + 1, 1));
+  // Format time
+  const formatTime = (date: Date) => {
+    return date.toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" });
   };
 
-  const handleDateClick = (day: number) => {
-    setSelectedDate(new Date(year, month, day));
-    setIsModalOpen(true);
+  // Truncate text
+  const truncateText = (text: string, maxLength: number) => {
+    const firstLine = text.split("\n")[0];
+    if (firstLine.length <= maxLength) return firstLine;
+    return firstLine.slice(0, maxLength) + "...";
   };
 
-  const handleAddPost = async () => {
-    if (!newPostText || !selectedDate || !user) return;
+  // Show success toast
+  const showToast = (message: string) => {
+    setSuccessMessage(message);
+    setShowSuccess(true);
+    setTimeout(() => setShowSuccess(false), 2000);
+  };
 
+  // Drag handlers
+  const handleDragStart = (e: React.DragEvent, post: ScheduledPost) => {
+    setDraggedPost(post);
+    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData("text/plain", post.id);
+  };
+
+  const handleDragEnd = () => {
+    setDraggedPost(null);
+    setDragOverSlot(null);
+  };
+
+  const handleDragOver = (e: React.DragEvent, dayIndex: number, hour: number) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    setDragOverSlot({ day: dayIndex, hour });
+  };
+
+  const handleDragLeave = () => {
+    setDragOverSlot(null);
+  };
+
+  const handleDrop = async (e: React.DragEvent, dayIndex: number, hour: number) => {
+    e.preventDefault();
+    setDragOverSlot(null);
+
+    if (!draggedPost || !user) return;
+
+    const targetDay = weekDays[dayIndex];
+    const newDate = new Date(targetDay);
+    newDate.setHours(hour, 0, 0, 0);
+
+    // Don't move if same slot
+    const oldDate = new Date(draggedPost.scheduledAt);
+    if (
+      oldDate.getFullYear() === newDate.getFullYear() &&
+      oldDate.getMonth() === newDate.getMonth() &&
+      oldDate.getDate() === newDate.getDate() &&
+      oldDate.getHours() === newDate.getHours()
+    ) {
+      setDraggedPost(null);
+      return;
+    }
+
+    try {
+      await updateScheduledPost(user.uid, draggedPost.id, {
+        scheduledAt: Timestamp.fromDate(newDate),
+      });
+
+      setPosts((prev) =>
+        prev.map((p) =>
+          p.id === draggedPost.id ? { ...p, scheduledAt: newDate } : p
+        )
+      );
+
+      showToast("投稿を移動しました");
+    } catch (error) {
+      console.error("Failed to move post:", error);
+    }
+
+    setDraggedPost(null);
+  };
+
+  // Click empty slot to create new post
+  const handleSlotClick = (day: Date, hour: number) => {
+    const date = new Date(day);
+    date.setHours(hour, 0, 0, 0);
+    setNewPostDate(date);
+    setNewPostTime(`${hour.toString().padStart(2, "0")}:00`);
+    setNewPostText("");
+    setShowNewPostModal(true);
+  };
+
+  // Create new post
+  const handleCreatePost = async () => {
+    if (!user || !newPostDate || !newPostText.trim()) return;
     setIsSaving(true);
 
     try {
       const [hours, minutes] = newPostTime.split(":").map(Number);
-      const scheduledAt = new Date(selectedDate);
+      const scheduledAt = new Date(newPostDate);
       scheduledAt.setHours(hours, minutes, 0, 0);
 
-      if (editingPost) {
-        await updateScheduledPost(user.uid, editingPost.id, {
-          text: newPostText,
-          scheduledAt: Timestamp.fromDate(scheduledAt),
-        });
-        setPosts((prev) =>
-          prev.map((p) =>
-            p.id === editingPost.id
-              ? { ...p, text: newPostText, scheduledAt }
-              : p
-          )
-        );
-      } else {
-        const postId = await saveScheduledPost(user.uid, {
-          text: newPostText,
-          scheduledAt: Timestamp.fromDate(scheduledAt),
-          status: "scheduled",
-        });
-        const newPost: ScheduledPost = {
+      const postId = await saveScheduledPost(user.uid, {
+        text: newPostText,
+        scheduledAt: Timestamp.fromDate(scheduledAt),
+        status: "scheduled",
+      });
+
+      setPosts((prev) => [
+        ...prev,
+        {
           id: postId,
           text: newPostText,
           scheduledAt,
           status: "scheduled",
-        };
-        setPosts((prev) => [...prev, newPost]);
-      }
+        },
+      ]);
 
+      setShowNewPostModal(false);
       setNewPostText("");
-      setNewPostTime("09:00");
-      setEditingPost(null);
-      setIsModalOpen(false);
+      showToast("投稿を予約しました");
     } catch (error) {
-      console.error("Failed to save post:", error);
+      console.error("Failed to create post:", error);
+      alert("予約に失敗しました");
     } finally {
       setIsSaving(false);
     }
   };
 
-  const handleEditPost = (post: ScheduledPost) => {
-    setEditingPost(post);
-    setNewPostText(post.text);
-    setNewPostTime(
-      `${String(post.scheduledAt.getHours()).padStart(2, "0")}:${String(
-        post.scheduledAt.getMinutes()
-      ).padStart(2, "0")}`
-    );
-    setSelectedDate(post.scheduledAt);
-    setIsModalOpen(true);
-  };
-
-  const handleDeletePost = async (id: string) => {
+  // Delete post
+  const handleDeletePost = async (postId: string) => {
     if (!user) return;
+    if (!confirm("この予約投稿を削除しますか？")) return;
 
     try {
-      await deleteScheduledPost(user.uid, id);
-      setPosts((prev) => prev.filter((p) => p.id !== id));
+      await deleteScheduledPost(user.uid, postId);
+      setPosts((prev) => prev.filter((p) => p.id !== postId));
+      setSelectedPost(null);
+      showToast("投稿を削除しました");
     } catch (error) {
       console.error("Failed to delete post:", error);
     }
   };
 
-  const selectedDatePosts = selectedDate
-    ? posts.filter((post) => {
-        const postDate = new Date(post.scheduledAt);
-        return (
-          postDate.getFullYear() === selectedDate.getFullYear() &&
-          postDate.getMonth() === selectedDate.getMonth() &&
-          postDate.getDate() === selectedDate.getDate()
-        );
-      })
-    : [];
+  // Start editing
+  const handleStartEdit = () => {
+    if (!selectedPost) return;
+    const postDate = new Date(selectedPost.scheduledAt);
+    setEditText(selectedPost.text);
+    setEditDate(postDate.toISOString().split("T")[0]);
+    setEditTime(postDate.toTimeString().slice(0, 5));
+    setIsEditing(true);
+  };
 
-  const upcomingPosts = posts
-    .filter((p) => p.status === "scheduled" && new Date(p.scheduledAt) > new Date())
-    .sort((a, b) => new Date(a.scheduledAt).getTime() - new Date(b.scheduledAt).getTime())
-    .slice(0, 5);
+  // Save edit
+  const handleSaveEdit = async () => {
+    if (!user || !selectedPost) return;
+    setIsSaving(true);
 
-  const today = new Date();
-  const isToday = (day: number) =>
-    today.getFullYear() === year &&
-    today.getMonth() === month &&
-    today.getDate() === day;
+    try {
+      const newScheduledAt = new Date(`${editDate}T${editTime}`);
+      await updateScheduledPost(user.uid, selectedPost.id, {
+        text: editText,
+        scheduledAt: Timestamp.fromDate(newScheduledAt),
+      });
+
+      setPosts((prev) =>
+        prev.map((p) =>
+          p.id === selectedPost.id
+            ? { ...p, text: editText, scheduledAt: newScheduledAt }
+            : p
+        )
+      );
+
+      setSelectedPost({ ...selectedPost, text: editText, scheduledAt: newScheduledAt });
+      setIsEditing(false);
+      showToast("変更を保存しました");
+    } catch (error) {
+      console.error("Failed to save:", error);
+      alert("保存に失敗しました");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  // Post now
+  const handlePostNow = (text: string) => {
+    const encodedText = encodeURIComponent(text);
+    window.open(`https://twitter.com/intent/tweet?text=${encodedText}`, "_blank");
+  };
+
+  // Duplicate post
+  const handleDuplicatePost = (post: ScheduledPost) => {
+    const url = `/compose/editor?text=${encodeURIComponent(post.text)}`;
+    window.location.href = url;
+  };
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center h-96">
-        <div className="w-8 h-8 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin" />
+      <div className="flex items-center justify-center min-h-[400px]">
+        <Loader2 className="w-8 h-8 text-emerald-500 animate-spin" />
       </div>
     );
   }
 
   return (
     <div className="animate-fade-in">
-      {/* Page Header */}
-      <div className="flex items-end justify-between mb-8">
-        <div>
-          <h1 className="text-3xl font-bold text-zinc-900 tracking-tight mb-2">
-            予約投稿
-          </h1>
-          <p className="text-lg text-zinc-500">
-            投稿をカレンダーで予約・管理
-          </p>
+      {/* Success Toast */}
+      {showSuccess && (
+        <div className="fixed top-4 right-4 z-50 flex items-center gap-2 px-4 py-3 bg-emerald-500 text-white rounded-xl shadow-lg animate-fade-in">
+          <CheckCircle2 className="w-5 h-5" />
+          {successMessage}
         </div>
-        <button
-          onClick={() => {
-            setSelectedDate(new Date());
-            setEditingPost(null);
-            setNewPostText("");
-            setNewPostTime("09:00");
-            setIsModalOpen(true);
-          }}
-          className="flex items-center gap-2 px-5 py-3 bg-emerald-500 text-white text-base font-semibold rounded-xl hover:bg-emerald-600 transition-colors shadow-lg shadow-emerald-500/25"
+      )}
+
+      {/* Header */}
+      <div className="flex items-center justify-between mb-6">
+        <h1 className="text-3xl font-bold text-zinc-900">投稿カレンダー</h1>
+        <Link
+          href="/compose"
+          className="flex items-center gap-2 px-4 py-2 bg-emerald-500 text-white font-medium rounded-xl hover:bg-emerald-600 transition-colors"
         >
           <Plus className="w-5 h-5" />
-          予約を追加
-        </button>
+          AI投稿作成
+        </Link>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Calendar */}
-        <div className="lg:col-span-2 bg-white rounded-2xl border border-zinc-200 shadow-sm overflow-hidden">
-          {/* Calendar Header */}
-          <div className="flex items-center justify-between p-6 border-b border-zinc-100">
-            <h2 className="text-xl font-semibold text-zinc-900">
-              {year}年 {months[month]}
-            </h2>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={handlePrevMonth}
-                className="p-2 rounded-lg text-zinc-500 hover:text-zinc-700 hover:bg-zinc-100 transition-colors"
-              >
-                <ChevronLeft className="w-5 h-5" />
-              </button>
-              <button
-                onClick={() => setCurrentDate(new Date())}
-                className="px-4 py-2 text-sm font-medium text-zinc-600 hover:text-zinc-900 hover:bg-zinc-100 rounded-lg transition-colors"
-              >
-                今日
-              </button>
-              <button
-                onClick={handleNextMonth}
-                className="p-2 rounded-lg text-zinc-500 hover:text-zinc-700 hover:bg-zinc-100 transition-colors"
-              >
-                <ChevronRight className="w-5 h-5" />
-              </button>
-            </div>
+      {/* Week Navigation */}
+      <div className="flex items-center gap-4 mb-6">
+        <button
+          onClick={goToThisWeek}
+          className="px-4 py-2 text-sm font-medium text-zinc-600 bg-white border border-zinc-200 rounded-lg hover:bg-zinc-50"
+        >
+          今週
+        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={goToPrevWeek}
+            className="p-2 text-zinc-500 hover:text-zinc-700 hover:bg-zinc-100 rounded-lg"
+          >
+            <ChevronLeft className="w-5 h-5" />
+          </button>
+          <button
+            onClick={goToNextWeek}
+            className="p-2 text-zinc-500 hover:text-zinc-700 hover:bg-zinc-100 rounded-lg"
+          >
+            <ChevronRight className="w-5 h-5" />
+          </button>
+        </div>
+        <h2 className="text-lg font-semibold text-zinc-900">
+          {weekDays[0].getMonth() + 1}月{weekDays[0].getDate()}日 〜 {weekDays[6].getMonth() + 1}月{weekDays[6].getDate()}日
+        </h2>
+        <div className="ml-auto flex items-center gap-4 text-sm text-zinc-500">
+          <span>予約中: {posts.filter((p) => p.status === "scheduled").length}件</span>
+          <span className="text-emerald-600">投稿済: {posts.filter((p) => p.status === "posted").length}件</span>
+        </div>
+      </div>
+
+      {/* Instructions */}
+      <div className="mb-4 text-sm text-zinc-500 flex items-center gap-4">
+        <span className="flex items-center gap-1">
+          <GripVertical className="w-4 h-4" />
+          ドラッグ&ドロップで時間変更
+        </span>
+        <span>空きスロットをクリックで新規作成</span>
+      </div>
+
+      {/* Weekly Grid */}
+      <div className="bg-white rounded-2xl border border-zinc-200 shadow-sm overflow-hidden">
+        {/* Header - Days */}
+        <div className="grid grid-cols-8 border-b border-zinc-200">
+          <div className="py-3 px-2 text-center text-sm font-medium text-zinc-400 border-r border-zinc-200 bg-zinc-50">
+            時間
           </div>
-
-          {/* Calendar Grid */}
-          <div className="p-4">
-            {/* Days of Week Header */}
-            <div className="grid grid-cols-7 mb-2">
-              {daysOfWeek.map((day, i) => (
-                <div
-                  key={day}
-                  className={`p-2 text-center text-sm font-medium ${
-                    i === 0 ? "text-red-500" : i === 6 ? "text-blue-500" : "text-zinc-500"
-                  }`}
-                >
-                  {day}
-                </div>
-              ))}
+          {weekDays.map((day, idx) => (
+            <div
+              key={idx}
+              className={`py-3 px-2 text-center border-r border-zinc-100 last:border-r-0 ${
+                isToday(day) ? "bg-emerald-50" : ""
+              }`}
+            >
+              <div
+                className={`text-xs font-medium ${
+                  day.getDay() === 0
+                    ? "text-red-500"
+                    : day.getDay() === 6
+                    ? "text-blue-500"
+                    : "text-zinc-500"
+                }`}
+              >
+                {DAYS_JP[day.getDay()]}
+              </div>
+              <div
+                className={`text-lg font-bold ${
+                  isToday(day) ? "text-emerald-600" : "text-zinc-900"
+                }`}
+              >
+                {day.getDate()}
+              </div>
+              {isToday(day) && (
+                <span className="text-xs bg-emerald-500 text-white px-1.5 py-0.5 rounded">
+                  今日
+                </span>
+              )}
             </div>
+          ))}
+        </div>
 
-            {/* Calendar Days */}
-            <div className="grid grid-cols-7 gap-1">
-              {calendarDays.map((day, index) => {
-                if (day === null) {
-                  return <div key={`empty-${index}`} className="h-24" />;
-                }
+        {/* Time Slots */}
+        <div className="max-h-[600px] overflow-y-auto">
+          {TIME_SLOTS.map((hour) => (
+            <div key={hour} className="grid grid-cols-8 border-b border-zinc-100 last:border-b-0">
+              <div className="py-2 px-2 text-center text-sm text-zinc-400 border-r border-zinc-200 bg-zinc-50 font-medium">
+                {hour}:00
+              </div>
 
-                const dayPosts = getPostsForDate(day);
-                const dayOfWeek = (firstDayOfMonth + day - 1) % 7;
-                const isSunday = dayOfWeek === 0;
-                const isSaturday = dayOfWeek === 6;
+              {weekDays.map((day, dayIdx) => {
+                const slotPosts = getPostsForSlot(day, hour);
+                const isOver = dragOverSlot?.day === dayIdx && dragOverSlot?.hour === hour;
+                const isPast = new Date(day.getFullYear(), day.getMonth(), day.getDate(), hour) < new Date();
 
                 return (
-                  <button
-                    key={day}
-                    onClick={() => handleDateClick(day)}
-                    className={`h-24 p-2 rounded-xl text-left transition-all hover:bg-zinc-50 ${
-                      isToday(day)
-                        ? "bg-emerald-50 border-2 border-emerald-500"
-                        : "border border-zinc-100"
-                    }`}
+                  <div
+                    key={dayIdx}
+                    className={`min-h-[70px] p-1 border-r border-zinc-100 last:border-r-0 transition-colors cursor-pointer ${
+                      isToday(day) ? "bg-emerald-50/30" : ""
+                    } ${isOver ? "bg-emerald-100" : ""} ${
+                      isPast && !isToday(day) ? "bg-zinc-50/50" : ""
+                    } hover:bg-zinc-50`}
+                    onDragOver={(e) => handleDragOver(e, dayIdx, hour)}
+                    onDragLeave={handleDragLeave}
+                    onDrop={(e) => handleDrop(e, dayIdx, hour)}
+                    onClick={() => {
+                      if (slotPosts.length === 0) {
+                        handleSlotClick(day, hour);
+                      }
+                    }}
                   >
-                    <span
-                      className={`text-sm font-medium ${
-                        isToday(day)
-                          ? "text-emerald-600"
-                          : isSunday
-                          ? "text-red-500"
-                          : isSaturday
-                          ? "text-blue-500"
-                          : "text-zinc-700"
-                      }`}
-                    >
-                      {day}
-                    </span>
-                    <div className="mt-1 space-y-1">
-                      {dayPosts.slice(0, 2).map((post) => (
+                    {slotPosts.map((post) => {
+                      const postDate = new Date(post.scheduledAt);
+                      const isPosted = post.status === "posted";
+                      const isFailed = post.status === "failed";
+
+                      return (
                         <div
                           key={post.id}
-                          className={`px-1.5 py-0.5 text-xs rounded truncate ${
-                            post.status === "posted"
-                              ? "bg-zinc-100 text-zinc-500"
-                              : "bg-emerald-100 text-emerald-700"
+                          draggable={!isPosted && !isFailed}
+                          onDragStart={(e) => handleDragStart(e, post)}
+                          onDragEnd={handleDragEnd}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelectedPost(post);
+                          }}
+                          className={`group relative p-2 rounded-lg text-xs cursor-pointer mb-1 transition-all ${
+                            draggedPost?.id === post.id ? "opacity-50" : ""
+                          } ${
+                            isPosted
+                              ? "bg-emerald-100 text-emerald-700"
+                              : isFailed
+                              ? "bg-red-100 text-red-700"
+                              : "bg-emerald-500 text-white hover:bg-emerald-600"
                           }`}
                         >
-                          {new Date(post.scheduledAt).toLocaleTimeString("ja-JP", {
-                            hour: "2-digit",
-                            minute: "2-digit",
-                          })}
+                          {!isPosted && !isFailed && (
+                            <GripVertical className="absolute left-0.5 top-1/2 -translate-y-1/2 w-3 h-3 opacity-0 group-hover:opacity-50" />
+                          )}
+
+                          <div className="flex items-center gap-1 font-semibold pl-3">
+                            <Clock className="w-3 h-3" />
+                            {formatTime(postDate)}
+                            {isPosted && <CheckCircle2 className="w-3 h-3 ml-auto" />}
+                          </div>
+
+                          <div className="pl-3 mt-1 line-clamp-2 opacity-90 leading-snug">
+                            {truncateText(post.text, 35)}
+                          </div>
                         </div>
-                      ))}
-                      {dayPosts.length > 2 && (
-                        <div className="text-xs text-zinc-400 px-1">
-                          +{dayPosts.length - 2}件
-                        </div>
-                      )}
-                    </div>
-                  </button>
+                      );
+                    })}
+
+                    {slotPosts.length === 0 && isOver && (
+                      <div className="h-full flex items-center justify-center text-emerald-500 text-xs font-medium">
+                        ここにドロップ
+                      </div>
+                    )}
+                  </div>
                 );
               })}
             </div>
-          </div>
-        </div>
-
-        {/* Sidebar - Upcoming Posts */}
-        <div className="space-y-6">
-          {/* Upcoming Posts */}
-          <div className="bg-white rounded-2xl border border-zinc-200 shadow-sm p-6">
-            <h3 className="text-lg font-semibold text-zinc-900 mb-4 flex items-center gap-2">
-              <Clock className="w-5 h-5 text-emerald-500" />
-              予定の投稿
-            </h3>
-            {upcomingPosts.length > 0 ? (
-              <div className="space-y-3">
-                {upcomingPosts.map((post) => (
-                  <div
-                    key={post.id}
-                    className="p-4 bg-zinc-50 rounded-xl"
-                  >
-                    <div className="flex items-center justify-between mb-2">
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-medium text-emerald-600">
-                          {new Date(post.scheduledAt).toLocaleDateString("ja-JP", {
-                            month: "short",
-                            day: "numeric",
-                            hour: "2-digit",
-                            minute: "2-digit",
-                          })}
-                        </span>
-                        {post.threadPost && (
-                          <span className="px-1.5 py-0.5 text-xs bg-blue-100 text-blue-600 rounded">
-                            スレッド
-                          </span>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-1">
-                        <button
-                          onClick={() => handleEditPost(post)}
-                          className="p-1.5 rounded-lg text-zinc-400 hover:text-zinc-600 hover:bg-zinc-100 transition-colors"
-                        >
-                          <Edit3 className="w-4 h-4" />
-                        </button>
-                        <button
-                          onClick={() => handleDeletePost(post.id)}
-                          className="p-1.5 rounded-lg text-zinc-400 hover:text-red-500 hover:bg-red-50 transition-colors"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
-                    </div>
-                    <p className="text-sm text-zinc-600 line-clamp-2">
-                      {post.text}
-                    </p>
-                    {post.threadPost && (
-                      <p className="mt-2 text-xs text-blue-600 bg-blue-50 p-2 rounded line-clamp-1">
-                        → {post.threadPost}
-                      </p>
-                    )}
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="text-center py-8">
-                <div className="w-12 h-12 rounded-xl bg-zinc-100 flex items-center justify-center mx-auto mb-3">
-                  <Calendar className="w-6 h-6 text-zinc-400" />
-                </div>
-                <p className="text-base text-zinc-600 mb-1">予定なし</p>
-                <p className="text-sm text-zinc-400">
-                  カレンダーから日付を選択して追加
-                </p>
-              </div>
-            )}
-          </div>
-
-          {/* Stats */}
-          <div className="bg-white rounded-2xl border border-zinc-200 shadow-sm p-6">
-            <h3 className="text-lg font-semibold text-zinc-900 mb-4">
-              今月の統計
-            </h3>
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <span className="text-base text-zinc-500">予約済み</span>
-                <span className="text-xl font-bold text-zinc-900">
-                  {posts.filter((p) => p.status === "scheduled").length}
-                </span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-base text-zinc-500">投稿済み</span>
-                <span className="text-xl font-bold text-emerald-600">
-                  {posts.filter((p) => p.status === "posted").length}
-                </span>
-              </div>
-            </div>
-          </div>
+          ))}
         </div>
       </div>
 
-      {/* Schedule Modal */}
-      {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      {/* Stats */}
+      <div className="grid grid-cols-4 gap-4 mt-6">
+        <div className="p-4 bg-white border border-zinc-200 rounded-xl">
+          <p className="text-2xl font-bold text-zinc-900">
+            {posts.filter((p) => p.status === "scheduled").length}
+          </p>
+          <p className="text-sm text-zinc-500">予約中</p>
+        </div>
+        <div className="p-4 bg-white border border-zinc-200 rounded-xl">
+          <p className="text-2xl font-bold text-emerald-600">
+            {posts.filter((p) => p.status === "posted").length}
+          </p>
+          <p className="text-sm text-zinc-500">投稿済み</p>
+        </div>
+        <div className="p-4 bg-white border border-zinc-200 rounded-xl">
+          <p className="text-2xl font-bold text-red-500">
+            {posts.filter((p) => p.status === "failed").length}
+          </p>
+          <p className="text-sm text-zinc-500">失敗</p>
+        </div>
+        <div className="p-4 bg-white border border-zinc-200 rounded-xl">
+          <p className="text-2xl font-bold text-zinc-900">{posts.length}</p>
+          <p className="text-sm text-zinc-500">合計</p>
+        </div>
+      </div>
+
+      {/* New Post Modal */}
+      {showNewPostModal && newPostDate && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
           <div
             className="absolute inset-0 bg-black/50 backdrop-blur-sm"
-            onClick={() => {
-              setIsModalOpen(false);
-              setEditingPost(null);
-            }}
+            onClick={() => setShowNewPostModal(false)}
           />
-          <div className="relative w-full max-w-lg p-8 bg-white rounded-2xl shadow-2xl">
-            <div className="flex items-center justify-between mb-6">
-              <h3 className="text-xl font-semibold text-zinc-900">
-                {editingPost ? "投稿を編集" : "投稿を予約"}
-              </h3>
+          <div className="relative w-full max-w-lg bg-white rounded-2xl shadow-xl mx-4 overflow-hidden">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-200">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-emerald-100 rounded-lg">
+                  <Plus className="w-5 h-5 text-emerald-600" />
+                </div>
+                <div>
+                  <div className="font-semibold text-zinc-900">新規投稿を予約</div>
+                  <div className="text-sm text-zinc-500">
+                    {newPostDate.toLocaleDateString("ja-JP", {
+                      month: "long",
+                      day: "numeric",
+                      weekday: "short",
+                    })}
+                  </div>
+                </div>
+              </div>
               <button
-                onClick={() => {
-                  setIsModalOpen(false);
-                  setEditingPost(null);
-                }}
-                className="p-2 rounded-lg text-zinc-400 hover:text-zinc-600 hover:bg-zinc-100 transition-colors"
+                onClick={() => setShowNewPostModal(false)}
+                className="p-2 rounded-lg hover:bg-zinc-100"
               >
-                <X className="w-5 h-5" />
+                <XIcon className="w-5 h-5 text-zinc-500" />
               </button>
             </div>
 
-            {selectedDate && (
-              <div className="flex items-center gap-2 p-4 bg-emerald-50 rounded-xl mb-6">
-                <Calendar className="w-5 h-5 text-emerald-600" />
-                <span className="text-base font-medium text-emerald-700">
-                  {selectedDate.toLocaleDateString("ja-JP", {
-                    year: "numeric",
-                    month: "long",
-                    day: "numeric",
-                  })}
-                </span>
-              </div>
-            )}
-
-            <div className="space-y-4 mb-6">
+            <div className="p-6 space-y-4">
               <div>
-                <label className="block text-sm font-medium text-zinc-700 mb-2">
-                  投稿内容
-                </label>
-                <textarea
-                  value={newPostText}
-                  onChange={(e) => setNewPostText(e.target.value)}
-                  placeholder="投稿内容を入力..."
-                  rows={4}
-                  className="w-full px-4 py-3 bg-zinc-50 border border-zinc-200 rounded-xl text-zinc-900 placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-all resize-none"
-                />
-                <div className="flex justify-end mt-2">
-                  <span
-                    className={`text-sm ${
-                      newPostText.length > 280 ? "text-red-500" : "text-zinc-400"
-                    }`}
-                  >
-                    {newPostText.length}/280
-                  </span>
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-zinc-700 mb-2">
-                  投稿時刻
-                </label>
+                <label className="block text-sm font-medium text-zinc-700 mb-1">投稿時間</label>
                 <input
                   type="time"
                   value={newPostTime}
                   onChange={(e) => setNewPostTime(e.target.value)}
-                  className="w-full h-12 px-4 bg-zinc-50 border border-zinc-200 rounded-xl text-zinc-900 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-all"
+                  className="w-full h-11 px-3 bg-zinc-50 border border-zinc-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
                 />
               </div>
+
+              <div>
+                <label className="block text-sm font-medium text-zinc-700 mb-1">
+                  投稿内容
+                  <span className="ml-2 text-zinc-400 font-normal">{newPostText.length}文字</span>
+                </label>
+                <textarea
+                  ref={textareaRef}
+                  value={newPostText}
+                  onChange={(e) => setNewPostText(e.target.value)}
+                  placeholder="投稿内容を入力..."
+                  className="w-full min-h-[150px] p-4 bg-zinc-50 border border-zinc-200 rounded-lg text-zinc-700 resize-none focus:outline-none focus:ring-2 focus:ring-emerald-500 leading-relaxed"
+                  style={{ lineHeight: "1.8" }}
+                />
+              </div>
+
+              <div className="text-center">
+                <span className="text-sm text-zinc-400">または</span>
+              </div>
+              <Link
+                href="/compose"
+                className="block w-full py-3 text-center text-emerald-600 font-medium bg-emerald-50 rounded-xl hover:bg-emerald-100"
+              >
+                AIで投稿を作成 →
+              </Link>
+
+              <button
+                onClick={handleCreatePost}
+                disabled={isSaving || !newPostText.trim()}
+                className="w-full py-3 bg-emerald-500 text-white font-medium rounded-xl hover:bg-emerald-600 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+              >
+                {isSaving ? (
+                  <Loader2 className="w-5 h-5 animate-spin" />
+                ) : (
+                  <Calendar className="w-5 h-5" />
+                )}
+                予約する
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Post Detail Modal */}
+      {selectedPost && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div
+            className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+            onClick={() => {
+              setSelectedPost(null);
+              setIsEditing(false);
+            }}
+          />
+
+          <div className="relative w-full max-w-xl bg-white rounded-2xl shadow-xl mx-4 max-h-[90vh] overflow-hidden flex flex-col">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-200 flex-shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-emerald-100 rounded-lg">
+                  <Calendar className="w-5 h-5 text-emerald-600" />
+                </div>
+                <div>
+                  <div className="font-semibold text-zinc-900">
+                    {new Date(selectedPost.scheduledAt).toLocaleDateString("ja-JP", {
+                      year: "numeric",
+                      month: "long",
+                      day: "numeric",
+                      weekday: "short",
+                    })}
+                  </div>
+                  <div className="text-sm text-zinc-500">
+                    {formatTime(new Date(selectedPost.scheduledAt))}
+                  </div>
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  setSelectedPost(null);
+                  setIsEditing(false);
+                }}
+                className="p-2 rounded-lg hover:bg-zinc-100"
+              >
+                <XIcon className="w-5 h-5 text-zinc-500" />
+              </button>
             </div>
 
-            {/* Posts for selected date */}
-            {selectedDatePosts.length > 0 && !editingPost && (
-              <div className="mb-6">
-                <h4 className="text-sm font-medium text-zinc-500 mb-3">
-                  この日の予約 ({selectedDatePosts.length}件)
-                </h4>
-                <div className="space-y-2 max-h-32 overflow-y-auto">
-                  {selectedDatePosts.map((post) => (
-                    <div
-                      key={post.id}
-                      className="flex items-center justify-between p-3 bg-zinc-50 rounded-lg"
-                    >
-                      <div className="flex items-center gap-3 min-w-0">
-                        <span className="text-sm font-medium text-emerald-600">
-                          {new Date(post.scheduledAt).toLocaleTimeString(
-                            "ja-JP",
-                            { hour: "2-digit", minute: "2-digit" }
-                          )}
-                        </span>
-                        <span className="text-sm text-zinc-600 truncate">
-                          {post.text}
-                        </span>
-                      </div>
+            <div className="flex-1 overflow-y-auto p-6">
+              <div className="mb-4">
+                <span
+                  className={`px-3 py-1 text-sm font-medium rounded-full ${
+                    selectedPost.status === "posted"
+                      ? "bg-emerald-100 text-emerald-700"
+                      : selectedPost.status === "failed"
+                      ? "bg-red-100 text-red-700"
+                      : "bg-amber-100 text-amber-700"
+                  }`}
+                >
+                  {selectedPost.status === "posted"
+                    ? "投稿済み"
+                    : selectedPost.status === "failed"
+                    ? "失敗"
+                    : "予約中"}
+                </span>
+              </div>
+
+              {isEditing ? (
+                <div className="space-y-4">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-sm font-medium text-zinc-700 mb-1">日付</label>
+                      <input
+                        type="date"
+                        value={editDate}
+                        onChange={(e) => setEditDate(e.target.value)}
+                        className="w-full h-11 px-3 bg-zinc-50 border border-zinc-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                      />
                     </div>
-                  ))}
+                    <div>
+                      <label className="block text-sm font-medium text-zinc-700 mb-1">時間</label>
+                      <input
+                        type="time"
+                        value={editTime}
+                        onChange={(e) => setEditTime(e.target.value)}
+                        className="w-full h-11 px-3 bg-zinc-50 border border-zinc-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-zinc-700 mb-1">
+                      投稿内容
+                      <span className="ml-2 text-zinc-400 font-normal">{editText.length}文字</span>
+                    </label>
+                    <textarea
+                      value={editText}
+                      onChange={(e) => setEditText(e.target.value)}
+                      className="w-full min-h-[150px] p-4 bg-zinc-50 border border-zinc-200 rounded-lg text-zinc-700 resize-none focus:outline-none focus:ring-2 focus:ring-emerald-500 leading-relaxed"
+                      style={{ lineHeight: "1.8" }}
+                    />
+                  </div>
+
+                  <div className="flex gap-3">
+                    <button
+                      onClick={() => setIsEditing(false)}
+                      className="flex-1 py-3 text-zinc-600 font-medium bg-zinc-100 rounded-xl hover:bg-zinc-200"
+                    >
+                      キャンセル
+                    </button>
+                    <button
+                      onClick={handleSaveEdit}
+                      disabled={isSaving}
+                      className="flex-1 py-3 bg-emerald-500 text-white font-medium rounded-xl hover:bg-emerald-600 disabled:opacity-50 flex items-center justify-center gap-2"
+                    >
+                      {isSaving ? <Loader2 className="w-5 h-5 animate-spin" /> : <Save className="w-5 h-5" />}
+                      保存
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <div className="p-4 bg-zinc-50 rounded-xl mb-4">
+                    <p className="text-zinc-700 whitespace-pre-wrap leading-relaxed" style={{ lineHeight: "1.8" }}>
+                      {selectedPost.text}
+                    </p>
+                  </div>
+                  <div className="text-sm text-zinc-400 mb-4">{selectedPost.text.length}文字</div>
+                </>
+              )}
+            </div>
+
+            {!isEditing && (
+              <div className="flex-shrink-0 border-t border-zinc-200 p-4">
+                <div className="grid grid-cols-4 gap-2">
+                  <button
+                    onClick={() => handleDeletePost(selectedPost.id)}
+                    className="flex flex-col items-center gap-1 py-3 text-red-500 hover:bg-red-50 rounded-xl"
+                  >
+                    <Trash2 className="w-5 h-5" />
+                    <span className="text-xs">削除</span>
+                  </button>
+                  <button
+                    onClick={handleStartEdit}
+                    className="flex flex-col items-center gap-1 py-3 text-zinc-600 hover:bg-zinc-100 rounded-xl"
+                  >
+                    <Pencil className="w-5 h-5" />
+                    <span className="text-xs">編集</span>
+                  </button>
+                  <button
+                    onClick={() => handleDuplicatePost(selectedPost)}
+                    className="flex flex-col items-center gap-1 py-3 text-zinc-600 hover:bg-zinc-100 rounded-xl"
+                  >
+                    <Copy className="w-5 h-5" />
+                    <span className="text-xs">複製</span>
+                  </button>
+                  <button
+                    onClick={() => handlePostNow(selectedPost.text)}
+                    className="flex flex-col items-center gap-1 py-3 text-emerald-600 hover:bg-emerald-50 rounded-xl"
+                  >
+                    <ExternalLink className="w-5 h-5" />
+                    <span className="text-xs">今すぐ投稿</span>
+                  </button>
                 </div>
               </div>
             )}
-
-            <div className="flex items-center gap-3">
-              <button
-                onClick={() => {
-                  setIsModalOpen(false);
-                  setEditingPost(null);
-                }}
-                className="flex-1 px-4 py-3 text-zinc-600 text-base font-medium rounded-xl hover:bg-zinc-100 transition-colors"
-              >
-                キャンセル
-              </button>
-              <button
-                onClick={handleAddPost}
-                disabled={!newPostText || newPostText.length > 280 || isSaving}
-                className="flex-1 flex items-center justify-center gap-2 px-4 py-3 bg-emerald-500 text-white text-base font-semibold rounded-xl hover:bg-emerald-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-lg shadow-emerald-500/25"
-              >
-                {isSaving ? (
-                  <>
-                    <Loader2 className="w-5 h-5 animate-spin" />
-                    保存中...
-                  </>
-                ) : (
-                  <>
-                    <CheckCircle2 className="w-5 h-5" />
-                    {editingPost ? "更新" : "予約する"}
-                  </>
-                )}
-              </button>
-            </div>
           </div>
         </div>
       )}

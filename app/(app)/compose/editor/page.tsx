@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import {
@@ -43,6 +43,14 @@ export default function PostEditorPage() {
   const searchParams = useSearchParams();
   const { user } = useAuth();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const textareaRefs = useRef<Map<number, HTMLTextAreaElement>>(new Map());
+
+  // Auto-resize textarea based on content
+  const autoResizeTextarea = useCallback((textarea: HTMLTextAreaElement | null) => {
+    if (!textarea) return;
+    textarea.style.height = "auto";
+    textarea.style.height = `${Math.max(150, textarea.scrollHeight)}px`;
+  }, []);
 
   // Get initial text from URL params (from generate page)
   const initialText = searchParams.get("text") || "";
@@ -85,6 +93,17 @@ export default function PostEditorPage() {
 
   // Current active post
   const activePost = threadPosts.find(p => p.id === activePostId) || threadPosts[0];
+
+  // Auto-resize textareas on initial load and when thread posts change
+  useEffect(() => {
+    // Small timeout to ensure DOM is ready
+    const timer = setTimeout(() => {
+      textareaRefs.current.forEach((textarea) => {
+        autoResizeTextarea(textarea);
+      });
+    }, 50);
+    return () => clearTimeout(timer);
+  }, [threadPosts, autoResizeTextarea]);
 
   // Load quote tweets
   useEffect(() => {
@@ -379,10 +398,19 @@ export default function PostEditorPage() {
               {/* Text Editor */}
               <div className="p-4">
                 <textarea
+                  ref={(el) => {
+                    if (el) {
+                      textareaRefs.current.set(post.id, el);
+                      autoResizeTextarea(el);
+                    }
+                  }}
                   value={post.text}
-                  onChange={(e) => updatePostText(post.id, e.target.value)}
+                  onChange={(e) => {
+                    updatePostText(post.id, e.target.value);
+                    autoResizeTextarea(e.target);
+                  }}
                   placeholder={index === 0 ? "いまどうしてる？" : "スレッドを続ける..."}
-                  className="w-full min-h-[150px] text-base text-zinc-900 placeholder:text-zinc-400 resize-none focus:outline-none leading-relaxed"
+                  className="w-full min-h-[150px] text-base text-zinc-900 placeholder:text-zinc-400 resize-none focus:outline-none leading-relaxed overflow-hidden"
                   style={{ lineHeight: "1.8" }}
                 />
               </div>

@@ -130,13 +130,57 @@ export function ImportProvider({ children }: { children: ReactNode }) {
       formData.append("file", filteredFile);
       formData.append("userId", userId);
 
-      // Update progress during API call
+      // Update progress during API call - Step 2: 構造抽出
       setProgress((prev) => ({
         ...prev,
         currentStep: 2,
         stepName: steps[2].name,
         percentage: 35,
+        processedCount: 0,
       }));
+
+      // Start a progress simulation during API call
+      // This simulates progress while the actual API processes all items
+      let simulatedProgress = 0;
+      const progressInterval = setInterval(() => {
+        setProgress((prev) => {
+          // Simulate gradual progress during API call
+          // Progress goes up to 80% of totalCount during API processing
+          const targetCount = Math.floor(prev.totalCount * 0.85);
+          if (simulatedProgress < targetCount) {
+            // Increment by random amount (1-5 items at a time)
+            const increment = Math.floor(Math.random() * 5) + 1;
+            simulatedProgress = Math.min(simulatedProgress + increment, targetCount);
+
+            // Calculate which step we're in based on progress
+            const progressRatio = simulatedProgress / prev.totalCount;
+            let currentStep = 2; // 構造抽出
+            let percentage = 35;
+
+            if (progressRatio > 0.25 && progressRatio <= 0.5) {
+              currentStep = 3; // カテゴリー分類
+              percentage = 35 + (progressRatio - 0.25) * 80;
+            } else if (progressRatio > 0.5 && progressRatio <= 0.75) {
+              currentStep = 4; // 型テンプレート生成
+              percentage = 55 + (progressRatio - 0.5) * 80;
+            } else if (progressRatio > 0.75) {
+              currentStep = 5; // 口調分析
+              percentage = 75 + (progressRatio - 0.75) * 60;
+            } else {
+              percentage = 35 + progressRatio * 80;
+            }
+
+            return {
+              ...prev,
+              currentStep,
+              stepName: steps[currentStep].name,
+              processedCount: simulatedProgress,
+              percentage: Math.min(percentage, 90),
+            };
+          }
+          return prev;
+        });
+      }, 150); // Update every 150ms for smooth progress
 
       const response = await fetch("/api/import", {
         method: "POST",
@@ -144,23 +188,24 @@ export function ImportProvider({ children }: { children: ReactNode }) {
         signal: abortControllerRef.current?.signal,
       });
 
+      // Clear the progress simulation interval
+      clearInterval(progressInterval);
+
       const data = await response.json();
 
       if (!response.ok) {
         throw new Error(data.error || "インポートに失敗しました");
       }
 
-      // Simulate remaining steps with progress animation
-      for (let i = 3; i < steps.length; i++) {
-        setProgress((prev) => ({
-          ...prev,
-          currentStep: i,
-          stepName: steps[i].name,
-          percentage: 35 + ((i - 2) * 65) / (steps.length - 2),
-          processedCount: Math.floor((prev.totalCount * (i - 2)) / (steps.length - 2)),
-        }));
-        await new Promise((resolve) => setTimeout(resolve, 400 + Math.random() * 200));
-      }
+      // Quickly finish remaining progress after API completes
+      setProgress((prev) => ({
+        ...prev,
+        currentStep: 5,
+        stepName: steps[5].name,
+        percentage: 95,
+        processedCount: prev.totalCount,
+      }));
+      await new Promise((resolve) => setTimeout(resolve, 300));
 
       // Complete
       setProgress((prev) => ({
