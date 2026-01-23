@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { adminDb } from "@/lib/firebase-admin";
+import { getAdminFirestore } from "@/lib/firebase-admin";
 import { refreshAccessToken } from "@/lib/x-oauth";
 
 /**
@@ -26,7 +26,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Get user's X auth tokens from Firestore
-    const tokenDoc = await adminDb
+    const tokenDoc = await getAdminFirestore()
       .collection("users")
       .doc(userId)
       .collection("settings")
@@ -77,7 +77,7 @@ export async function POST(request: NextRequest) {
         accessToken = newTokens.access_token;
 
         // Update tokens in Firestore
-        await adminDb
+        await getAdminFirestore()
           .collection("users")
           .doc(userId)
           .collection("settings")

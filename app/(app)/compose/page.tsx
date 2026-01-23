@@ -25,6 +25,12 @@ interface BookmarkReference {
   source: string;
   author: string;
   likes: number;
+  tweetId?: string;
+  media?: Array<{
+    type: "photo" | "video";
+    url: string;
+    thumbnailUrl?: string;
+  }>;
 }
 
 export default function ComposePage() {
@@ -46,12 +52,12 @@ export default function ComposePage() {
       try {
         const ref = JSON.parse(stored) as BookmarkReference;
         setBookmarkRef(ref);
-        // Pre-fill content with bookmark text as reference
+        // Pre-fill content with the full translated/original text
         if (!content) {
-          setContent(`参考：${ref.text.slice(0, 100)}...\n\n`);
+          setContent(ref.text);
         }
-        // Clear the stored reference
-        sessionStorage.removeItem("bookmarkReference");
+        // Keep the reference in session for the generate flow
+        // Will be cleared after generation
       } catch {
         // Ignore parse errors
       }
@@ -132,7 +138,7 @@ export default function ComposePage() {
                 <div className="flex items-center gap-2">
                   <Bookmark className="w-5 h-5 text-blue-500" />
                   <span className="text-sm font-medium text-blue-700">
-                    ブックマークから参照中
+                    保存済み投稿から参照中
                   </span>
                 </div>
                 <button
@@ -142,10 +148,21 @@ export default function ComposePage() {
                   <X className="w-4 h-4" />
                 </button>
               </div>
-              <p className="text-sm text-zinc-700 line-clamp-3 mb-2">
+              <p className="text-sm text-zinc-700 line-clamp-3 mb-2 whitespace-pre-wrap">
                 {bookmarkRef.text}
               </p>
-              <p className="text-xs text-zinc-500">
+              {/* Show video if available */}
+              {bookmarkRef.media && bookmarkRef.media.length > 0 && bookmarkRef.media[0].type === "video" && (
+                <div className="mt-3 rounded-xl overflow-hidden border border-blue-200">
+                  <video
+                    src={bookmarkRef.media[0].url}
+                    poster={bookmarkRef.media[0].thumbnailUrl}
+                    controls
+                    className="w-full max-h-48 object-contain bg-zinc-900"
+                  />
+                </div>
+              )}
+              <p className="text-xs text-zinc-500 mt-2">
                 @{bookmarkRef.author} • ❤️ {bookmarkRef.likes}
               </p>
             </div>

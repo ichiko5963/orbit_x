@@ -32,6 +32,13 @@ import { AuthProvider, useAuth } from "@/lib/auth-context";
 import { ImportProvider, useImport } from "@/lib/import-context";
 import { XProfileProvider } from "@/lib/x-profile-context";
 
+// Custom X logo component
+const XLogo = ({ className }: { className?: string }) => (
+  <svg className={className} viewBox="0 0 24 24" fill="currentColor">
+    <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
+  </svg>
+);
+
 const mainNav = [
   { name: "ダッシュボード", href: "/dashboard", icon: LayoutDashboard },
   { name: "AI投稿作成", href: "/compose", icon: Sparkles },
@@ -39,7 +46,7 @@ const mainNav = [
   { name: "過去投稿一覧", href: "/posts", icon: TrendingUp },
   { name: "他者バズ投稿", href: "/context", icon: Users },
   { name: "外部コンテンツ", href: "/external", icon: Globe },
-  { name: "保存済み投稿", href: "/bookmarks", icon: Bookmark },
+  { name: "保存済み投稿", href: "/bookmarks", icon: XLogo, isCustomIcon: true },
 ];
 
 const subNav = [
@@ -231,6 +238,7 @@ function AppLayoutContent({ children }: { children: ReactNode }) {
             <div className="space-y-1.5">
               {mainNav.map((item) => {
                 const isActive = pathname === item.href;
+                const IconComponent = item.icon;
                 return (
                   <Link
                     key={item.href}
@@ -244,7 +252,7 @@ function AppLayoutContent({ children }: { children: ReactNode }) {
                     )}
                     title={collapsed ? item.name : undefined}
                   >
-                    <item.icon
+                    <IconComponent
                       className={clsx(
                         "w-6 h-6 flex-shrink-0 transition-transform",
                         !isActive && "group-hover:scale-110"

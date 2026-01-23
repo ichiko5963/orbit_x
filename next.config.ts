@@ -16,6 +16,18 @@ const nextConfig: NextConfig = {
         protocol: "https",
         hostname: "pbs.twimg.com",
       },
+      {
+        protocol: "https",
+        hostname: "video.twimg.com",
+      },
+      {
+        protocol: "https",
+        hostname: "*.twimg.com",
+      },
+      {
+        protocol: "https",
+        hostname: "*.vxtwitter.com",
+      },
     ],
   },
 };
