@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
+import Image from "next/image";
 import {
   ArrowLeft,
   Image as ImageIcon,
@@ -20,8 +21,13 @@ import {
   MessageSquare,
   Eye,
   Link as LinkIcon,
+  Wand2,
+  Zap,
+  Target,
+  TrendingUp,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
+import { useXProfile } from "@/lib/x-profile-context";
 import {
   saveScheduledPost,
   getQuoteTweets,
@@ -42,8 +48,15 @@ export default function PostEditorPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { user } = useAuth();
+  const { profile: xProfile, isConnected: xConnected } = useXProfile();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRefs = useRef<Map<number, HTMLTextAreaElement>>(new Map());
+
+  // AI Enhancement state
+  const [showAIEnhance, setShowAIEnhance] = useState(false);
+  const [aiEnhanceOptions, setAiEnhanceOptions] = useState<{id: string; text: string; label: string}[]>([]);
+  const [isEnhancing, setIsEnhancing] = useState(false);
+  const [enhancingType, setEnhancingType] = useState<string | null>(null);
 
   // Auto-resize textarea based on content
   const autoResizeTextarea = useCallback((textarea: HTMLTextAreaElement | null) => {
@@ -338,6 +351,54 @@ export default function PostEditorPage() {
   const charCount = activePost.text.length;
   const totalCharCount = threadPosts.reduce((acc, p) => acc + p.text.length, 0);
 
+  // AI Enhancement - generate 3 different options
+  const handleAIEnhance = async () => {
+    if (!activePost.text.trim()) return;
+
+    setIsEnhancing(true);
+    setShowAIEnhance(true);
+    setAiEnhanceOptions([]);
+
+    try {
+      const response = await fetch("/api/generate/enhance-options", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          text: activePost.text,
+        }),
+      });
+
+      const data = await response.json();
+      if (data.options) {
+        setAiEnhanceOptions(data.options);
+      }
+    } catch (error) {
+      console.error("AI enhance failed:", error);
+    } finally {
+      setIsEnhancing(false);
+    }
+  };
+
+  // Apply AI enhancement with animation
+  const applyEnhancement = (newText: string) => {
+    setEnhancingType("applying");
+
+    // Animate the text change
+    setTimeout(() => {
+      updatePostText(activePostId, newText);
+      setEnhancingType(null);
+      setShowAIEnhance(false);
+
+      // Trigger textarea resize
+      setTimeout(() => {
+        const textarea = textareaRefs.current.get(activePostId);
+        if (textarea) {
+          autoResizeTextarea(textarea);
+        }
+      }, 50);
+    }, 300);
+  };
+
   return (
     <div className="min-h-screen animate-fade-in">
       {/* Header */}
@@ -501,6 +562,20 @@ export default function PostEditorPage() {
           <div className="mt-4 p-4 bg-white border border-zinc-200 rounded-xl flex items-center justify-between">
             <div className="flex items-center gap-1">
               <button
+                onClick={handleAIEnhance}
+                disabled={!activePost.text.trim() || isEnhancing}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-amber-600 hover:bg-amber-50 transition-colors disabled:opacity-50"
+                title="AI強化"
+              >
+                {isEnhancing ? (
+                  <Loader2 className="w-5 h-5 animate-spin" />
+                ) : (
+                  <Wand2 className="w-5 h-5" />
+                )}
+                <span className="text-sm font-medium">AI強化</span>
+              </button>
+              <div className="w-px h-6 bg-zinc-200 mx-1" />
+              <button
                 onClick={() => fileInputRef.current?.click()}
                 className="p-2.5 rounded-lg text-zinc-500 hover:text-zinc-700 hover:bg-zinc-100 transition-colors"
                 title="画像を追加"
@@ -556,11 +631,25 @@ export default function PostEditorPage() {
                 <div key={post.id} className={`p-4 ${index > 0 ? "border-t border-zinc-100" : ""}`}>
                   {/* User info */}
                   <div className="flex items-start gap-3">
-                    <div className="w-10 h-10 rounded-full bg-gradient-to-br from-emerald-400 to-emerald-600 flex-shrink-0" />
+                    {xConnected && xProfile?.profileImageUrl ? (
+                      <Image
+                        src={xProfile.profileImageUrl.replace("_normal", "_200x200")}
+                        alt={xProfile.name}
+                        width={40}
+                        height={40}
+                        className="rounded-full flex-shrink-0"
+                      />
+                    ) : (
+                      <div className="w-10 h-10 rounded-full bg-gradient-to-br from-emerald-400 to-emerald-600 flex-shrink-0" />
+                    )}
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
-                        <span className="font-bold text-zinc-900">あなた</span>
-                        <span className="text-zinc-500 text-sm">@username</span>
+                        <span className="font-bold text-zinc-900">
+                          {xConnected && xProfile ? xProfile.name : "あなた"}
+                        </span>
+                        <span className="text-zinc-500 text-sm">
+                          @{xConnected && xProfile ? xProfile.username : "username"}
+                        </span>
                       </div>
 
                       {/* Post text */}
@@ -736,6 +825,94 @@ export default function PostEditorPage() {
                   </button>
                 </div>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* AI Enhancement Modal */}
+      {showAIEnhance && (
+        <div className="fixed inset-0 z-50 flex items-start justify-center pt-20 overflow-y-auto">
+          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setShowAIEnhance(false)} />
+
+          <div className="relative w-full max-w-2xl bg-white rounded-2xl shadow-xl mx-4 mb-20 overflow-hidden">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-200 bg-gradient-to-r from-amber-50 to-orange-50">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-amber-100 rounded-lg">
+                  <Wand2 className="w-5 h-5 text-amber-600" />
+                </div>
+                <div>
+                  <h2 className="text-lg font-semibold text-zinc-900">AI強化</h2>
+                  <p className="text-sm text-zinc-500">3つの方向性から選択</p>
+                </div>
+              </div>
+              <button onClick={() => setShowAIEnhance(false)} className="p-2 rounded-lg hover:bg-white/50 transition-colors">
+                <X className="w-5 h-5 text-zinc-500" />
+              </button>
+            </div>
+
+            {/* Modal Content */}
+            <div className="p-6">
+              {isEnhancing ? (
+                <div className="flex flex-col items-center justify-center py-12">
+                  <div className="relative">
+                    <div className="w-16 h-16 border-4 border-amber-200 border-t-amber-500 rounded-full animate-spin" />
+                    <Sparkles className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-6 h-6 text-amber-500" />
+                  </div>
+                  <p className="mt-4 text-zinc-600 font-medium">3つの強化案を生成中...</p>
+                </div>
+              ) : aiEnhanceOptions.length > 0 ? (
+                <div className="space-y-4">
+                  {aiEnhanceOptions.map((option, index) => {
+                    const icons = [
+                      { icon: Zap, color: "text-yellow-500", bg: "bg-yellow-50", label: "インパクト重視" },
+                      { icon: Target, color: "text-blue-500", bg: "bg-blue-50", label: "明確さ重視" },
+                      { icon: TrendingUp, color: "text-emerald-500", bg: "bg-emerald-50", label: "バズ重視" },
+                    ];
+                    const style = icons[index] || icons[0];
+
+                    return (
+                      <button
+                        key={option.id}
+                        onClick={() => applyEnhancement(option.text)}
+                        disabled={enhancingType === "applying"}
+                        className={`w-full p-4 rounded-xl border-2 border-zinc-200 hover:border-zinc-300 text-left transition-all group ${
+                          enhancingType === "applying" ? "opacity-50" : ""
+                        }`}
+                      >
+                        <div className="flex items-start gap-3">
+                          <div className={`p-2 rounded-lg ${style.bg}`}>
+                            <style.icon className={`w-5 h-5 ${style.color}`} />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 mb-2">
+                              <span className="font-semibold text-zinc-900">{option.label || style.label}</span>
+                              <span className="text-xs text-zinc-400">{option.text.length}文字</span>
+                            </div>
+                            <p className="text-sm text-zinc-600 whitespace-pre-wrap line-clamp-4 leading-relaxed">
+                              {option.text}
+                            </p>
+                          </div>
+                          <div className="opacity-0 group-hover:opacity-100 transition-opacity">
+                            <CheckCircle2 className="w-5 h-5 text-emerald-500" />
+                          </div>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="text-center py-12 text-zinc-500">
+                  <p>強化案を生成できませんでした</p>
+                  <button
+                    onClick={handleAIEnhance}
+                    className="mt-4 text-amber-600 hover:underline"
+                  >
+                    再試行
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         </div>

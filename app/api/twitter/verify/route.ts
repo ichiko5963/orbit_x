@@ -27,6 +27,7 @@ export async function GET() {
         id: user.id,
         name: user.name,
         username: user.username,
+        profileImageUrl: user.profile_image_url,
       },
     });
   } catch (error) {

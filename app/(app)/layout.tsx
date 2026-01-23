@@ -29,6 +29,7 @@ import {
 } from "lucide-react";
 import { AuthProvider, useAuth } from "@/lib/auth-context";
 import { ImportProvider, useImport } from "@/lib/import-context";
+import { XProfileProvider } from "@/lib/x-profile-context";
 
 const mainNav = [
   { name: "ダッシュボード", href: "/dashboard", icon: LayoutDashboard },
@@ -413,7 +414,9 @@ export default function AppLayout({ children }: { children: ReactNode }) {
   return (
     <AuthProvider>
       <ImportProvider>
-        <AppLayoutContent>{children}</AppLayoutContent>
+        <XProfileProvider>
+          <AppLayoutContent>{children}</AppLayoutContent>
+        </XProfileProvider>
       </ImportProvider>
     </AuthProvider>
   );

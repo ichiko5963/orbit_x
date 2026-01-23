@@ -24,7 +24,9 @@ import {
   Clock,
 } from "lucide-react";
 import { Timestamp } from "firebase/firestore";
+import Image from "next/image";
 import { useAuth } from "@/lib/auth-context";
+import { useXProfile } from "@/lib/x-profile-context";
 import { getContextPosts, getPosts, saveScheduledPost, getUserStyleAnalysis } from "@/lib/firebase";
 
 // Practical X post categories (must match database)
@@ -68,8 +70,10 @@ type PostSource = "myPosts" | "othersPosts" | "aiAuto";
 export default function GeneratePage() {
   const router = useRouter();
   const { user } = useAuth();
+  const { profile: xProfile, isConnected: xConnected } = useXProfile();
 
   const [content, setContent] = useState("");
+  const [previousContent, setPreviousContent] = useState("");
   const [isContentExpanded, setIsContentExpanded] = useState(false);
 
   // Source toggle: 過去投稿一覧 (myPosts) or 他者バズ投稿 (othersPosts) or AIおまかせ (aiAuto)
@@ -102,26 +106,48 @@ export default function GeneratePage() {
   const [isSavingSchedule, setIsSavingSchedule] = useState(false);
   const scheduleTextareaRef = useRef<HTMLTextAreaElement>(null);
 
-  // Load content and cards from sessionStorage
+  // Load content from sessionStorage
   useEffect(() => {
     const savedContent = sessionStorage.getItem("compose_content");
     if (savedContent) {
       setContent(savedContent);
+      setPreviousContent(savedContent);
     }
 
-    // Restore generated cards if coming back from editor
-    const savedCards = sessionStorage.getItem("compose_generated_cards");
-    if (savedCards) {
-      try {
-        const parsedCards = JSON.parse(savedCards);
-        if (Array.isArray(parsedCards) && parsedCards.length > 0) {
-          setCards(parsedCards);
+    // Only restore cards if coming back from editor (check navigation history)
+    const cameFromEditor = sessionStorage.getItem("came_from_editor") === "true";
+    if (cameFromEditor && savedContent) {
+      const savedCards = sessionStorage.getItem("compose_generated_cards");
+      if (savedCards) {
+        try {
+          const parsedCards = JSON.parse(savedCards);
+          if (Array.isArray(parsedCards) && parsedCards.length > 0) {
+            setCards(parsedCards);
+          }
+        } catch (e) {
+          console.error("Failed to parse saved cards:", e);
         }
-      } catch (e) {
-        console.error("Failed to parse saved cards:", e);
       }
+      // Clear the flag
+      sessionStorage.removeItem("came_from_editor");
+    } else {
+      // Clear any old cards
+      sessionStorage.removeItem("compose_generated_cards");
     }
   }, []);
+
+  // Clear cards when content changes significantly
+  useEffect(() => {
+    if (content && previousContent && content !== previousContent) {
+      // Content changed, clear old cards
+      setCards([]);
+      setSelectedCategory("");
+      sessionStorage.removeItem("compose_generated_cards");
+    }
+    if (content) {
+      setPreviousContent(content);
+    }
+  }, [content, previousContent]);
 
   // Save cards to sessionStorage whenever they change
   useEffect(() => {
@@ -798,7 +824,7 @@ export default function GeneratePage() {
                   </span>
                 </div>
 
-                {/* Card Body */}
+                {/* Card Body - X風プレビュー */}
                 <div className="flex-1 p-4">
                   {card.isLoading ? (
                     <div className="h-40 flex flex-col items-center justify-center text-zinc-400">
@@ -816,9 +842,33 @@ export default function GeneratePage() {
                       </button>
                     </div>
                   ) : (
-                    <p className="text-sm text-zinc-700 whitespace-pre-wrap leading-relaxed line-clamp-[8]">
-                      {card.text}
-                    </p>
+                    <div>
+                      {/* X Profile Header */}
+                      {xConnected && xProfile && (
+                        <div className="flex items-center gap-2 mb-3">
+                          {xProfile.profileImageUrl ? (
+                            <Image
+                              src={xProfile.profileImageUrl}
+                              alt={xProfile.name}
+                              width={32}
+                              height={32}
+                              className="rounded-full"
+                            />
+                          ) : (
+                            <div className="w-8 h-8 rounded-full bg-blue-500 flex items-center justify-center text-white text-xs font-bold">
+                              {xProfile.name?.[0] || "X"}
+                            </div>
+                          )}
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-bold text-zinc-900 truncate">{xProfile.name}</p>
+                            <p className="text-xs text-zinc-500">@{xProfile.username}</p>
+                          </div>
+                        </div>
+                      )}
+                      <p className="text-sm text-zinc-700 whitespace-pre-wrap leading-relaxed line-clamp-[8]">
+                        {card.text}
+                      </p>
+                    </div>
                   )}
                 </div>
 

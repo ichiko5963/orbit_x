@@ -105,10 +105,16 @@ class TwitterClient {
     return data as TweetResponse;
   }
 
-  // Verify credentials
-  async verifyCredentials(): Promise<{ id: string; name: string; username: string } | null> {
-    const url = "https://api.twitter.com/2/users/me";
-    const authHeader = this.generateOAuthHeader("GET", url);
+  // Verify credentials and get profile
+  async verifyCredentials(): Promise<{
+    id: string;
+    name: string;
+    username: string;
+    profile_image_url?: string;
+  } | null> {
+    // Request user fields including profile_image_url
+    const url = "https://api.twitter.com/2/users/me?user.fields=profile_image_url";
+    const authHeader = this.generateOAuthHeader("GET", url.split("?")[0]);
 
     try {
       const response = await fetch(url, {

@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import {
   Settings,
   User,
@@ -20,7 +21,9 @@ import {
   Trash2,
   FileText,
   ChevronRight,
+  Twitter,
 } from "lucide-react";
+import { useXProfile } from "@/lib/x-profile-context";
 
 interface SettingSection {
   id: string;
@@ -53,33 +56,8 @@ export default function SettingsPage() {
   const [isSaving, setIsSaving] = useState(false);
   const [saved, setSaved] = useState(false);
 
-  // X API connection state
-  const [xConnected, setXConnected] = useState(false);
-  const [xUser, setXUser] = useState<{ name: string; username: string } | null>(null);
-  const [xLoading, setXLoading] = useState(true);
-  const [xError, setXError] = useState<string | null>(null);
-
-  // Check X connection on mount
-  useEffect(() => {
-    const checkXConnection = async () => {
-      try {
-        const response = await fetch("/api/twitter/verify");
-        const data = await response.json();
-        setXConnected(data.connected);
-        if (data.user) {
-          setXUser(data.user);
-        }
-        if (!data.connected && data.message) {
-          setXError(data.message);
-        }
-      } catch (error) {
-        setXError("Failed to check X connection");
-      } finally {
-        setXLoading(false);
-      }
-    };
-    checkXConnection();
-  }, []);
+  // X profile from context
+  const { profile: xProfile, isConnected: xConnected, isLoading: xLoading, error: xError } = useXProfile();
 
   const handleSave = async () => {
     setIsSaving(true);
@@ -140,36 +118,71 @@ export default function SettingsPage() {
                   </p>
                 </div>
 
-                <div className="flex items-center gap-4 p-4 bg-zinc-50 rounded-xl">
-                  <div className="w-16 h-16 rounded-xl bg-gradient-to-br from-violet-500 to-purple-500 flex items-center justify-center text-white text-2xl font-bold">
-                    U
+                {/* X Profile (if connected) */}
+                {xConnected && xProfile && (
+                  <div className="p-4 bg-gradient-to-r from-blue-50 to-sky-50 border border-blue-200 rounded-xl">
+                    <div className="flex items-center gap-2 mb-3">
+                      <Twitter className="w-5 h-5 text-blue-500" />
+                      <span className="text-sm font-medium text-blue-700">X連携アカウント</span>
+                    </div>
+                    <div className="flex items-center gap-4">
+                      {xProfile.profileImageUrl ? (
+                        <Image
+                          src={xProfile.profileImageUrl.replace("_normal", "_200x200")}
+                          alt={xProfile.name}
+                          width={64}
+                          height={64}
+                          className="rounded-full border-2 border-white shadow-md"
+                        />
+                      ) : (
+                        <div className="w-16 h-16 rounded-full bg-blue-500 flex items-center justify-center text-white text-2xl font-bold">
+                          {xProfile.name?.[0] || "X"}
+                        </div>
+                      )}
+                      <div>
+                        <p className="text-lg font-bold text-zinc-900">{xProfile.name}</p>
+                        <p className="text-blue-600">@{xProfile.username}</p>
+                      </div>
+                    </div>
+                    <p className="text-xs text-blue-600 mt-3">
+                      このアカウントで予約投稿が自動的に投稿されます
+                    </p>
                   </div>
-                  <div>
-                    <p className="font-medium text-zinc-900">ユーザー名</p>
-                    <p className="text-sm text-zinc-500">user@example.com</p>
+                )}
+
+                {!xConnected && (
+                  <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl">
+                    <p className="text-sm text-amber-700">
+                      X連携が設定されていません。「API連携」セクションで設定してください。
+                    </p>
                   </div>
-                </div>
+                )}
 
                 <div className="space-y-4">
                   <div>
                     <label className="block text-sm font-medium text-zinc-500 mb-2">
-                      表示名
+                      表示名（プレビュー用）
                     </label>
                     <input
                       type="text"
-                      defaultValue="ユーザー"
-                      className="w-full h-11 px-4 bg-zinc-50 border border-zinc-200 rounded-xl text-zinc-900 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-colors"
+                      defaultValue={xProfile?.name || "ユーザー"}
+                      disabled={xConnected}
+                      className="w-full h-11 px-4 bg-zinc-50 border border-zinc-200 rounded-xl text-zinc-900 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-colors disabled:opacity-60"
                     />
+                    {xConnected && (
+                      <p className="text-xs text-zinc-500 mt-1">X連携中は自動的に反映されます</p>
+                    )}
                   </div>
 
                   <div>
                     <label className="block text-sm font-medium text-zinc-500 mb-2">
-                      メールアドレス
+                      ユーザー名（プレビュー用）
                     </label>
                     <input
-                      type="email"
-                      defaultValue="user@example.com"
-                      className="w-full h-11 px-4 bg-zinc-50 border border-zinc-200 rounded-xl text-zinc-900 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-colors"
+                      type="text"
+                      defaultValue={xProfile ? `@${xProfile.username}` : "@username"}
+                      disabled={xConnected}
+                      className="w-full h-11 px-4 bg-zinc-50 border border-zinc-200 rounded-xl text-zinc-900 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-colors disabled:opacity-60"
                     />
                   </div>
                 </div>
@@ -337,8 +350,8 @@ export default function SettingsPage() {
                         <div>
                           <p className="font-medium text-zinc-900">X (Twitter) API</p>
                           <p className="text-xs text-zinc-500">
-                            {xConnected && xUser
-                              ? `@${xUser.username} として接続中`
+                            {xConnected && xProfile
+                              ? `@${xProfile.username} として接続中`
                               : "予約投稿の自動投稿に使用"}
                           </p>
                         </div>
@@ -357,12 +370,20 @@ export default function SettingsPage() {
                         </span>
                       )}
                     </div>
-                    {xConnected && xUser ? (
+                    {xConnected && xProfile ? (
                       <div className="flex items-center gap-3 p-3 bg-emerald-50 rounded-lg">
-                        <CheckCircle2 className="w-5 h-5 text-emerald-500" />
+                        {xProfile.profileImageUrl && (
+                          <Image
+                            src={xProfile.profileImageUrl}
+                            alt={xProfile.name}
+                            width={40}
+                            height={40}
+                            className="rounded-full"
+                          />
+                        )}
                         <div>
                           <p className="text-sm font-medium text-emerald-700">
-                            {xUser.name}
+                            {xProfile.name} (@{xProfile.username})
                           </p>
                           <p className="text-xs text-emerald-600">
                             予約投稿は自動的にこのアカウントから投稿されます
