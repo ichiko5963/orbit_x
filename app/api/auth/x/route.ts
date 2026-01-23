@@ -26,10 +26,13 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const clientId = process.env.X_CLIENT_ID;
+    // Try multiple env var names for flexibility
+    const clientId = process.env.X_CLIENT_ID || process.env.X_OAUTH_CLIENT_ID;
     if (!clientId) {
       return NextResponse.json(
-        { error: "X_CLIENT_ID not configured" },
+        {
+          error: "X OAuth 2.0 Client IDが設定されていません。.env.localにX_CLIENT_IDを追加してください。X Developer Portal > Your App > Keys and tokens > OAuth 2.0 Client ID から取得できます。"
+        },
         { status: 500 }
       );
     }

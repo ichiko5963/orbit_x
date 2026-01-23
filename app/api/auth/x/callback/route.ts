@@ -53,12 +53,12 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const clientId = process.env.X_CLIENT_ID;
-    const clientSecret = process.env.X_CLIENT_SECRET;
+    const clientId = process.env.X_CLIENT_ID || process.env.X_OAUTH_CLIENT_ID;
+    const clientSecret = process.env.X_CLIENT_SECRET || process.env.X_OAUTH_CLIENT_SECRET;
 
     if (!clientId) {
       return NextResponse.redirect(
-        `${process.env.NEXT_PUBLIC_BASE_URL}/settings?x_auth_error=config_error`
+        `${process.env.NEXT_PUBLIC_BASE_URL}/settings?x_auth_error=X_CLIENT_ID未設定`
       );
     }
 
