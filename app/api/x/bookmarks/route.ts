@@ -124,8 +124,16 @@ export async function GET(request: NextRequest) {
     if (!meResponse.ok) {
       const error = await meResponse.json();
       console.error("X API /users/me error:", error);
+
+      let errorMessage = "ユーザー情報の取得に失敗しました";
+      if (meResponse.status === 401) {
+        errorMessage = "認証が無効です。設定ページでXと再連携してください。";
+      } else if (meResponse.status === 429) {
+        errorMessage = "X APIのレート制限に達しました。しばらく待ってから再試行してください。";
+      }
+
       return NextResponse.json(
-        { error: "Failed to get user info" },
+        { error: errorMessage, code: meResponse.status === 401 ? "TOKEN_INVALID" : `HTTP_${meResponse.status}` },
         { status: meResponse.status }
       );
     }
@@ -135,7 +143,7 @@ export async function GET(request: NextRequest) {
 
     // Fetch bookmarks
     const bookmarksUrl = new URL(`${X_API_BASE}/users/${xUserId}/bookmarks`);
-    bookmarksUrl.searchParams.set("max_results", "20");
+    bookmarksUrl.searchParams.set("max_results", "5");
     bookmarksUrl.searchParams.set(
       "tweet.fields",
       "created_at,public_metrics,author_id"
@@ -159,8 +167,22 @@ export async function GET(request: NextRequest) {
     if (!bookmarksResponse.ok) {
       const error = await bookmarksResponse.json();
       console.error("X API bookmarks error:", error);
+
+      // Provide more helpful error messages
+      let errorMessage = "ブックマークの取得に失敗しました";
+
+      if (bookmarksResponse.status === 429) {
+        errorMessage = "X APIのレート制限に達しました。しばらく待ってから再試行してください。";
+      } else if (bookmarksResponse.status === 403) {
+        errorMessage = "ブックマークAPIへのアクセス権がありません。X Developer Portalで「Basic」以上のプランが必要です。";
+      } else if (error?.detail || error?.title) {
+        errorMessage = error.detail || error.title;
+      } else if (error?.errors?.[0]?.message) {
+        errorMessage = error.errors[0].message;
+      }
+
       return NextResponse.json(
-        { error: "Failed to fetch bookmarks" },
+        { error: errorMessage, code: `HTTP_${bookmarksResponse.status}` },
         { status: bookmarksResponse.status }
       );
     }

@@ -1,6 +1,7 @@
 "use client";
 
 import { createContext, useContext, useEffect, useState, ReactNode } from "react";
+import { useAuth } from "./auth-context";
 
 interface XProfile {
   id: string;
@@ -14,34 +15,46 @@ interface XProfileContextType {
   isConnected: boolean;
   isLoading: boolean;
   error: string | null;
+  connectedAt: string | null;
   refresh: () => Promise<void>;
 }
 
 const XProfileContext = createContext<XProfileContextType | undefined>(undefined);
 
 export function XProfileProvider({ children }: { children: ReactNode }) {
+  const { user } = useAuth();
   const [profile, setProfile] = useState<XProfile | null>(null);
   const [isConnected, setIsConnected] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [connectedAt, setConnectedAt] = useState<string | null>(null);
 
   const fetchProfile = async () => {
+    if (!user) {
+      setIsLoading(false);
+      return;
+    }
+
     setIsLoading(true);
     setError(null);
     try {
-      const response = await fetch("/api/twitter/verify");
+      const response = await fetch(`/api/x/profile?userId=${user.uid}`);
       const data = await response.json();
+
       setIsConnected(data.connected);
-      if (data.user) {
+      setConnectedAt(data.connectedAt || null);
+
+      if (data.profile) {
         setProfile({
-          id: data.user.id,
-          name: data.user.name,
-          username: data.user.username,
-          profileImageUrl: data.user.profileImageUrl,
+          id: data.profile.id,
+          name: data.profile.name,
+          username: data.profile.username,
+          profileImageUrl: data.profile.profileImageUrl,
         });
       } else {
         setProfile(null);
       }
+
       if (!data.connected && data.message) {
         setError(data.message);
       }
@@ -56,7 +69,7 @@ export function XProfileProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     fetchProfile();
-  }, []);
+  }, [user]);
 
   return (
     <XProfileContext.Provider
@@ -65,6 +78,7 @@ export function XProfileProvider({ children }: { children: ReactNode }) {
         isConnected,
         isLoading,
         error,
+        connectedAt,
         refresh: fetchProfile,
       }}
     >

@@ -1,7 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import { exchangeCodeForToken } from "@/lib/x-oauth";
-import { cookies } from "next/headers";
 import { getAdminFirestore } from "@/lib/firebase-admin";
+
+// Helper to get base URL
+function getBaseUrl(request: NextRequest): string {
+  // Try env first, then derive from request
+  if (process.env.NEXT_PUBLIC_BASE_URL) {
+    return process.env.NEXT_PUBLIC_BASE_URL;
+  }
+  // Derive from request URL
+  const url = new URL(request.url);
+  return `${url.protocol}//${url.host}`;
+}
 
 /**
  * GET /api/auth/x/callback
@@ -12,6 +22,8 @@ import { getAdminFirestore } from "@/lib/firebase-admin";
  * - state: State parameter for CSRF verification
  */
 export async function GET(request: NextRequest) {
+  const baseUrl = getBaseUrl(request);
+
   try {
     const { searchParams } = new URL(request.url);
     const code = searchParams.get("code");
@@ -23,33 +35,41 @@ export async function GET(request: NextRequest) {
       const errorDescription = searchParams.get("error_description") || error;
       console.error("X Auth error:", errorDescription);
       return NextResponse.redirect(
-        `${process.env.NEXT_PUBLIC_BASE_URL}/settings?x_auth_error=${encodeURIComponent(errorDescription)}`
+        `${baseUrl}/settings?x_auth_error=${encodeURIComponent(errorDescription)}`
       );
     }
 
     if (!code || !state) {
       return NextResponse.redirect(
-        `${process.env.NEXT_PUBLIC_BASE_URL}/settings?x_auth_error=missing_params`
+        `${baseUrl}/settings?x_auth_error=missing_params`
       );
     }
 
-    // Get stored values from cookies
-    const cookieStore = await cookies();
-    const storedState = cookieStore.get("x_auth_state")?.value;
-    const codeVerifier = cookieStore.get("x_code_verifier")?.value;
-    const userId = cookieStore.get("x_auth_user_id")?.value;
+    // Get stored values from cookies (using request.cookies)
+    const storedState = request.cookies.get("x_auth_state")?.value;
+    const codeVerifier = request.cookies.get("x_code_verifier")?.value;
+    const userId = request.cookies.get("x_auth_user_id")?.value;
+
+    console.log("Callback cookies:", {
+      hasState: !!storedState,
+      hasVerifier: !!codeVerifier,
+      hasUserId: !!userId,
+      receivedState: state,
+      storedStateValue: storedState
+    });
 
     // Verify state
     if (state !== storedState) {
       console.error("State mismatch:", { received: state, expected: storedState });
       return NextResponse.redirect(
-        `${process.env.NEXT_PUBLIC_BASE_URL}/settings?x_auth_error=state_mismatch`
+        `${baseUrl}/settings?x_auth_error=state_mismatch_セッションが切れました。もう一度お試しください。`
       );
     }
 
     if (!codeVerifier || !userId) {
+      console.error("Missing PKCE data:", { hasVerifier: !!codeVerifier, hasUserId: !!userId });
       return NextResponse.redirect(
-        `${process.env.NEXT_PUBLIC_BASE_URL}/settings?x_auth_error=session_expired`
+        `${baseUrl}/settings?x_auth_error=session_expired_もう一度お試しください`
       );
     }
 
@@ -58,11 +78,10 @@ export async function GET(request: NextRequest) {
 
     if (!clientId) {
       return NextResponse.redirect(
-        `${process.env.NEXT_PUBLIC_BASE_URL}/settings?x_auth_error=X_CLIENT_ID未設定`
+        `${baseUrl}/settings?x_auth_error=X_CLIENT_ID未設定`
       );
     }
 
-    const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000";
     const redirectUri = `${baseUrl}/api/auth/x/callback`;
 
     // Exchange code for token
@@ -78,7 +97,30 @@ export async function GET(request: NextRequest) {
     const expiresAt = new Date();
     expiresAt.setSeconds(expiresAt.getSeconds() + tokenResponse.expires_in);
 
-    // Save token to Firestore
+    // Fetch X user profile
+    let xProfile = null;
+    try {
+      const profileResponse = await fetch(
+        "https://api.twitter.com/2/users/me?user.fields=profile_image_url,name,username",
+        {
+          headers: {
+            Authorization: `Bearer ${tokenResponse.access_token}`,
+          },
+        }
+      );
+
+      if (profileResponse.ok) {
+        const profileData = await profileResponse.json();
+        xProfile = profileData.data;
+        console.log("X Profile fetched:", xProfile);
+      } else {
+        console.error("Failed to fetch X profile:", await profileResponse.text());
+      }
+    } catch (profileError) {
+      console.error("Error fetching X profile:", profileError);
+    }
+
+    // Save token and profile to Firestore
     const db = getAdminFirestore();
     await db
       .collection("users")
@@ -91,22 +133,29 @@ export async function GET(request: NextRequest) {
         expiresAt: expiresAt.toISOString(),
         scope: tokenResponse.scope,
         connectedAt: new Date().toISOString(),
+        // X Profile info
+        xUserId: xProfile?.id || null,
+        xName: xProfile?.name || null,
+        xUsername: xProfile?.username || null,
+        xProfileImageUrl: xProfile?.profile_image_url || null,
       });
 
-    // Clear cookies
-    cookieStore.delete("x_code_verifier");
-    cookieStore.delete("x_auth_state");
-    cookieStore.delete("x_auth_user_id");
-
-    // Redirect to settings with success
-    return NextResponse.redirect(
-      `${process.env.NEXT_PUBLIC_BASE_URL}/settings?x_auth_success=true`
+    // Redirect to settings with success and clear cookies
+    const successResponse = NextResponse.redirect(
+      `${baseUrl}/settings?x_auth_success=true`
     );
+
+    // Clear cookies
+    successResponse.cookies.delete("x_code_verifier");
+    successResponse.cookies.delete("x_auth_state");
+    successResponse.cookies.delete("x_auth_user_id");
+
+    return successResponse;
   } catch (error) {
     console.error("X Auth callback error:", error);
     const message = error instanceof Error ? error.message : "認証に失敗しました";
     return NextResponse.redirect(
-      `${process.env.NEXT_PUBLIC_BASE_URL}/settings?x_auth_error=${encodeURIComponent(message)}`
+      `${baseUrl}/settings?x_auth_error=${encodeURIComponent(message)}`
     );
   }
 }

@@ -5,7 +5,6 @@ import {
   generateState,
   buildAuthorizationUrl,
 } from "@/lib/x-oauth";
-import { cookies } from "next/headers";
 
 /**
  * GET /api/auth/x
@@ -37,43 +36,17 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000";
+    // Derive base URL from request to ensure consistency
+    const requestUrl = new URL(request.url);
+    const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || `${requestUrl.protocol}//${requestUrl.host}`;
     const redirectUri = `${baseUrl}/api/auth/x/callback`;
+
+    console.log("X Auth starting with redirectUri:", redirectUri);
 
     // Generate PKCE values
     const codeVerifier = generateCodeVerifier();
     const codeChallenge = await generateCodeChallenge(codeVerifier);
     const state = generateState();
-
-    // Store PKCE values in secure cookies
-    const cookieStore = await cookies();
-
-    // Store code verifier (needed for token exchange)
-    cookieStore.set("x_code_verifier", codeVerifier, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "lax",
-      maxAge: 600, // 10 minutes
-      path: "/",
-    });
-
-    // Store state (for CSRF protection)
-    cookieStore.set("x_auth_state", state, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "lax",
-      maxAge: 600,
-      path: "/",
-    });
-
-    // Store user ID (to associate token with user)
-    cookieStore.set("x_auth_user_id", userId, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "lax",
-      maxAge: 600,
-      path: "/",
-    });
 
     // Build authorization URL
     const authUrl = buildAuthorizationUrl({
@@ -83,8 +56,27 @@ export async function GET(request: NextRequest) {
       codeChallenge,
     });
 
-    // Redirect to X authorization page
-    return NextResponse.redirect(authUrl);
+    console.log("X Auth - Setting cookies and redirecting to:", authUrl);
+    console.log("X Auth - State:", state);
+
+    // Create redirect response and set cookies on it
+    const response = NextResponse.redirect(authUrl);
+
+    // Cookie options
+    const cookieOptions = {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax" as const,
+      maxAge: 600, // 10 minutes
+      path: "/",
+    };
+
+    // Set cookies on the response
+    response.cookies.set("x_code_verifier", codeVerifier, cookieOptions);
+    response.cookies.set("x_auth_state", state, cookieOptions);
+    response.cookies.set("x_auth_user_id", userId, cookieOptions);
+
+    return response;
   } catch (error) {
     console.error("X Auth start error:", error);
     const message = error instanceof Error ? error.message : "認証開始に失敗しました";

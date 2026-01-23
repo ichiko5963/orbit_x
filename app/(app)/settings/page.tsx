@@ -70,6 +70,9 @@ export default function SettingsPage() {
   const [xAuthSuccess, setXAuthSuccess] = useState(false);
   const [xAuthError, setXAuthError] = useState<string | null>(null);
 
+  // X profile from context
+  const { profile: xProfile, isConnected: xConnected, isLoading: xLoading, error: xError, connectedAt: xConnectedAt, refresh: refreshXProfile } = useXProfile();
+
   // Check for OAuth callback results
   useEffect(() => {
     const success = searchParams.get("x_auth_success");
@@ -78,6 +81,8 @@ export default function SettingsPage() {
     if (success === "true") {
       setXAuthSuccess(true);
       setActiveSection("xauth");
+      // Refresh X profile after successful connection
+      refreshXProfile();
       // Clear URL params
       window.history.replaceState({}, "", "/settings");
     } else if (error) {
@@ -85,10 +90,7 @@ export default function SettingsPage() {
       setActiveSection("xauth");
       window.history.replaceState({}, "", "/settings");
     }
-  }, [searchParams]);
-
-  // X profile from context
-  const { profile: xProfile, isConnected: xConnected, isLoading: xLoading, error: xError } = useXProfile();
+  }, [searchParams, refreshXProfile]);
 
   // Handle X OAuth connection
   const handleConnectXAuth = () => {
