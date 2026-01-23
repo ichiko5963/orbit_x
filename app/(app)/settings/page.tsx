@@ -37,10 +37,10 @@ interface SettingSection {
 
 const sections: SettingSection[] = [
   { id: "profile", title: "プロフィール", icon: User },
-  { id: "xauth", title: "Xブックマーク連携", icon: Bookmark },
+  { id: "xauth", title: "X連携", icon: Twitter },
   { id: "patterns", title: "投稿パターン", icon: FileText },
   { id: "notifications", title: "通知", icon: Bell },
-  { id: "api", title: "API連携", icon: Key },
+  { id: "api", title: "外部コンテンツAPI", icon: Key },
   { id: "schedule", title: "スケジュール", icon: Clock },
   { id: "data", title: "データ", icon: Database },
 ];
