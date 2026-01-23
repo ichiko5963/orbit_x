@@ -898,9 +898,17 @@ interface EnhancePostOptions {
 /**
  * Enhance a generated post by refining it - keep the good parts, improve the weak parts
  * Add missing elements from original content while preserving the current structure
+ *
+ * KEY PRINCIPLE: Preserve 70%+ of original text, maintain structure (line count, breaks, bullets)
  */
 export async function enhancePost(options: EnhancePostOptions): Promise<string> {
   const { currentText, originalContent, referenceText, userStyle } = options;
+
+  // Analyze current structure
+  const lineCount = currentText.split("\n").length;
+  const hasBullets = currentText.includes("・") || currentText.includes("-") || currentText.includes("•");
+  const bulletCount = (currentText.match(/[・\-•]/g) || []).length;
+  const hasEmoji = /[\u{1F300}-\u{1F9FF}]/u.test(currentText);
 
   // Step 1: Analyze what's good and what's missing in the current text
   const analysisPrompt = `以下の2つを比較して、現在の投稿の「良い点」と「足りない要素」を分析してください。
@@ -911,18 +919,20 @@ ${originalContent}
 【現在の投稿】
 ${currentText}
 
+【重要】最小限の改善点だけを特定してください。大幅な変更は不要です。
+
 JSON形式で回答：
 {
   "goodParts": ["良い表現1", "良い表現2"],
-  "missingElements": ["足りない情報1", "足りない情報2"],
-  "awkwardParts": ["違和感のある表現1"],
-  "keepAsIs": "そのまま残すべき文（最初の1-2文など）"
+  "missingElements": ["足りない情報1（あれば）"],
+  "awkwardParts": ["違和感のある表現（あれば）"],
+  "keepAsIs": "そのまま残すべき部分（ほとんど全部）"
 }`;
 
   const analysisResponse = await openai.chat.completions.create({
     model: "gpt-4o-mini",
     messages: [
-      { role: "system", content: "投稿分析のエキスパート。良い点と改善点を的確に見つける。" },
+      { role: "system", content: "投稿分析のエキスパート。最小限の改善点のみを特定する。過剰な変更は提案しない。" },
       { role: "user", content: analysisPrompt },
     ],
     temperature: 0.1,
@@ -949,11 +959,20 @@ JSON形式で回答：
 - 絵文字: ${userStyle.emojiUsage || "控えめ"}`;
   }
 
-  // Step 2: Refine the post - keep good parts, fix issues
-  const refinePrompt = `【投稿リファイン】現在の投稿を改善してください。
+  // Step 2: Refine the post - minimal changes only
+  const refinePrompt = `【投稿リファイン】現在の投稿を【最小限の変更】で改善してください。
 
 ━━━━━━━━━━━━━━━━━━━━
-■ 現在の投稿【ベース - 良い部分は残す】
+■ 構造維持ルール【絶対厳守】
+━━━━━━━━━━━━━━━━━━━━
+- 行数: ${lineCount}行を維持（増やさない、減らさない）
+- 改行位置: 元の改行位置をそのまま維持
+- 箇条書き: ${hasBullets ? `「・」を${bulletCount}個維持` : "箇条書きなし→追加しない"}
+- 絵文字: ${hasEmoji ? "現状維持" : "追加しない"}
+- 元の投稿の70%以上をそのまま残す
+
+━━━━━━━━━━━━━━━━━━━━
+■ 現在の投稿【ほぼそのまま残す】
 ━━━━━━━━━━━━━━━━━━━━
 ${currentText}
 
@@ -963,10 +982,10 @@ ${currentText}
 ★ 良い点（そのまま残す）:
 ${(analysis.goodParts || []).map((p: string) => `・${p}`).join("\n") || "（なし）"}
 
-★ 足りない要素（追加する）:
+★ 足りない要素（自然に溶け込ませる）:
 ${(analysis.missingElements || []).map((p: string) => `・${p}`).join("\n") || "（なし）"}
 
-★ 違和感のある表現（修正する）:
+★ 違和感のある表現（最小限の修正）:
 ${(analysis.awkwardParts || []).map((p: string) => `・${p}`).join("\n") || "（なし）"}
 
 ━━━━━━━━━━━━━━━━━━━━
@@ -978,14 +997,14 @@ ${styleInstructions}
 ━━━━━━━━━━━━━━━━━━━━
 ■ リファインのルール【重要】
 ━━━━━━━━━━━━━━━━━━━━
-1. 現在の投稿の【良い部分はそのまま残す】- 全部書き換えない
-2. 足りない要素を【自然に追加】
-3. 違和感のある表現だけを【最小限の修正】で直す
-4. 構造（改行位置、行数）は基本維持
-5. バズる要素があれば強化（フック、具体性）
-6. AIっぽい表現（〜ですね、素晴らしい）は禁止
+1. 現在の投稿の70%以上をそのまま残す
+2. 構造（行数、改行位置、箇条書き）は100%維持
+3. 変更箇所は最大3箇所まで
+4. 足りない要素は既存の文に自然に溶け込ませる
+5. 違和感のある表現のみ最小限の修正
+6. AIっぽい表現（〜ですね、素晴らしい、ぜひ）は禁止
 
-★ コンセプト: 書き直しではなく「磨き上げ」
+★ コンセプト: 「書き直し」ではなく「ちょっとした改善」
 
 リファインした投稿本文のみを出力：`;
 
@@ -994,15 +1013,16 @@ ${styleInstructions}
     messages: [
       {
         role: "system",
-        content: `あなたは投稿のリファインのプロです。
+        content: `あなたは投稿の「微調整」専門家です。
 
-【重要な原則】
-- 「書き直し」ではなく「磨き上げ」
-- 良い部分は絶対に残す
-- 最小限の変更で最大の効果を
-- 元の雰囲気・トーンを維持
+【絶対ルール】
+- 元の投稿の構造（行数、改行、箇条書き）を100%維持
+- 元の投稿の70%以上をそのまま残す
+- 変更箇所は最大3箇所まで
+- 「書き直し」ではなく「ちょっとした改善」
 
-投稿者の意図を尊重しながら、足りない要素を補完し、違和感を修正する。`,
+あなたの仕事は「編集」であって「執筆」ではない。
+ユーザーが書いた投稿を尊重し、最小限の変更で最大の効果を。`,
       },
       {
         role: "user",

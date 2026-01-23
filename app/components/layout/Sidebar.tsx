@@ -13,6 +13,7 @@ import {
   Settings,
   PanelLeftClose,
   PanelLeft,
+  Bookmark,
 } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
@@ -28,6 +29,7 @@ const mainNav = [
   { name: "投稿ランキング", href: "/posts", icon: TrendingUp },
   { name: "AI投稿作成", href: "/compose", icon: Sparkles },
   { name: "外部コンテンツ", href: "/external", icon: ExternalLink },
+  { name: "保存済み投稿", href: "/bookmarks", icon: Bookmark },
   { name: "バズ投稿参考", href: "/viral", icon: Users },
 ];
 

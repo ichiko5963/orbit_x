@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import {
   Sparkles,
@@ -9,6 +9,8 @@ import {
   CheckCircle2,
   Calendar,
   ExternalLink,
+  Bookmark,
+  X,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 import { saveScheduledPost } from "@/lib/firebase";
@@ -18,16 +20,48 @@ import {
   PostPreview,
 } from "@/app/components/compose";
 
+interface BookmarkReference {
+  text: string;
+  source: string;
+  author: string;
+  likes: number;
+}
+
 export default function ComposePage() {
   const router = useRouter();
   const { user } = useAuth();
   const [content, setContent] = useState("");
   const [images, setImages] = useState<string[]>([]);
   const [copied, setCopied] = useState(false);
+  const [bookmarkRef, setBookmarkRef] = useState<BookmarkReference | null>(null);
 
   // Schedule modal
   const [showScheduleModal, setShowScheduleModal] = useState(false);
   const [isScheduling, setIsScheduling] = useState(false);
+
+  // Check for bookmark reference on mount
+  useEffect(() => {
+    const stored = sessionStorage.getItem("bookmarkReference");
+    if (stored) {
+      try {
+        const ref = JSON.parse(stored) as BookmarkReference;
+        setBookmarkRef(ref);
+        // Pre-fill content with bookmark text as reference
+        if (!content) {
+          setContent(`参考：${ref.text.slice(0, 100)}...\n\n`);
+        }
+        // Clear the stored reference
+        sessionStorage.removeItem("bookmarkReference");
+      } catch {
+        // Ignore parse errors
+      }
+    }
+  }, []);
+
+  const clearBookmarkRef = () => {
+    setBookmarkRef(null);
+    setContent("");
+  };
 
   // No character limit for X Premium
   const charCount = content.length;
@@ -91,6 +125,32 @@ export default function ComposePage() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         {/* Main Editor Column */}
         <div className="lg:col-span-2 space-y-6">
+          {/* Bookmark Reference Card */}
+          {bookmarkRef && (
+            <div className="bg-blue-50 border border-blue-200 rounded-2xl p-4">
+              <div className="flex items-start justify-between mb-2">
+                <div className="flex items-center gap-2">
+                  <Bookmark className="w-5 h-5 text-blue-500" />
+                  <span className="text-sm font-medium text-blue-700">
+                    ブックマークから参照中
+                  </span>
+                </div>
+                <button
+                  onClick={clearBookmarkRef}
+                  className="p-1 text-blue-400 hover:text-blue-600 rounded"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+              <p className="text-sm text-zinc-700 line-clamp-3 mb-2">
+                {bookmarkRef.text}
+              </p>
+              <p className="text-xs text-zinc-500">
+                @{bookmarkRef.author} • ❤️ {bookmarkRef.likes}
+              </p>
+            </div>
+          )}
+
           {/* Main Input Card */}
           <div className="bg-white rounded-2xl border border-zinc-200 shadow-sm overflow-hidden">
             {/* Content Input Section */}

@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import Image from "next/image";
+import { useSearchParams } from "next/navigation";
 import {
   Settings,
   User,
@@ -22,8 +23,11 @@ import {
   FileText,
   ChevronRight,
   Twitter,
+  Bookmark,
+  Loader2,
 } from "lucide-react";
 import { useXProfile } from "@/lib/x-profile-context";
+import { useAuth } from "@/lib/auth-context";
 
 interface SettingSection {
   id: string;
@@ -33,6 +37,7 @@ interface SettingSection {
 
 const sections: SettingSection[] = [
   { id: "profile", title: "プロフィール", icon: User },
+  { id: "xauth", title: "Xブックマーク連携", icon: Bookmark },
   { id: "patterns", title: "投稿パターン", icon: FileText },
   { id: "notifications", title: "通知", icon: Bell },
   { id: "api", title: "API連携", icon: Key },
@@ -41,6 +46,9 @@ const sections: SettingSection[] = [
 ];
 
 export default function SettingsPage() {
+  const searchParams = useSearchParams();
+  const { user } = useAuth();
+
   const [activeSection, setActiveSection] = useState("profile");
   const [notifications, setNotifications] = useState({
     email: true,
@@ -56,8 +64,37 @@ export default function SettingsPage() {
   const [isSaving, setIsSaving] = useState(false);
   const [saved, setSaved] = useState(false);
 
+  // X OAuth state
+  const [xAuthConnecting, setXAuthConnecting] = useState(false);
+  const [xAuthSuccess, setXAuthSuccess] = useState(false);
+  const [xAuthError, setXAuthError] = useState<string | null>(null);
+
+  // Check for OAuth callback results
+  useEffect(() => {
+    const success = searchParams.get("x_auth_success");
+    const error = searchParams.get("x_auth_error");
+
+    if (success === "true") {
+      setXAuthSuccess(true);
+      setActiveSection("xauth");
+      // Clear URL params
+      window.history.replaceState({}, "", "/settings");
+    } else if (error) {
+      setXAuthError(decodeURIComponent(error));
+      setActiveSection("xauth");
+      window.history.replaceState({}, "", "/settings");
+    }
+  }, [searchParams]);
+
   // X profile from context
   const { profile: xProfile, isConnected: xConnected, isLoading: xLoading, error: xError } = useXProfile();
+
+  // Handle X OAuth connection
+  const handleConnectXAuth = () => {
+    if (!user) return;
+    setXAuthConnecting(true);
+    window.location.href = `/api/auth/x?userId=${user.uid}`;
+  };
 
   const handleSave = async () => {
     setIsSaving(true);
@@ -189,6 +226,115 @@ export default function SettingsPage() {
               </div>
             )}
 
+            {/* X Auth Section */}
+            {activeSection === "xauth" && (
+              <div className="space-y-6">
+                <div>
+                  <h3 className="text-lg font-semibold text-zinc-900 mb-1">
+                    Xブックマーク連携
+                  </h3>
+                  <p className="text-sm text-zinc-500">
+                    Xで保存した投稿をOrbitXで参照・活用できます
+                  </p>
+                </div>
+
+                {/* Success Message */}
+                {xAuthSuccess && (
+                  <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-xl flex items-center gap-3">
+                    <CheckCircle2 className="w-5 h-5 text-emerald-500" />
+                    <span className="text-emerald-700">Xアカウントとの連携が完了しました！</span>
+                  </div>
+                )}
+
+                {/* Error Message */}
+                {xAuthError && (
+                  <div className="p-4 bg-red-50 border border-red-200 rounded-xl flex items-center gap-3">
+                    <AlertCircle className="w-5 h-5 text-red-500" />
+                    <span className="text-red-700">{xAuthError}</span>
+                  </div>
+                )}
+
+                <div className="space-y-4">
+                  {/* Connection Status */}
+                  <div className="p-6 bg-gradient-to-br from-blue-50 to-sky-50 border border-blue-200 rounded-xl">
+                    <div className="flex items-center gap-4 mb-4">
+                      <div className="w-14 h-14 rounded-2xl bg-blue-500 flex items-center justify-center">
+                        <Bookmark className="w-7 h-7 text-white" />
+                      </div>
+                      <div>
+                        <p className="text-lg font-bold text-zinc-900">Xブックマーク</p>
+                        <p className="text-sm text-zinc-600">
+                          保存した投稿を参照して投稿を作成
+                        </p>
+                      </div>
+                    </div>
+
+                    {xAuthSuccess ? (
+                      <div className="space-y-4">
+                        <div className="p-4 bg-white/80 rounded-lg">
+                          <p className="text-emerald-700 font-medium flex items-center gap-2">
+                            <CheckCircle2 className="w-5 h-5" />
+                            連携済み
+                          </p>
+                        </div>
+                        <Link
+                          href="/bookmarks"
+                          className="flex items-center justify-center gap-2 w-full py-3 bg-blue-500 text-white font-semibold rounded-xl hover:bg-blue-600 transition-colors"
+                        >
+                          <Bookmark className="w-5 h-5" />
+                          ブックマーク一覧を見る
+                        </Link>
+                      </div>
+                    ) : (
+                      <div className="space-y-4">
+                        <div className="p-4 bg-white/80 rounded-lg">
+                          <p className="text-sm text-zinc-600 mb-3">
+                            XアカウントでOAuth認証を行うと、あなたのブックマーク（保存済み投稿）にアクセスできるようになります。
+                          </p>
+                          <ul className="text-sm text-zinc-500 space-y-1">
+                            <li>・ブックマークした投稿を一覧表示</li>
+                            <li>・英語投稿を日本語に翻訳</li>
+                            <li>・AIで投稿作成時に参考として使用</li>
+                          </ul>
+                        </div>
+                        <button
+                          onClick={handleConnectXAuth}
+                          disabled={xAuthConnecting || !user}
+                          className="flex items-center justify-center gap-2 w-full py-3 bg-zinc-900 text-white font-semibold rounded-xl hover:bg-zinc-800 disabled:opacity-50 transition-colors"
+                        >
+                          {xAuthConnecting ? (
+                            <>
+                              <Loader2 className="w-5 h-5 animate-spin" />
+                              接続中...
+                            </>
+                          ) : (
+                            <>
+                              <Twitter className="w-5 h-5" />
+                              Xで連携する
+                            </>
+                          )}
+                        </button>
+                        {!user && (
+                          <p className="text-xs text-amber-600 text-center">
+                            連携するにはログインしてください
+                          </p>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Info */}
+                  <div className="p-4 bg-zinc-50 border border-zinc-200 rounded-xl">
+                    <p className="text-sm text-zinc-600">
+                      <strong>セキュリティについて：</strong>
+                      OAuth 2.0 PKCEフローを使用した安全な認証を行います。
+                      パスワードは保存されません。ブックマークの読み取り権限のみを要求します。
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* Patterns Section */}
             {activeSection === "patterns" && (
               <div className="space-y-6">
@@ -305,119 +451,107 @@ export default function SettingsPage() {
               <div className="space-y-6">
                 <div>
                   <h3 className="text-lg font-semibold text-zinc-900 mb-1">
-                    API連携
+                    外部コンテンツAPI
                   </h3>
                   <p className="text-sm text-zinc-500">
-                    外部サービスとの連携を設定します
+                    外部記事サイトとのAPI連携を設定します
                   </p>
                 </div>
 
                 <div className="space-y-4">
-                  {/* OpenAI */}
-                  <div className="p-4 bg-zinc-50 border border-zinc-200 rounded-xl">
-                    <div className="flex items-center justify-between mb-4">
-                      <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-xl bg-emerald-500/20 flex items-center justify-center">
-                          <Key className="w-5 h-5 text-emerald-400" />
-                        </div>
-                        <div>
-                          <p className="font-medium text-zinc-900">OpenAI API</p>
-                          <p className="text-xs text-zinc-500">AI投稿生成に使用</p>
-                        </div>
+                  {/* AI Status */}
+                  <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-xl">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-xl bg-emerald-500/20 flex items-center justify-center">
+                        <CheckCircle2 className="w-5 h-5 text-emerald-500" />
                       </div>
-                      <span className="px-2.5 py-1 text-xs bg-emerald-500/20 text-emerald-600 rounded-lg">
-                        接続済み
-                      </span>
-                    </div>
-                    <div className="relative">
-                      <input
-                        type="password"
-                        defaultValue="sk-xxxx...xxxx"
-                        className="w-full h-10 px-4 bg-white border border-zinc-200 rounded-lg text-zinc-900 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-colors"
-                      />
+                      <div>
+                        <p className="font-medium text-emerald-900">AI機能</p>
+                        <p className="text-sm text-emerald-700">
+                          OpenAI APIはサービス側で管理されています。設定は不要です。
+                        </p>
+                      </div>
                     </div>
                   </div>
 
-                  {/* X API */}
-                  <div className="p-4 bg-zinc-50 border border-zinc-200 rounded-xl">
-                    <div className="flex items-center justify-between mb-4">
+                  {/* X OAuth Link */}
+                  <div className="p-4 bg-blue-50 border border-blue-200 rounded-xl">
+                    <div className="flex items-center justify-between mb-3">
                       <div className="flex items-center gap-3">
                         <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${
-                          xConnected ? "bg-blue-500/20" : "bg-zinc-200"
+                          xConnected ? "bg-blue-500" : "bg-blue-200"
                         }`}>
-                          <Globe className={`w-5 h-5 ${xConnected ? "text-blue-400" : "text-zinc-400"}`} />
+                          <Twitter className={`w-5 h-5 ${xConnected ? "text-white" : "text-blue-500"}`} />
                         </div>
                         <div>
-                          <p className="font-medium text-zinc-900">X (Twitter) API</p>
-                          <p className="text-xs text-zinc-500">
+                          <p className="font-medium text-blue-900">Xアカウント連携</p>
+                          <p className="text-sm text-blue-700">
                             {xConnected && xProfile
                               ? `@${xProfile.username} として接続中`
-                              : "予約投稿の自動投稿に使用"}
+                              : "ブックマーク取得・予約投稿に使用"}
                           </p>
                         </div>
                       </div>
-                      {xLoading ? (
-                        <span className="px-2.5 py-1 text-xs bg-zinc-200 text-zinc-500 rounded-lg">
-                          確認中...
-                        </span>
-                      ) : xConnected ? (
-                        <span className="px-2.5 py-1 text-xs bg-emerald-500/20 text-emerald-600 rounded-lg">
+                      {xConnected ? (
+                        <span className="px-2.5 py-1 text-xs bg-emerald-500 text-white rounded-lg">
                           接続済み
                         </span>
                       ) : (
-                        <span className="px-2.5 py-1 text-xs bg-amber-500/20 text-amber-600 rounded-lg">
-                          未設定
+                        <span className="px-2.5 py-1 text-xs bg-amber-500 text-white rounded-lg">
+                          未接続
                         </span>
                       )}
                     </div>
-                    {xConnected && xProfile ? (
-                      <div className="flex items-center gap-3 p-3 bg-emerald-50 rounded-lg">
-                        {xProfile.profileImageUrl && (
-                          <Image
-                            src={xProfile.profileImageUrl}
-                            alt={xProfile.name}
-                            width={40}
-                            height={40}
-                            className="rounded-full"
-                          />
-                        )}
+                    <button
+                      onClick={() => setActiveSection("xauth")}
+                      className="w-full flex items-center justify-center gap-2 py-2.5 bg-blue-500 text-white font-medium rounded-lg hover:bg-blue-600 transition-colors"
+                    >
+                      {xConnected ? "連携設定を確認" : "Xで認証する"}
+                      <ChevronRight className="w-4 h-4" />
+                    </button>
+                  </div>
+
+                  {/* Qiita API */}
+                  <div className="p-4 bg-zinc-50 border border-zinc-200 rounded-xl">
+                    <div className="flex items-center justify-between mb-4">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-xl bg-emerald-100 flex items-center justify-center">
+                          <Key className="w-5 h-5 text-emerald-600" />
+                        </div>
                         <div>
-                          <p className="text-sm font-medium text-emerald-700">
-                            {xProfile.name} (@{xProfile.username})
-                          </p>
-                          <p className="text-xs text-emerald-600">
-                            予約投稿は自動的にこのアカウントから投稿されます
-                          </p>
+                          <p className="font-medium text-zinc-900">Qiita API</p>
+                          <p className="text-xs text-zinc-500">記事取得のレート制限緩和（任意）</p>
                         </div>
                       </div>
-                    ) : (
-                      <div className="space-y-3">
-                        {xError && (
-                          <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg">
-                            <p className="text-sm text-amber-700">{xError}</p>
-                          </div>
-                        )}
-                        <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
-                          <p className="text-sm text-blue-700 mb-2">
-                            <strong>X API の設定方法:</strong>
-                          </p>
-                          <ol className="text-xs text-blue-600 space-y-1 list-decimal list-inside">
-                            <li>X Developer Portal でアプリを作成</li>
-                            <li>APIキーとアクセストークンを取得</li>
-                            <li>.env.local に設定を追加</li>
-                          </ol>
-                        </div>
-                        <a
-                          href="https://developer.twitter.com/en/portal/dashboard"
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="flex items-center gap-2 px-4 py-2 bg-zinc-200 text-zinc-900 text-sm font-medium rounded-lg hover:bg-zinc-300 transition-colors"
-                        >
-                          <ExternalLink className="w-4 h-4" />
-                          X Developer Portal を開く
-                        </a>
-                      </div>
-                    )}
+                    </div>
+                    <div className="space-y-3">
+                      <input
+                        type="password"
+                        placeholder="Qiita アクセストークン（任意）"
+                        className="w-full h-10 px-4 bg-white border border-zinc-200 rounded-lg text-zinc-900 text-sm placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-colors"
+                      />
+                      <p className="text-xs text-zinc-500">
+                        設定するとQiita記事の取得制限が60リクエスト/時間に緩和されます。
+                        未設定でも基本機能は利用可能です。
+                      </p>
+                      <a
+                        href="https://qiita.com/settings/applications"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1 text-sm text-emerald-600 hover:underline"
+                      >
+                        Qiitaでトークンを発行
+                        <ExternalLink className="w-3 h-3" />
+                      </a>
+                    </div>
+                  </div>
+
+                  {/* Info */}
+                  <div className="p-4 bg-zinc-100 border border-zinc-200 rounded-xl">
+                    <p className="text-sm text-zinc-600">
+                      <strong>その他のソース</strong>（Zenn、GitHub、Medium、DEV.to、Hashnode）は
+                      公開APIを使用しているため、設定不要で利用できます。
+                    </p>
                   </div>
                 </div>
               </div>

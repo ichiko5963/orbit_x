@@ -41,18 +41,41 @@ export interface ImportResult {
 }
 
 // External content types
+export type ExternalSource =
+  | "qiita"
+  | "zenn"
+  | "github"
+  | "claude-skills"
+  // Official AI blogs
+  | "openai"
+  | "anthropic"
+  | "google-ai"
+  | "cursor"
+  | "vercel"
+  // International AI article sites
+  | "medium"
+  | "devto"
+  | "hashnode";
+
 export interface ExternalArticle {
   id: string;
   title: string;
   description: string;
   url: string;
-  source: "qiita" | "zenn";
+  source: ExternalSource;
   author: string;
   likes: number;
   publishedAt: string;
   tags: string[];
   imageUrl: string | null;
   saved: boolean;
+  // GitHub specific
+  stars?: number;
+  language?: string;
+  forks?: number;
+  // Claude Skills specific
+  skillId?: string;
+  category?: string;
 }
 
 // Viral post types

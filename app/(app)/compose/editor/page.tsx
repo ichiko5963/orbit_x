@@ -844,7 +844,7 @@ export default function PostEditorPage() {
                 </div>
                 <div>
                   <h2 className="text-lg font-semibold text-zinc-900">AI強化</h2>
-                  <p className="text-sm text-zinc-500">3つの方向性から選択</p>
+                  <p className="text-sm text-zinc-500">元の投稿を活かして微調整</p>
                 </div>
               </div>
               <button onClick={() => setShowAIEnhance(false)} className="p-2 rounded-lg hover:bg-white/50 transition-colors">
@@ -866,9 +866,9 @@ export default function PostEditorPage() {
                 <div className="space-y-4">
                   {aiEnhanceOptions.map((option, index) => {
                     const icons = [
-                      { icon: Zap, color: "text-yellow-500", bg: "bg-yellow-50", label: "インパクト重視" },
-                      { icon: Target, color: "text-blue-500", bg: "bg-blue-50", label: "明確さ重視" },
-                      { icon: TrendingUp, color: "text-emerald-500", bg: "bg-emerald-50", label: "バズ重視" },
+                      { icon: Plus, color: "text-blue-500", bg: "bg-blue-50", label: "続きを追加" },
+                      { icon: Sparkles, color: "text-purple-500", bg: "bg-purple-50", label: "表現を磨く" },
+                      { icon: Target, color: "text-emerald-500", bg: "bg-emerald-50", label: "要素を補強" },
                     ];
                     const style = icons[index] || icons[0];
 

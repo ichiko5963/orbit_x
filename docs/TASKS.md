@@ -87,51 +87,59 @@
 - [x] データエクスポート
 - [x] データ削除
 
-## Phase 3: バックエンド実装 (未実装)
+## Phase 3: バックエンド実装 (完了)
 
-### 3.1 データベース
-- [ ] Prisma スキーマ定義
-- [ ] posts_raw テーブル
-- [ ] post_structures テーブル
-- [ ] categories テーブル
-- [ ] category_template_types テーブル
-- [ ] external_contents テーブル
-- [ ] writing_styles / emoji_sets テーブル
+### 3.1 Firebase連携
+- [x] Firebase Authentication
+- [x] Firestore データベース
+- [x] ユーザー設定保存
+- [x] 投稿パターン保存
+- [x] X認証トークン保存
 
 ### 3.2 API Routes
-- [ ] CSV インポート API
-- [ ] 投稿 CRUD API
-- [ ] カテゴリー CRUD API
-- [ ] 外部コンテンツ取得 API (Qiita/Zenn)
-- [ ] AI 構造抽出 API
-- [ ] AI 投稿生成 API
+- [x] CSV インポート API
+- [x] 外部コンテンツ取得 API (Qiita/Zenn)
+- [x] AI 投稿生成 API
+- [x] 記事スクレイピング API
+- [x] AI強化オプション API
 
 ### 3.3 X API連携
-- [ ] OAuth 認証
-- [ ] 投稿 API
-- [ ] 予約投稿機能
+- [x] OAuth 2.0 PKCE 認証
+- [x] ブックマーク取得 API
+- [x] トークンリフレッシュ機能
 
 ### 3.4 AI機能
-- [ ] 構造抽出 (OpenAI/Claude)
-- [ ] 投稿生成
-- [ ] 口調抽出
-- [ ] カテゴリー自動分類
+- [x] 投稿生成 (OpenAI GPT-4)
+- [x] AI強化（構造保持型）
+- [x] 翻訳 API (英→日)
 
-## Phase 4: 外部連携 (未実装)
+## Phase 4: 外部連携 (完了)
 
-### 4.1 Qiita API
-- [ ] アクセストークン設定
-- [ ] トレンド記事取得
-- [ ] 人気記事取得
+### 4.1 国内記事サイト
+- [x] Qiita API - トレンド記事取得
+- [x] Zenn API - いいね順取得
+- [x] GitHub Search API - AI/LLMリポジトリ
 
-### 4.2 Zenn API
-- [ ] 記事一覧取得
-- [ ] いいね順ソート
+### 4.2 公式AIブログ (2026-01-23追加)
+- [x] OpenAI News (RSS)
+- [x] Anthropic News (スクレイピング)
+- [x] Google AI Blog (RSS)
+- [x] Cursor Blog (スクレイピング)
+- [x] Vercel Blog (Atom)
 
-### 4.3 定期実行
-- [ ] node-cron / Vercel Cron設定
-- [ ] 毎日朝9時：Qiita/Zenn取得
-- [ ] 3日経過後の自動削除
+### 4.3 海外AI記事サイト (2026-01-23追加)
+- [x] Medium AI tag (RSS)
+- [x] DEV.to AI tag (RSS)
+- [x] Hashnode AI (GraphQL)
+
+### 4.4 X連携 (2026-01-23追加)
+- [x] OAuth 2.0 PKCE認証フロー
+- [x] ブックマーク一覧取得
+- [x] 英語投稿の翻訳機能
+- [x] ブックマーク参照での投稿作成
+
+### 4.5 Claude Skills
+- [x] 人気スキルのキュレーションリスト
 
 ---
 
@@ -147,17 +155,45 @@
 
 ## 進捗状況
 - 開始日: 2026-01-20
-- 最終更新: 2026-01-20
+- 最終更新: 2026-01-23
 - Phase 1-2: 完了 (フロントエンドUI + UI/UX改善)
-- Phase 3-4: 未着手 (バックエンド/外部連携)
+- Phase 3-4: 完了 (バックエンド/外部連携)
 
 ## 実装済みページ
 1. `/` - ダッシュボード
 2. `/import` - CSVインポート
 3. `/posts` - 投稿ランキング
 4. `/compose` - AI投稿作成
-5. `/external` - 外部コンテンツ提案
-6. `/viral` - 他人のバズ投稿参考
-7. `/categories` - カテゴリー管理
-8. `/styles` - 口調・絵文字管理
-9. `/settings` - 設定
+5. `/compose/generate` - テンプレート選択・生成
+6. `/compose/editor` - 投稿エディター（AI強化対応）
+7. `/external` - 外部コンテンツ提案（国内・公式AI・海外対応）
+8. `/viral` - 他人のバズ投稿参考
+9. `/categories` - カテゴリー管理
+10. `/styles` - 口調・絵文字管理
+11. `/settings` - 設定（X連携対応）
+12. `/bookmarks` - Xブックマーク一覧（2026-01-23追加）
+
+## 外部コンテンツソース一覧
+
+### 国内
+| ソース | API/RSS | 状態 |
+|-------|---------|------|
+| Qiita | REST API | ✅ |
+| Zenn | REST API | ✅ |
+| GitHub | Search API | ✅ |
+
+### 公式AIブログ
+| ソース | 取得方法 | 状態 |
+|-------|---------|------|
+| OpenAI | RSS | ✅ |
+| Anthropic | スクレイピング | ✅ |
+| Google AI | RSS | ✅ |
+| Cursor | スクレイピング | ✅ |
+| Vercel | Atom | ✅ |
+
+### 海外記事サイト
+| ソース | 取得方法 | 状態 |
+|-------|---------|------|
+| Medium | RSS | ✅ |
+| DEV.to | RSS | ✅ |
+| Hashnode | GraphQL | ✅ |
