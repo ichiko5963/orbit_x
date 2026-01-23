@@ -81,10 +81,15 @@ class TwitterClient {
     return `OAuth ${headerParts}`;
   }
 
-  // Post a tweet
-  async postTweet(text: string): Promise<TweetResponse> {
+  // Post a tweet with optional quote_tweet_id
+  async postTweet(text: string, options?: { quoteTweetId?: string }): Promise<TweetResponse> {
     const url = "https://api.twitter.com/2/tweets";
     const authHeader = this.generateOAuthHeader("POST", url);
+
+    const payload: { text: string; quote_tweet_id?: string } = { text };
+    if (options?.quoteTweetId) {
+      payload.quote_tweet_id = options.quoteTweetId;
+    }
 
     const response = await fetch(url, {
       method: "POST",
@@ -92,7 +97,7 @@ class TwitterClient {
         Authorization: authHeader,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ text }),
+      body: JSON.stringify(payload),
     });
 
     const data = await response.json();

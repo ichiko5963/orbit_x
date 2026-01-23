@@ -1,5 +1,52 @@
 # OrbitX 更新履歴
 
+## 2026-01-23 (その2) - ブックマークからの引用投稿機能
+
+### 新機能
+
+#### quote_tweet_idを使った引用投稿
+ブックマークした投稿を引用投稿として使用できるようになりました。
+
+**仕組み:**
+- 投稿本文にURLを貼らずに、X APIの`quote_tweet_id`パラメータを使用
+- 投稿時に自動的に引用カード（動画付きなど）が表示される
+- X API無料枠のRead制限を消費せず投稿可能
+
+**使い方:**
+1. ブックマーク一覧ページで「引用投稿」ボタンをクリック
+2. エディターで自分の投稿文を書く
+3. 「引用投稿する」ボタンでX APIを使って投稿
+4. URLなしで引用カードが付いた投稿が完成
+
+### 新規ファイル
+
+| ファイル | 用途 |
+|---------|------|
+| `app/api/x/post/route.ts` | OAuth 2.0を使った投稿API（quote_tweet_id対応） |
+
+### 変更ファイル
+
+| ファイル | 変更内容 |
+|---------|---------|
+| `lib/x-oauth.ts` | tweet.writeスコープを追加 |
+| `lib/twitter.ts` | postTweetにquoteTweetIdオプションを追加 |
+| `app/(app)/bookmarks/page.tsx` | 「引用投稿」ボタン追加 |
+| `app/(app)/compose/editor/page.tsx` | ブックマークからの引用投稿UI追加、APIでの投稿対応 |
+| `app/api/cron/post-scheduled/route.ts` | 予約投稿でのquote_tweet_id対応 |
+
+### 技術詳細
+
+```
+引用投稿のAPIリクエスト例:
+POST https://api.twitter.com/2/tweets
+{
+  "text": "この動画すごい！",
+  "quote_tweet_id": "1234567890"
+}
+```
+
+---
+
 ## 2026-01-23 - 外部コンテンツ大幅拡張 & X連携完成
 
 ### 新機能

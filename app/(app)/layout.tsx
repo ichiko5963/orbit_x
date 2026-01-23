@@ -26,6 +26,7 @@ import {
   Loader2,
   CheckCircle2,
   X,
+  Bookmark,
 } from "lucide-react";
 import { AuthProvider, useAuth } from "@/lib/auth-context";
 import { ImportProvider, useImport } from "@/lib/import-context";
@@ -38,6 +39,7 @@ const mainNav = [
   { name: "過去投稿一覧", href: "/posts", icon: TrendingUp },
   { name: "他者バズ投稿", href: "/context", icon: Users },
   { name: "外部コンテンツ", href: "/external", icon: Globe },
+  { name: "保存済み投稿", href: "/bookmarks", icon: Bookmark },
 ];
 
 const subNav = [

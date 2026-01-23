@@ -25,6 +25,7 @@ import {
   Zap,
   Target,
   TrendingUp,
+  AlertCircle,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 import { useXProfile } from "@/lib/x-profile-context";
@@ -79,6 +80,15 @@ export default function PostEditorPage() {
   const [quoteTweetUrl, setQuoteTweetUrl] = useState<string>("");
   const [selectedQuoteTweet, setSelectedQuoteTweet] = useState<QuoteTweet | null>(null);
 
+  // Quote tweet from bookmark (with quote_tweet_id)
+  const [quoteTweetFromBookmark, setQuoteTweetFromBookmark] = useState<{
+    tweetId: string;
+    text: string;
+    author: string;
+    username: string;
+    likes: number;
+  } | null>(null);
+
   // Quote tweets modal
   const [showQuoteModal, setShowQuoteModal] = useState(false);
   const [quoteTweets, setQuoteTweets] = useState<QuoteTweet[]>([]);
@@ -103,6 +113,9 @@ export default function PostEditorPage() {
   // Actions
   const [copied, setCopied] = useState(false);
   const [isScheduling, setIsScheduling] = useState(false);
+  const [isPosting, setIsPosting] = useState(false);
+  const [postError, setPostError] = useState<string | null>(null);
+  const [postSuccess, setPostSuccess] = useState(false);
 
   // Current active post
   const activePost = threadPosts.find(p => p.id === activePostId) || threadPosts[0];
@@ -134,6 +147,21 @@ export default function PostEditorPage() {
     };
     loadQuoteTweets();
   }, [user]);
+
+  // Load quote tweet from bookmark (sessionStorage)
+  useEffect(() => {
+    const stored = sessionStorage.getItem("quoteTweetFromBookmark");
+    if (stored) {
+      try {
+        const data = JSON.parse(stored);
+        setQuoteTweetFromBookmark(data);
+        // Clear sessionStorage after loading
+        sessionStorage.removeItem("quoteTweetFromBookmark");
+      } catch (error) {
+        console.error("Failed to parse bookmark quote data:", error);
+      }
+    }
+  }, []);
 
   // Load existing scheduled posts for AI suggestion
   useEffect(() => {
@@ -291,6 +319,11 @@ export default function PostEditorPage() {
     setQuoteTweetUrl("");
   };
 
+  // Remove bookmark quote
+  const handleRemoveBookmarkQuote = () => {
+    setQuoteTweetFromBookmark(null);
+  };
+
   // Delete quote tweet
   const handleDeleteQuote = async (qtId: string) => {
     if (!user) return;
@@ -311,12 +344,57 @@ export default function PostEditorPage() {
   };
 
   // Post to X
-  const handlePost = () => {
-    let postUrl = `https://twitter.com/intent/tweet?text=${encodeURIComponent(activePost.text)}`;
-    if (quoteTweetUrl) {
-      postUrl += `&url=${encodeURIComponent(quoteTweetUrl)}`;
+  const handlePost = async () => {
+    // If we have a bookmark quote, use the API with quote_tweet_id
+    if (quoteTweetFromBookmark && user) {
+      setIsPosting(true);
+      setPostError(null);
+
+      try {
+        const response = await fetch("/api/x/post", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            userId: user.uid,
+            text: activePost.text,
+            quoteTweetId: quoteTweetFromBookmark.tweetId,
+          }),
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+          if (data.code === "NOT_CONNECTED" || data.code === "TOKEN_EXPIRED") {
+            setPostError("X連携が切れています。設定ページで再連携してください。");
+          } else if (data.code === "PERMISSION_DENIED") {
+            setPostError("投稿権限がありません。設定ページでXを再連携してください。");
+          } else {
+            setPostError(data.error || "投稿に失敗しました");
+          }
+          return;
+        }
+
+        setPostSuccess(true);
+        // Clear the quote and text after successful post
+        setTimeout(() => {
+          setQuoteTweetFromBookmark(null);
+          setThreadPosts([{ id: 1, text: "", images: [] }]);
+          setPostSuccess(false);
+        }, 2000);
+      } catch (error) {
+        console.error("Post error:", error);
+        setPostError("投稿に失敗しました。ネットワークを確認してください。");
+      } finally {
+        setIsPosting(false);
+      }
+    } else {
+      // Fall back to intent URL for regular posts
+      let postUrl = `https://twitter.com/intent/tweet?text=${encodeURIComponent(activePost.text)}`;
+      if (quoteTweetUrl) {
+        postUrl += `&url=${encodeURIComponent(quoteTweetUrl)}`;
+      }
+      window.open(postUrl, "_blank");
     }
-    window.open(postUrl, "_blank");
   };
 
   // Schedule post
@@ -334,6 +412,7 @@ export default function PostEditorPage() {
         status: "scheduled",
         imageUrls: activePost.images,
         quoteTweetUrl: quoteTweetUrl || undefined,
+        quoteTweetId: quoteTweetFromBookmark?.tweetId || undefined,  // For API-based quote
         aiSuggestedTime: !!suggestedTime,
         suggestedReason: suggestedReason || undefined,
         threadPosts: threadPosts.length > 1 ? threadPosts.slice(1).map(p => p.text) : undefined,
@@ -530,8 +609,48 @@ export default function PostEditorPage() {
             className="hidden"
           />
 
-          {/* Selected Quote Tweet Preview */}
-          {selectedQuoteTweet && (
+          {/* Quote Tweet from Bookmark - will use quote_tweet_id */}
+          {quoteTweetFromBookmark && (
+            <div className="mt-4 p-4 bg-gradient-to-r from-blue-50 to-sky-50 border border-blue-200 rounded-xl">
+              <div className="flex items-start justify-between">
+                <div className="flex items-start gap-3">
+                  <div className="p-2 bg-blue-500 rounded-lg">
+                    <Quote className="w-4 h-4 text-white" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="text-xs font-semibold text-blue-600 bg-blue-100 px-2 py-0.5 rounded-full">
+                        引用投稿
+                      </span>
+                      <span className="text-xs text-zinc-500">
+                        URLなしで引用カードが付きます
+                      </span>
+                    </div>
+                    <p className="text-sm font-medium text-zinc-900">
+                      {quoteTweetFromBookmark.author}
+                      <span className="text-zinc-500 font-normal ml-1">
+                        @{quoteTweetFromBookmark.username}
+                      </span>
+                    </p>
+                    <p className="text-sm text-zinc-600 mt-1 line-clamp-2">
+                      {quoteTweetFromBookmark.text}
+                    </p>
+                    <div className="flex items-center gap-2 mt-2 text-xs text-zinc-500">
+                      <span>❤️ {quoteTweetFromBookmark.likes.toLocaleString()}</span>
+                      <span>•</span>
+                      <span>ID: {quoteTweetFromBookmark.tweetId}</span>
+                    </div>
+                  </div>
+                </div>
+                <button onClick={handleRemoveBookmarkQuote} className="p-1 text-zinc-400 hover:text-red-500">
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Selected Quote Tweet Preview (legacy - uses URL) */}
+          {selectedQuoteTweet && !quoteTweetFromBookmark && (
             <div className="mt-4 p-4 bg-white border border-zinc-200 rounded-xl">
               <div className="flex items-start justify-between">
                 <div className="flex items-start gap-3">
@@ -555,6 +674,20 @@ export default function PostEditorPage() {
                   <X className="w-4 h-4" />
                 </button>
               </div>
+            </div>
+          )}
+
+          {/* Error Message */}
+          {postError && (
+            <div className="mt-4 p-4 bg-red-50 border border-red-200 rounded-xl flex items-center gap-3">
+              <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0" />
+              <span className="text-red-700 text-sm">{postError}</span>
+              <button
+                onClick={() => setPostError(null)}
+                className="ml-auto p-1 text-red-400 hover:text-red-600"
+              >
+                <X className="w-4 h-4" />
+              </button>
             </div>
           )}
 
@@ -611,10 +744,33 @@ export default function PostEditorPage() {
               </button>
               <button
                 onClick={handlePost}
-                disabled={!activePost.text.trim()}
-                className="flex items-center gap-2 px-5 py-2.5 bg-zinc-900 text-white font-semibold rounded-xl hover:bg-zinc-800 disabled:opacity-50 transition-colors"
+                disabled={!activePost.text.trim() || isPosting}
+                className={`flex items-center gap-2 px-5 py-2.5 font-semibold rounded-xl transition-colors disabled:opacity-50 ${
+                  postSuccess
+                    ? "bg-emerald-500 text-white"
+                    : quoteTweetFromBookmark
+                    ? "bg-blue-500 text-white hover:bg-blue-600"
+                    : "bg-zinc-900 text-white hover:bg-zinc-800"
+                }`}
               >
-                ポストする
+                {isPosting ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    投稿中...
+                  </>
+                ) : postSuccess ? (
+                  <>
+                    <CheckCircle2 className="w-4 h-4" />
+                    投稿完了！
+                  </>
+                ) : quoteTweetFromBookmark ? (
+                  <>
+                    <Quote className="w-4 h-4" />
+                    引用投稿する
+                  </>
+                ) : (
+                  "ポストする"
+                )}
               </button>
             </div>
           </div>
@@ -675,8 +831,22 @@ export default function PostEditorPage() {
                         </div>
                       )}
 
-                      {/* Quote Tweet Preview (only on first post) */}
-                      {index === 0 && selectedQuoteTweet && (
+                      {/* Quote Tweet Preview from Bookmark (only on first post) */}
+                      {index === 0 && quoteTweetFromBookmark && (
+                        <div className="mt-3 p-3 border border-blue-200 bg-blue-50/50 rounded-xl">
+                          <div className="flex items-center gap-2 mb-1">
+                            <div className="w-5 h-5 rounded-full bg-blue-400 flex items-center justify-center">
+                              <Quote className="w-3 h-3 text-white" />
+                            </div>
+                            <span className="text-sm font-medium text-zinc-900">{quoteTweetFromBookmark.author}</span>
+                            <span className="text-xs text-zinc-500">@{quoteTweetFromBookmark.username}</span>
+                          </div>
+                          <p className="text-sm text-zinc-600 line-clamp-2">{quoteTweetFromBookmark.text}</p>
+                        </div>
+                      )}
+
+                      {/* Quote Tweet Preview (legacy - only on first post) */}
+                      {index === 0 && selectedQuoteTweet && !quoteTweetFromBookmark && (
                         <div className="mt-3 p-3 border border-zinc-200 rounded-xl">
                           <div className="flex items-center gap-2 mb-1">
                             <div className="w-5 h-5 rounded-full bg-zinc-300" />

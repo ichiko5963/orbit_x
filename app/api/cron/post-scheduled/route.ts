@@ -2,9 +2,100 @@ import { NextRequest, NextResponse } from "next/server";
 import { createTwitterClient } from "@/lib/twitter";
 import { initAdmin, getAdminFirestore } from "@/lib/firebase-admin";
 import { Timestamp } from "firebase-admin/firestore";
+import { refreshAccessToken } from "@/lib/x-oauth";
 
 // Initialize Firebase Admin
 initAdmin();
+
+// Post tweet using user's OAuth 2.0 token (for quote_tweet_id support)
+async function postWithUserToken(
+  accessToken: string,
+  text: string,
+  quoteTweetId?: string
+): Promise<{ id: string; text: string }> {
+  const payload: { text: string; quote_tweet_id?: string } = { text };
+  if (quoteTweetId) {
+    payload.quote_tweet_id = quoteTweetId;
+  }
+
+  const response = await fetch("https://api.twitter.com/2/tweets", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+
+  const data = await response.json();
+
+  if (!response.ok) {
+    throw new Error(data.detail || data.title || "Failed to post tweet");
+  }
+
+  return data.data;
+}
+
+// Get fresh access token for user (refresh if expired)
+async function getUserAccessToken(db: any, userId: string): Promise<string | null> {
+  const tokenDoc = await db
+    .collection("users")
+    .doc(userId)
+    .collection("settings")
+    .doc("xAuth")
+    .get();
+
+  if (!tokenDoc.exists) {
+    return null;
+  }
+
+  const tokenData = tokenDoc.data();
+  if (!tokenData?.accessToken) {
+    return null;
+  }
+
+  const expiresAt = tokenData.expiresAt?.toDate?.() || new Date(tokenData.expiresAt);
+
+  // Check if token is expired
+  if (new Date() > new Date(expiresAt.getTime() - 5 * 60 * 1000)) {
+    if (!tokenData.refreshToken) {
+      return null;
+    }
+
+    try {
+      const clientId = process.env.X_OAUTH_CLIENT_ID;
+      const clientSecret = process.env.X_OAUTH_CLIENT_SECRET;
+
+      if (!clientId) {
+        return null;
+      }
+
+      const newTokens = await refreshAccessToken({
+        refreshToken: tokenData.refreshToken,
+        clientId,
+        clientSecret,
+      });
+
+      // Update tokens in Firestore
+      await db
+        .collection("users")
+        .doc(userId)
+        .collection("settings")
+        .doc("xAuth")
+        .update({
+          accessToken: newTokens.access_token,
+          refreshToken: newTokens.refresh_token || tokenData.refreshToken,
+          expiresAt: new Date(Date.now() + newTokens.expires_in * 1000),
+        });
+
+      return newTokens.access_token;
+    } catch {
+      return null;
+    }
+  }
+
+  return tokenData.accessToken;
+}
 
 export async function GET(request: NextRequest) {
   try {
@@ -20,13 +111,6 @@ export async function GET(request: NextRequest) {
     console.log("[Cron] Checking for scheduled posts...");
 
     const client = createTwitterClient();
-    if (!client) {
-      return NextResponse.json({
-        success: false,
-        message: "X API credentials not configured",
-      });
-    }
-
     const db = getAdminFirestore();
     const now = Timestamp.now();
 
@@ -54,18 +138,32 @@ export async function GET(request: NextRequest) {
         const postRef = postDoc.ref;
 
         try {
-          // Post to Twitter
-          const result = await client.postTweet(post.text);
+          let result: { id: string; text: string } | undefined;
 
-          if (result.data) {
+          // If post has quoteTweetId, use user's OAuth token
+          if (post.quoteTweetId) {
+            const userToken = await getUserAccessToken(db, userId);
+            if (!userToken) {
+              throw new Error("User X token not available for quote tweet");
+            }
+            result = await postWithUserToken(userToken, post.text, post.quoteTweetId);
+          } else if (client) {
+            // Use app-level client for regular posts
+            const tweetResult = await client.postTweet(post.text);
+            result = tweetResult.data;
+          } else {
+            throw new Error("X API credentials not configured");
+          }
+
+          if (result) {
             // Update status to posted
             await postRef.update({
               status: "posted",
               postedAt: Timestamp.now(),
-              tweetId: result.data.id,
+              tweetId: result.id,
             });
             postedCount++;
-            console.log(`[Cron] Posted successfully: ${result.data.id}`);
+            console.log(`[Cron] Posted successfully: ${result.id}`);
           } else {
             throw new Error("No data returned from Twitter API");
           }

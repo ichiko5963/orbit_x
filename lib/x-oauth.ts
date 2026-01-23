@@ -9,11 +9,12 @@
 const X_AUTH_URL = "https://twitter.com/i/oauth2/authorize";
 const X_TOKEN_URL = "https://api.twitter.com/2/oauth2/token";
 
-// Required scopes for bookmarks access
+// Required scopes for bookmarks and posting
 const REQUIRED_SCOPES = [
   "bookmark.read",
   "bookmark.write",
   "tweet.read",
+  "tweet.write",  // Required for posting with quote_tweet_id
   "users.read",
   "offline.access",
 ];

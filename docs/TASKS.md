@@ -137,6 +137,9 @@
 - [x] ブックマーク一覧取得
 - [x] 英語投稿の翻訳機能
 - [x] ブックマーク参照での投稿作成
+- [x] quote_tweet_idによる引用投稿（URLなしで引用カード表示）
+- [x] OAuth 2.0を使ったAPI投稿（tweet.writeスコープ）
+- [x] 予約投稿でのquote_tweet_id対応
 
 ### 4.5 Claude Skills
 - [x] 人気スキルのキュレーションリスト
