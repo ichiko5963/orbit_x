@@ -25,6 +25,7 @@ import {
   Twitter,
   Bookmark,
   Loader2,
+  Sparkles,
 } from "lucide-react";
 import { useXProfile } from "@/lib/x-profile-context";
 import { useAuth } from "@/lib/auth-context";
@@ -231,10 +232,10 @@ export default function SettingsPage() {
               <div className="space-y-6">
                 <div>
                   <h3 className="text-lg font-semibold text-zinc-900 mb-1">
-                    Xブックマーク連携
+                    Xアカウント連携
                   </h3>
                   <p className="text-sm text-zinc-500">
-                    Xで保存した投稿をOrbitXで参照・活用できます
+                    Xアカウントと連携して、ブックマーク取得や予約投稿が可能になります
                   </p>
                 </div>
 
@@ -258,49 +259,83 @@ export default function SettingsPage() {
                   {/* Connection Status */}
                   <div className="p-6 bg-gradient-to-br from-blue-50 to-sky-50 border border-blue-200 rounded-xl">
                     <div className="flex items-center gap-4 mb-4">
-                      <div className="w-14 h-14 rounded-2xl bg-blue-500 flex items-center justify-center">
-                        <Bookmark className="w-7 h-7 text-white" />
+                      <div className="w-14 h-14 rounded-2xl bg-zinc-900 flex items-center justify-center">
+                        <Twitter className="w-7 h-7 text-white" />
                       </div>
                       <div>
-                        <p className="text-lg font-bold text-zinc-900">Xブックマーク</p>
+                        <p className="text-lg font-bold text-zinc-900">Xアカウント連携</p>
                         <p className="text-sm text-zinc-600">
-                          保存した投稿を参照して投稿を作成
+                          OAuth認証でXと安全に接続
                         </p>
                       </div>
                     </div>
 
-                    {xAuthSuccess ? (
+                    {xAuthSuccess || xConnected ? (
                       <div className="space-y-4">
-                        <div className="p-4 bg-white/80 rounded-lg">
-                          <p className="text-emerald-700 font-medium flex items-center gap-2">
-                            <CheckCircle2 className="w-5 h-5" />
-                            連携済み
-                          </p>
+                        {xProfile && (
+                          <div className="flex items-center gap-3 p-4 bg-white rounded-lg">
+                            {xProfile.profileImageUrl && (
+                              <Image
+                                src={xProfile.profileImageUrl.replace("_normal", "_200x200")}
+                                alt={xProfile.name}
+                                width={48}
+                                height={48}
+                                className="rounded-full"
+                              />
+                            )}
+                            <div>
+                              <p className="font-semibold text-zinc-900">{xProfile.name}</p>
+                              <p className="text-sm text-blue-600">@{xProfile.username}</p>
+                            </div>
+                            <CheckCircle2 className="w-6 h-6 text-emerald-500 ml-auto" />
+                          </div>
+                        )}
+                        <div className="grid grid-cols-2 gap-3">
+                          <Link
+                            href="/bookmarks"
+                            className="flex items-center justify-center gap-2 py-3 bg-blue-500 text-white font-semibold rounded-xl hover:bg-blue-600 transition-colors"
+                          >
+                            <Bookmark className="w-5 h-5" />
+                            保存済み一覧
+                          </Link>
+                          <button
+                            onClick={handleConnectXAuth}
+                            className="flex items-center justify-center gap-2 py-3 bg-zinc-200 text-zinc-700 font-semibold rounded-xl hover:bg-zinc-300 transition-colors"
+                          >
+                            <RefreshCw className="w-5 h-5" />
+                            再連携
+                          </button>
                         </div>
-                        <Link
-                          href="/bookmarks"
-                          className="flex items-center justify-center gap-2 w-full py-3 bg-blue-500 text-white font-semibold rounded-xl hover:bg-blue-600 transition-colors"
-                        >
-                          <Bookmark className="w-5 h-5" />
-                          ブックマーク一覧を見る
-                        </Link>
                       </div>
                     ) : (
                       <div className="space-y-4">
                         <div className="p-4 bg-white/80 rounded-lg">
                           <p className="text-sm text-zinc-600 mb-3">
-                            XアカウントでOAuth認証を行うと、あなたのブックマーク（保存済み投稿）にアクセスできるようになります。
+                            XアカウントでOAuth認証を行うと、以下の機能が利用できます：
                           </p>
-                          <ul className="text-sm text-zinc-500 space-y-1">
-                            <li>・ブックマークした投稿を一覧表示</li>
-                            <li>・英語投稿を日本語に翻訳</li>
-                            <li>・AIで投稿作成時に参考として使用</li>
+                          <ul className="text-sm text-zinc-700 space-y-2">
+                            <li className="flex items-center gap-2">
+                              <Bookmark className="w-4 h-4 text-blue-500" />
+                              ブックマークした投稿を一覧表示
+                            </li>
+                            <li className="flex items-center gap-2">
+                              <Globe className="w-4 h-4 text-blue-500" />
+                              英語投稿を日本語に翻訳
+                            </li>
+                            <li className="flex items-center gap-2">
+                              <Sparkles className="w-4 h-4 text-blue-500" />
+                              AIで投稿作成時に参考として使用
+                            </li>
+                            <li className="flex items-center gap-2">
+                              <Clock className="w-4 h-4 text-blue-500" />
+                              予約投稿の自動投稿
+                            </li>
                           </ul>
                         </div>
                         <button
                           onClick={handleConnectXAuth}
                           disabled={xAuthConnecting || !user}
-                          className="flex items-center justify-center gap-2 w-full py-3 bg-zinc-900 text-white font-semibold rounded-xl hover:bg-zinc-800 disabled:opacity-50 transition-colors"
+                          className="flex items-center justify-center gap-2 w-full py-3.5 bg-zinc-900 text-white font-semibold rounded-xl hover:bg-zinc-800 disabled:opacity-50 transition-colors"
                         >
                           {xAuthConnecting ? (
                             <>
@@ -310,7 +345,7 @@ export default function SettingsPage() {
                           ) : (
                             <>
                               <Twitter className="w-5 h-5" />
-                              Xで連携する
+                              Xで認証する
                             </>
                           )}
                         </button>
@@ -328,7 +363,7 @@ export default function SettingsPage() {
                     <p className="text-sm text-zinc-600">
                       <strong>セキュリティについて：</strong>
                       OAuth 2.0 PKCEフローを使用した安全な認証を行います。
-                      パスワードは保存されません。ブックマークの読み取り権限のみを要求します。
+                      パスワードは保存されません。APIキーの入力は不要です。
                     </p>
                   </div>
                 </div>
