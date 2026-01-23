@@ -16,6 +16,8 @@ import {
   Calendar,
   Save,
   GripVertical,
+  Image as ImageIcon,
+  MessageSquare,
 } from "lucide-react";
 import Link from "next/link";
 import { useAuth } from "@/lib/auth-context";
@@ -29,6 +31,7 @@ interface ScheduledPost {
   status: "scheduled" | "posted" | "failed";
   imageUrls?: string[];
   quoteTweetUrl?: string;
+  threadPosts?: string[]; // Thread posts (2nd, 3rd, etc.)
 }
 
 // Time slots from 6:00 to 23:00 (main posting hours)
@@ -588,7 +591,16 @@ export default function SchedulePage() {
                           <div className="flex items-center gap-1 font-semibold pl-3">
                             <Clock className="w-3 h-3" />
                             {formatTime(toDate(post.scheduledAt))}
-                            {isPosted && <CheckCircle2 className="w-3 h-3 ml-auto" />}
+                            {/* Indicators for images and threads */}
+                            <div className="flex items-center gap-1 ml-auto">
+                              {post.imageUrls && post.imageUrls.length > 0 && (
+                                <ImageIcon className="w-3 h-3 opacity-70" />
+                              )}
+                              {post.threadPosts && post.threadPosts.length > 0 && (
+                                <MessageSquare className="w-3 h-3 opacity-70" />
+                              )}
+                              {isPosted && <CheckCircle2 className="w-3 h-3" />}
+                            </div>
                           </div>
 
                           <div className="pl-3 mt-1 line-clamp-2 opacity-90 leading-snug">
@@ -838,12 +850,47 @@ export default function SchedulePage() {
                 </div>
               ) : (
                 <>
-                  <div className="p-4 bg-zinc-50 rounded-xl mb-4">
-                    <p className="text-zinc-700 whitespace-pre-wrap leading-relaxed" style={{ lineHeight: "1.8" }}>
-                      {selectedPost.text}
-                    </p>
+                  {/* Main Post */}
+                  <div className="mb-4">
+                    <div className="text-xs font-medium text-zinc-500 mb-2">メイン投稿</div>
+                    <div className="p-4 bg-zinc-50 rounded-xl">
+                      <p className="text-zinc-700 whitespace-pre-wrap leading-relaxed" style={{ lineHeight: "1.8" }}>
+                        {selectedPost.text}
+                      </p>
+                    </div>
+                    <div className="text-sm text-zinc-400 mt-2">{selectedPost.text.length}文字</div>
                   </div>
-                  <div className="text-sm text-zinc-400 mb-4">{selectedPost.text.length}文字</div>
+
+                  {/* Images */}
+                  {selectedPost.imageUrls && selectedPost.imageUrls.length > 0 && (
+                    <div className="mb-4">
+                      <div className="text-xs font-medium text-zinc-500 mb-2">添付画像（{selectedPost.imageUrls.length}枚）</div>
+                      <div className={`grid gap-2 ${selectedPost.imageUrls.length === 1 ? "grid-cols-1" : "grid-cols-2"}`}>
+                        {selectedPost.imageUrls.map((url, idx) => (
+                          <div key={idx} className="aspect-video rounded-xl overflow-hidden bg-zinc-100">
+                            <img src={url} alt="" className="w-full h-full object-cover" />
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Thread Posts */}
+                  {selectedPost.threadPosts && selectedPost.threadPosts.length > 0 && (
+                    <div className="mb-4">
+                      <div className="text-xs font-medium text-blue-500 mb-2">スレッド投稿（{selectedPost.threadPosts.length}件）</div>
+                      <div className="space-y-2">
+                        {selectedPost.threadPosts.map((threadText, idx) => (
+                          <div key={idx} className="p-3 bg-blue-50 rounded-xl border border-blue-100">
+                            <div className="text-xs font-medium text-blue-600 mb-1">スレッド {idx + 1}</div>
+                            <p className="text-sm text-zinc-700 whitespace-pre-wrap leading-relaxed">
+                              {threadText}
+                            </p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </>
               )}
             </div>
