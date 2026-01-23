@@ -65,68 +65,110 @@ export async function POST(request: NextRequest) {
     // Use full content if available, otherwise fall back to description
     // Use more content (up to 6000 chars) for better accuracy
     const contentToUse = fullContent
-      ? `【記事本文】\n${fullContent.slice(0, 6000)}`
+      ? fullContent.slice(0, 6000)
       : article.description;
 
-    const prompt = `以下の記事を読み込んで、指定されたパターンに【完全に】当てはめた投稿を作成してください。
+    // Determine if this is an official source or community source
+    const officialSources = ["openai", "anthropic", "google-ai", "cursor", "vercel", "supabase"];
+    const isOfficial = officialSources.includes(article.source);
 
-===== 記事情報 =====
+    // Source display name mapping
+    const sourceDisplayNames: Record<string, string> = {
+      "openai": "OpenAI",
+      "anthropic": "Anthropic",
+      "google-ai": "Google",
+      "cursor": "Cursor",
+      "vercel": "Vercel",
+      "supabase": "Supabase",
+      "qiita": "Qiita",
+      "zenn": "Zenn",
+      "medium": "Medium",
+      "devto": "DEV.to",
+      "hashnode": "Hashnode",
+      "github": "GitHub",
+    };
+    const sourceName = sourceDisplayNames[article.source] || article.source;
+
+    const prompt = `以下の記事を深く読み込み、内容を完全に理解した上で投稿を作成してください。
+
+===== STEP 1: 記事を読み込む =====
 【タイトル】${article.title}
+【ソース】${sourceName}（${isOfficial ? "公式ブログ" : "技術記事サイト"}）
 【著者】${article.author}
-【タグ】${article.tags.join(", ")}
 
-【本文】
+【記事本文】
 ${contentToUse}
 
-===== 投稿パターン（これに完全に当てはめる） =====
+===== STEP 2: 記事の要点を整理する（内部処理） =====
+まず以下を頭の中で整理してから投稿を書くこと：
+- この記事の核心メッセージは何か？
+- 最も重要なポイント3つは？
+- 読者にとっての価値は？
+- 具体的な数字やデータはあるか？
+
+===== STEP 3: 投稿パターンに当てはめる =====
+【パターン】
 ${patternTemplate}
 
-===== パターン当てはめルール =====
+===== 当てはめルール =====
 
-【構造の完全再現】
-- パターン内の〇〇、△△、□□、■■、▲▲、●●、◆◆、◇◇ は記事内容で置き換える
-- 句読点の位置（。、...）を完全に維持
-- 絵文字の位置と種類（👇🧵↓😳）を完全に維持
-- 改行の位置を完全に維持
-- 「〜すぎた」「〜だった」「〜がやばい」などの語尾を維持
+【ソースの書き方 - 重要】
+${isOfficial ? `
+- 公式ブログなので「${sourceName}が公開した〜」「${sourceName}の〜」と書いてOK
+- 例：「OpenAIが公開した〜」「Supabaseの新機能〜」
+` : `
+- 個人/コミュニティ記事なので「〇〇が公開した」とは書かない
+- 代わりに以下のパターンを使う：
+  ・「${sourceName}で見つけた〜」
+  ・「${sourceName}で公開されてた〜がやばい」
+  ・「${article.author}さんの記事〜」
+  ・「〜についての記事が有益だった」
+  ・ツール/技術名を主語にする「Claude Codeの〜」
+`}
 
-【置き換え例】
-パターン: 〇〇が公開した「△△」が有益すぎた。□□で■■を実現。▲▲な人は必読👇🧵
-↓
-生成例: Claude Codeの新機能「マルチファイル編集」が有益すぎた。AIで複数ファイルを同時編集を実現。開発効率を上げたい人は必読👇🧵
+【文章の一貫性 - 最重要】
+- 記事の流れを理解し、論理的につながる文章にする
+- 前半と後半で話が飛ばないようにする
+- 「〜で、〜で、〜」と単に並べるのではなく、ストーリーを作る
 
-【内容のルール】
-1. 記事本文から具体的な機能・数字・特徴を引用する
-2. 「誰が公開した」はタイトルに明記されている場合のみ使う
-3. 著者名（${article.author}）は公開元ではない。個人名なら「〇〇さんの記事」等
-4. 記事に書いていない情報は絶対に書かない
-5. 280文字以内
+【パターン構造】
+- 句読点、絵文字（👇🧵↓😳）、改行の位置を維持
+- 語尾（〜すぎた、〜だった、〜がやばい）を維持
+- 280文字以内
 
 ===== 出力 =====
-パターンに当てはめた投稿本文のみ（説明不要）:`;
+記事を深く理解した、一貫性のある投稿本文のみ:`;
 
     const response = await openai.chat.completions.create({
       model: "gpt-4o-mini",
       messages: [
         {
           role: "system",
-          content: `あなたはX投稿パターンに当てはめるスペシャリストです。
+          content: `あなたは記事を深く読み込んでX投稿を作成するライターです。
 
-【最重要ルール】
-1. パターンの構造を100%維持する（句読点、絵文字、改行の位置）
-2. 〇〇△△□□などのプレースホルダーを記事内容で置き換える
-3. 記事本文から具体的な機能・数字・特徴を引用する
-4. パターンの語尾（〜すぎた、〜だった、〜がやばい等）をそのまま使う
-5. 絵文字（👇🧵↓😳）は必ず同じ位置に配置
+【思考プロセス】
+1. まず記事を最後まで読み、核心メッセージを理解する
+2. 重要なポイント、数字、具体例をピックアップする
+3. パターンに当てはめながら、一貫性のあるストーリーを作る
 
-パターンに当てはまらない自由形式の投稿は禁止。必ずパターンの骨格を維持すること。`,
+【文章の品質】
+- 読んだ人が「なるほど、この記事読みたい」と思える内容
+- 前半と後半が論理的につながっている
+- 具体的で説得力がある
+- 「〜で、〜で、〜」と並べるだけの羅列は避ける
+
+【公式 vs 非公式の使い分け】
+- 公式ブログ（OpenAI, Anthropic等）→「〇〇が公開した〜」OK
+- 技術記事サイト（Qiita, Zenn等）→「〇〇で見つけた〜」「〜についての記事」
+
+パターンの構造（句読点、絵文字、改行、語尾）は維持しつつ、自然で一貫性のある文章を作成すること。`,
         },
         {
           role: "user",
           content: prompt,
         },
       ],
-      temperature: 0.3,
+      temperature: 0.4,
       max_tokens: 500,
     });
 
