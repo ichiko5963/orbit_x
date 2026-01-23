@@ -52,6 +52,7 @@ export type ExternalSource =
   | "google-ai"
   | "cursor"
   | "vercel"
+  | "supabase"
   // International AI article sites
   | "medium"
   | "devto"

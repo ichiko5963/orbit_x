@@ -14,6 +14,7 @@ import {
   fetchVercelArticles,
   fetchAllOfficialAIBlogs,
 } from "@/lib/official-ai-blogs";
+import { fetchSupabaseArticles } from "@/lib/supabase-blog";
 import {
   fetchMediumArticles,
   fetchDevToArticles,
@@ -59,6 +60,9 @@ export async function GET(request: NextRequest) {
       case "vercel":
         articles = await fetchVercelArticles(perPage);
         break;
+      case "supabase":
+        articles = await fetchSupabaseArticles(perPage);
+        break;
       case "official":
         articles = await fetchAllOfficialAIBlogs();
         break;
@@ -77,15 +81,16 @@ export async function GET(request: NextRequest) {
         break;
       default:
         // Fetch all sources in parallel
-        const [qiitaZenn, github, skills, official, international] = await Promise.all([
+        const [qiitaZenn, github, skills, official, supabase, international] = await Promise.all([
           fetchAllArticles(),
           fetchAllGitHubRepos(),
           fetchClaudeSkills(),
           fetchAllOfficialAIBlogs(),
+          fetchSupabaseArticles(5),
           fetchAllInternationalArticles(),
         ]);
         // Merge and sort by date (most recent first)
-        articles = [...qiitaZenn, ...github, ...skills, ...official, ...international];
+        articles = [...qiitaZenn, ...github, ...skills, ...official, ...supabase, ...international];
         articles.sort((a, b) => new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime());
     }
 

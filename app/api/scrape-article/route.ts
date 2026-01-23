@@ -66,6 +66,8 @@ async function scrapeArticle(url: string): Promise<ScrapeResult | null> {
       return scrapeDevTo(url);
     } else if (url.includes("hashnode.com") || url.includes("hashnode.dev")) {
       return scrapeHashnode(url);
+    } else if (url.includes("supabase.com")) {
+      return scrapeSupabase(url);
     } else {
       // Generic scraping for other sources
       return scrapeGeneric(url);
@@ -157,7 +159,7 @@ async function scrapeZenn(url: string): Promise<ScrapeResult | null> {
 
     return {
       title: decodeHtmlEntities(title),
-      content: content.slice(0, 5000), // Limit content length
+      content: content.slice(0, 8000), // More content for better AI generation
       author: username,
       publishedAt: new Date().toISOString().split("T")[0],
       tags: [],
@@ -218,7 +220,7 @@ async function scrapeGitHub(url: string): Promise<ScrapeResult | null> {
       // README not available
     }
 
-    const content = `${data.description || ""}\n\n${readmeContent}`.slice(0, 5000);
+    const content = `${data.description || ""}\n\n${readmeContent}`.slice(0, 8000);
 
     return {
       title: data.full_name,
@@ -267,7 +269,7 @@ async function scrapeGeneric(url: string): Promise<ScrapeResult | null> {
 
     return {
       title: decodeHtmlEntities(title),
-      content: content.slice(0, 5000),
+      content: content.slice(0, 8000),
       author: new URL(url).hostname,
       publishedAt: new Date().toISOString().split("T")[0],
       tags: [],
@@ -372,7 +374,7 @@ async function scrapeOpenAI(url: string): Promise<ScrapeResult | null> {
 
     return {
       title: decodeHtmlEntities(title),
-      content: content.slice(0, 5000),
+      content: content.slice(0, 8000),
       author: "OpenAI",
       publishedAt: new Date().toISOString().split("T")[0],
       tags: ["ChatGPT", "OpenAI", "AI"],
@@ -417,7 +419,7 @@ async function scrapeAnthropic(url: string): Promise<ScrapeResult | null> {
 
     return {
       title: decodeHtmlEntities(title),
-      content: content.slice(0, 5000),
+      content: content.slice(0, 8000),
       author: "Anthropic",
       publishedAt: new Date().toISOString().split("T")[0],
       tags: ["Claude", "Anthropic", "AI"],
@@ -461,7 +463,7 @@ async function scrapeGoogleAI(url: string): Promise<ScrapeResult | null> {
 
     return {
       title: decodeHtmlEntities(title),
-      content: content.slice(0, 5000),
+      content: content.slice(0, 8000),
       author: "Google AI",
       publishedAt: new Date().toISOString().split("T")[0],
       tags: ["Gemini", "Google AI", "AI"],
@@ -506,7 +508,7 @@ async function scrapeCursor(url: string): Promise<ScrapeResult | null> {
 
     return {
       title: decodeHtmlEntities(title),
-      content: content.slice(0, 5000),
+      content: content.slice(0, 8000),
       author: "Cursor",
       publishedAt: new Date().toISOString().split("T")[0],
       tags: ["Cursor", "AI Editor", "Code"],
@@ -550,7 +552,7 @@ async function scrapeVercel(url: string): Promise<ScrapeResult | null> {
 
     return {
       title: decodeHtmlEntities(title),
-      content: content.slice(0, 5000),
+      content: content.slice(0, 8000),
       author: "Vercel",
       publishedAt: new Date().toISOString().split("T")[0],
       tags: ["Vercel", "AI SDK", "v0"],
@@ -598,7 +600,7 @@ async function scrapeMedium(url: string): Promise<ScrapeResult | null> {
 
     return {
       title: decodeHtmlEntities(title),
-      content: content.slice(0, 5000),
+      content: content.slice(0, 8000),
       author: author,
       publishedAt: new Date().toISOString().split("T")[0],
       tags: ["AI", "Machine Learning"],
@@ -656,7 +658,7 @@ async function scrapeDevTo(url: string): Promise<ScrapeResult | null> {
 
     return {
       title: decodeHtmlEntities(title),
-      content: content.slice(0, 5000),
+      content: content.slice(0, 8000),
       author: author,
       publishedAt: new Date().toISOString().split("T")[0],
       tags: tags.length > 0 ? tags : ["AI", "Development"],
@@ -705,7 +707,7 @@ async function scrapeHashnode(url: string): Promise<ScrapeResult | null> {
 
     return {
       title: decodeHtmlEntities(title),
-      content: content.slice(0, 5000),
+      content: content.slice(0, 8000),
       author: author,
       publishedAt: new Date().toISOString().split("T")[0],
       tags: ["AI"],
@@ -713,6 +715,72 @@ async function scrapeHashnode(url: string): Promise<ScrapeResult | null> {
     };
   } catch (error) {
     console.error("Hashnode scrape error:", error);
+    return null;
+  }
+}
+
+/**
+ * Scrape Supabase blog articles
+ */
+async function scrapeSupabase(url: string): Promise<ScrapeResult | null> {
+  try {
+    const response = await fetch(url, {
+      headers: { "User-Agent": "Mozilla/5.0 (compatible; OrbitX/1.0)" },
+    });
+
+    if (!response.ok) {
+      throw new Error(`Supabase fetch error: ${response.status}`);
+    }
+
+    const html = await response.text();
+
+    const title = extractMetaContent(html, "title") ||
+                  html.match(/<h1[^>]*>([^<]+)<\/h1>/i)?.[1] ||
+                  "Supabase Article";
+
+    const description = extractMetaContent(html, "description") || "";
+
+    // Extract author from meta or structured data
+    const authorMatch = html.match(/<meta[^>]*name="author"[^>]*content="([^"]+)"/i) ||
+                        html.match(/"author"[^}]*"name"\s*:\s*"([^"]+)"/i);
+    const author = authorMatch ? authorMatch[1] : "Supabase";
+
+    // Extract article content - Supabase blog uses article or main tags
+    const articleMatch = html.match(/<article[^>]*>([\s\S]*?)<\/article>/i) ||
+                         html.match(/<main[^>]*>([\s\S]*?)<\/main>/i);
+    let content = "";
+    if (articleMatch) {
+      // Clean up the content
+      content = articleMatch[1]
+        .replace(/<script[\s\S]*?<\/script>/gi, "")
+        .replace(/<style[\s\S]*?<\/style>/gi, "")
+        .replace(/<nav[\s\S]*?<\/nav>/gi, "")
+        .replace(/<header[\s\S]*?<\/header>/gi, "")
+        .replace(/<footer[\s\S]*?<\/footer>/gi, "")
+        .replace(/<[^>]+>/g, " ")
+        .replace(/\s+/g, " ")
+        .trim();
+    } else {
+      content = description;
+    }
+
+    // Extract published date if available
+    const dateMatch = html.match(/<time[^>]*datetime="([^"]+)"/i) ||
+                      html.match(/"datePublished"\s*:\s*"([^"]+)"/i);
+    const publishedAt = dateMatch
+      ? new Date(dateMatch[1]).toISOString().split("T")[0]
+      : new Date().toISOString().split("T")[0];
+
+    return {
+      title: decodeHtmlEntities(title),
+      content: content.slice(0, 8000), // More content for Supabase
+      author: author,
+      publishedAt: publishedAt,
+      tags: ["Supabase", "Database", "Backend", "PostgreSQL"],
+      source: "supabase",
+    };
+  } catch (error) {
+    console.error("Supabase scrape error:", error);
     return null;
   }
 }

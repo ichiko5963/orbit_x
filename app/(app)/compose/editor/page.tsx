@@ -69,11 +69,22 @@ export default function PostEditorPage() {
   // Get initial text from URL params (from generate page)
   const initialText = searchParams.get("text") || "";
   const initialThread = searchParams.get("thread") === "true";
+  const articleUrl = searchParams.get("articleUrl") || "";
+  const articleTitle = searchParams.get("articleTitle") || "";
 
-  // Thread posts state
-  const [threadPosts, setThreadPosts] = useState<ThreadPost[]>([
-    { id: 1, text: initialText, images: [] },
-  ]);
+  // Thread posts state - if articleUrl exists, add it to a thread post
+  const [threadPosts, setThreadPosts] = useState<ThreadPost[]>(() => {
+    const posts: ThreadPost[] = [{ id: 1, text: initialText, images: [] }];
+    if (articleUrl) {
+      // Add thread post with article link
+      posts.push({
+        id: 2,
+        text: `記事はこちら\n${articleUrl}`,
+        images: [],
+      });
+    }
+    return posts;
+  });
   const [activePostId, setActivePostId] = useState(1);
 
   // Quote tweet state
@@ -112,6 +123,7 @@ export default function PostEditorPage() {
 
   // Actions
   const [copied, setCopied] = useState(false);
+  const [copiedArticleUrl, setCopiedArticleUrl] = useState(false);
   const [isScheduling, setIsScheduling] = useState(false);
   const [isPosting, setIsPosting] = useState(false);
   const [postError, setPostError] = useState<string | null>(null);
@@ -779,6 +791,58 @@ export default function PostEditorPage() {
         {/* Preview Column */}
         <div className={`${showPreview ? "block" : "hidden lg:block"}`}>
           <div className="sticky top-24">
+            {/* Article URL Card (when from external content) */}
+            {articleUrl && (
+              <div className="mb-4 p-4 bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-200 rounded-xl">
+                <div className="flex items-center gap-2 mb-2">
+                  <LinkIcon className="w-4 h-4 text-emerald-600" />
+                  <span className="text-sm font-medium text-emerald-700">参照記事</span>
+                </div>
+                {articleTitle && (
+                  <p className="text-sm font-medium text-zinc-900 mb-2 line-clamp-2">{articleTitle}</p>
+                )}
+                <div className="flex items-center gap-2">
+                  <a
+                    href={articleUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex-1 text-sm text-emerald-600 hover:text-emerald-700 hover:underline truncate"
+                  >
+                    {articleUrl}
+                  </a>
+                  <button
+                    onClick={() => {
+                      navigator.clipboard.writeText(articleUrl);
+                      setCopiedArticleUrl(true);
+                      setTimeout(() => setCopiedArticleUrl(false), 2000);
+                    }}
+                    className="flex items-center gap-1 px-2 py-1 text-xs font-medium text-emerald-600 bg-white border border-emerald-200 rounded-lg hover:bg-emerald-50 transition-colors"
+                  >
+                    {copiedArticleUrl ? (
+                      <>
+                        <CheckCircle2 className="w-3 h-3" />
+                        コピー済
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="w-3 h-3" />
+                        コピー
+                      </>
+                    )}
+                  </button>
+                  <a
+                    href={articleUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-1 px-2 py-1 text-xs font-medium text-white bg-emerald-500 rounded-lg hover:bg-emerald-600 transition-colors"
+                  >
+                    <ExternalLink className="w-3 h-3" />
+                    開く
+                  </a>
+                </div>
+              </div>
+            )}
+
             <h3 className="text-sm font-semibold text-zinc-500 mb-3">投稿プレビュー</h3>
 
             {/* X-style Preview */}

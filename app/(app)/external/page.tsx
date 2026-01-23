@@ -37,6 +37,7 @@ type ExternalSource =
   | "google-ai"
   | "cursor"
   | "vercel"
+  | "supabase"
   | "medium"
   | "devto"
   | "hashnode";
@@ -140,6 +141,7 @@ const sourceConfig: Record<string, { name: string; color: string }> = {
   "google-ai": { name: "Google AI", color: "bg-blue-100 text-blue-700 border-blue-200" },
   cursor: { name: "Cursor", color: "bg-purple-100 text-purple-700 border-purple-200" },
   vercel: { name: "Vercel", color: "bg-zinc-900 text-white border-zinc-800" },
+  supabase: { name: "Supabase", color: "bg-green-500 text-white border-green-400" },
   // International
   medium: { name: "Medium", color: "bg-zinc-200 text-zinc-800 border-zinc-300" },
   devto: { name: "DEV", color: "bg-indigo-100 text-indigo-700 border-indigo-200" },
@@ -474,7 +476,7 @@ export default function ExternalPage() {
               <Sparkles className="w-5 h-5 text-teal-600" />
             </div>
             <div>
-              <p className="text-2xl font-bold text-zinc-900">{articles.filter(a => ["openai", "anthropic", "google-ai", "cursor", "vercel"].includes(a.source)).length}</p>
+              <p className="text-2xl font-bold text-zinc-900">{articles.filter(a => ["openai", "anthropic", "google-ai", "cursor", "vercel", "supabase"].includes(a.source)).length}</p>
               <p className="text-sm text-zinc-500">公式AI</p>
             </div>
           </div>
@@ -546,6 +548,7 @@ export default function ExternalPage() {
             { id: "google-ai", label: "Gemini" },
             { id: "cursor", label: "Cursor" },
             { id: "vercel", label: "Vercel" },
+            { id: "supabase", label: "Supabase" },
           ].map((source) => (
             <button
               key={source.id}
@@ -830,7 +833,7 @@ export default function ExternalPage() {
                               )}
                             </button>
                             <Link
-                              href={`/compose/editor?text=${encodeURIComponent(pattern.text)}${pattern.threadPost ? "&thread=true" : ""}`}
+                              href={`/compose/editor?text=${encodeURIComponent(pattern.text)}${pattern.threadPost ? "&thread=true" : ""}&articleUrl=${encodeURIComponent(selectedArticle.url)}&articleTitle=${encodeURIComponent(selectedArticle.title)}`}
                               className="flex-1 flex items-center justify-center gap-1.5 py-2.5 text-sm font-medium text-emerald-600 hover:bg-emerald-50 transition-colors border-r border-zinc-100"
                             >
                               <Pencil className="w-4 h-4" />
