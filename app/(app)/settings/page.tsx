@@ -69,6 +69,7 @@ export default function SettingsPage() {
   const [xAuthConnecting, setXAuthConnecting] = useState(false);
   const [xAuthSuccess, setXAuthSuccess] = useState(false);
   const [xAuthError, setXAuthError] = useState<string | null>(null);
+  const [isDisconnecting, setIsDisconnecting] = useState(false);
 
   // X profile from context
   const { profile: xProfile, isConnected: xConnected, isLoading: xLoading, error: xError, connectedAt: xConnectedAt, refresh: refreshXProfile } = useXProfile();
@@ -97,6 +98,60 @@ export default function SettingsPage() {
     if (!user) return;
     setXAuthConnecting(true);
     window.location.href = `/api/auth/x?userId=${user.uid}`;
+  };
+
+  // Handle X disconnect
+  const handleDisconnectXAuth = async () => {
+    if (!user) return;
+    setIsDisconnecting(true);
+    setXAuthError(null);
+
+    try {
+      const response = await fetch("/api/auth/x/disconnect", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId: user.uid }),
+      });
+
+      if (!response.ok) {
+        throw new Error("切断に失敗しました");
+      }
+
+      // Refresh profile to clear the state
+      await refreshXProfile();
+      setXAuthSuccess(false);
+    } catch (err) {
+      setXAuthError(err instanceof Error ? err.message : "切断に失敗しました");
+    } finally {
+      setIsDisconnecting(false);
+    }
+  };
+
+  // Handle reconnect (disconnect first, then redirect to connect)
+  const handleReconnectXAuth = async () => {
+    if (!user) return;
+    setIsDisconnecting(true);
+    setXAuthError(null);
+
+    try {
+      // First disconnect
+      const response = await fetch("/api/auth/x/disconnect", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId: user.uid }),
+      });
+
+      if (!response.ok) {
+        throw new Error("切断に失敗しました");
+      }
+
+      // Then redirect to connect
+      setXAuthConnecting(true);
+      window.location.href = `/api/auth/x?userId=${user.uid}`;
+    } catch (err) {
+      setXAuthError(err instanceof Error ? err.message : "再連携に失敗しました");
+      setIsDisconnecting(false);
+    }
   };
 
   const handleSave = async () => {
@@ -292,21 +347,66 @@ export default function SettingsPage() {
                             <CheckCircle2 className="w-6 h-6 text-emerald-500 ml-auto" />
                           </div>
                         )}
-                        <div className="grid grid-cols-2 gap-3">
+                        <div className="space-y-3">
                           <Link
                             href="/bookmarks"
-                            className="flex items-center justify-center gap-2 py-3 bg-blue-500 text-white font-semibold rounded-xl hover:bg-blue-600 transition-colors"
+                            className="flex items-center justify-center gap-2 w-full py-3 bg-blue-500 text-white font-semibold rounded-xl hover:bg-blue-600 transition-colors"
                           >
                             <Bookmark className="w-5 h-5" />
                             保存済み一覧
                           </Link>
-                          <button
-                            onClick={handleConnectXAuth}
-                            className="flex items-center justify-center gap-2 py-3 bg-zinc-200 text-zinc-700 font-semibold rounded-xl hover:bg-zinc-300 transition-colors"
-                          >
-                            <RefreshCw className="w-5 h-5" />
-                            再連携
-                          </button>
+
+                          {/* Switch account section */}
+                          <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl">
+                            <p className="text-sm font-medium text-amber-800 mb-2">
+                              別のXアカウントで連携したい場合
+                            </p>
+                            <ol className="text-xs text-amber-700 space-y-1 mb-2">
+                              <li>1. まず下の「連携解除」をクリック</li>
+                              <li>2. 「Xからログアウト」をクリック</li>
+                              <li>3. X.comで別のアカウントにログイン</li>
+                              <li>4. 戻って「再連携」をクリック</li>
+                            </ol>
+                            <p className="text-[10px] text-amber-600 mb-3">
+                              ※ 別のブラウザで操作するとうまくいく場合が多いです
+                            </p>
+                            <a
+                              href="https://x.com/logout"
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="flex items-center justify-center gap-2 w-full py-2 bg-amber-500 text-white text-sm font-medium rounded-lg hover:bg-amber-600 transition-colors"
+                            >
+                              <ExternalLink className="w-4 h-4" />
+                              Xからログアウト
+                            </a>
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-3">
+                            <button
+                              onClick={handleReconnectXAuth}
+                              disabled={isDisconnecting || xAuthConnecting}
+                              className="flex items-center justify-center gap-2 py-3 bg-zinc-200 text-zinc-700 font-semibold rounded-xl hover:bg-zinc-300 disabled:opacity-50 transition-colors"
+                            >
+                              {isDisconnecting || xAuthConnecting ? (
+                                <Loader2 className="w-5 h-5 animate-spin" />
+                              ) : (
+                                <RefreshCw className="w-5 h-5" />
+                              )}
+                              再連携
+                            </button>
+                            <button
+                              onClick={handleDisconnectXAuth}
+                              disabled={isDisconnecting}
+                              className="flex items-center justify-center gap-2 py-3 bg-red-100 text-red-600 font-semibold rounded-xl hover:bg-red-200 disabled:opacity-50 transition-colors"
+                            >
+                              {isDisconnecting ? (
+                                <Loader2 className="w-5 h-5 animate-spin" />
+                              ) : (
+                                <Trash2 className="w-5 h-5" />
+                              )}
+                              連携解除
+                            </button>
+                          </div>
                         </div>
                       </div>
                     ) : (

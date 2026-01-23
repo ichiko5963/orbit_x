@@ -122,6 +122,12 @@ export async function POST(request: NextRequest) {
       finalText = `${text.trim()}\n\n${mediaUrl}`;
     }
 
+    console.log("[X Post] Posting tweet:", {
+      textLength: finalText.length,
+      hasMediaInfo: !!mediaInfo,
+      textPreview: finalText.substring(0, 100) + "...",
+    });
+
     // Build tweet payload (text only, no quote_tweet_id)
     const tweetPayload = { text: finalText };
 
@@ -137,33 +143,48 @@ export async function POST(request: NextRequest) {
 
     const data = await response.json();
 
+    console.log("[X Post] X API response:", {
+      status: response.status,
+      ok: response.ok,
+      data: JSON.stringify(data).substring(0, 500),
+    });
+
     if (!response.ok) {
-      console.error("X API error:", data);
+      console.error("[X Post] X API error:", response.status, data);
 
       // Check for specific error codes
       if (response.status === 401) {
         return NextResponse.json(
-          { error: "Authentication failed", code: "TOKEN_EXPIRED" },
+          { error: "認証エラー: トークンが無効です。Xアカウントを再連携してください。", code: "TOKEN_EXPIRED" },
           { status: 401 }
         );
       }
 
       if (response.status === 403) {
         return NextResponse.json(
-          { error: "Permission denied. Please reconnect your X account with tweet.write permission.", code: "PERMISSION_DENIED" },
+          { error: "権限エラー: tweet.write権限が必要です。Xアカウントを再連携してください。", code: "PERMISSION_DENIED" },
           { status: 403 }
         );
       }
 
+      // X API returns errors in various formats
+      const errorMsg = data.detail || data.title || data.errors?.[0]?.message || "投稿に失敗しました";
       return NextResponse.json(
-        { error: data.detail || data.title || "Failed to post tweet" },
+        { error: errorMsg },
         { status: response.status }
       );
     }
 
+    // Log success
+    console.log("[X Post] Tweet posted successfully:", data.data?.id);
+
+    // Get username from tokenData to build tweet URL
+    const tweetUrl = data.data?.id ? `https://x.com/i/status/${data.data.id}` : undefined;
+
     return NextResponse.json({
       success: true,
       tweet: data.data,
+      tweetUrl,
     });
   } catch (error) {
     console.error("X post error:", error);

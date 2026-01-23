@@ -31,7 +31,10 @@ import { saveScheduledPost } from "@/lib/firebase";
  * URLを除去する（t.co, x.com, twitter.com などすべて）
  * AI生成時に元ツイートのURLが混入しないようにする
  */
-function removeUrls(text: string): string {
+function removeUrls(text: string | null | undefined): string {
+  if (!text || typeof text !== "string") {
+    return "";
+  }
   return text
     .replace(/https?:\/\/[^\s]+/g, "")
     .replace(/t\.co\/[^\s]+/g, "")
@@ -68,6 +71,7 @@ export default function BookmarkEditorPage() {
   const [isPosting, setIsPosting] = useState(false);
   const [postSuccess, setPostSuccess] = useState(false);
   const [postError, setPostError] = useState<string | null>(null);
+  const [postedTweetUrl, setPostedTweetUrl] = useState<string | null>(null);
 
   // AI enhance state
   const [isEnhancing, setIsEnhancing] = useState(false);
@@ -107,6 +111,9 @@ export default function BookmarkEditorPage() {
   }, [text]);
 
   const hasVideo = savedPost?.media?.some(m => m.type === "video");
+  const hasPhoto = savedPost?.media?.some(m => m.type === "photo");
+  const hasMedia = hasVideo || hasPhoto;
+  const mediaType: "video" | "photo" | undefined = hasVideo ? "video" : hasPhoto ? "photo" : undefined;
 
   const handleCopy = () => {
     navigator.clipboard.writeText(text);
@@ -128,10 +135,11 @@ export default function BookmarkEditorPage() {
         body: JSON.stringify({
           userId: user.uid,
           text: text.trim(),
-          // 動画URLを末尾に追加（/video/1形式）
-          videoInfo: hasVideo ? {
+          // メディアURLを末尾に追加（/video/1 または /photo/1形式）
+          mediaInfo: hasMedia && mediaType ? {
             tweetId: savedPost.id,
             username: savedPost.authorUsername,
+            mediaType,
           } : undefined,
         }),
       });
@@ -143,15 +151,45 @@ export default function BookmarkEditorPage() {
       }
 
       setPostSuccess(true);
+      if (data.tweetUrl) {
+        setPostedTweetUrl(data.tweetUrl);
+      }
+
+      // Save to posted history and delete from saved posts
+      try {
+        await fetch("/api/x/posted-history", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            userId: user.uid,
+            post: {
+              text: text.trim(),
+              tweetId: data.tweet?.id,
+              tweetUrl: data.tweetUrl,
+              sourceSavedPostId: savedPost.id,
+              sourcePost: {
+                text: savedPost.text,
+                authorName: savedPost.authorName,
+                authorUsername: savedPost.authorUsername,
+                authorProfileImageUrl: savedPost.authorProfileImageUrl,
+                media: savedPost.media,
+                originalUrl: `https://x.com/${savedPost.authorUsername}/status/${savedPost.id}`,
+              },
+            },
+          }),
+        });
+      } catch (historyErr) {
+        console.error("Failed to save to history:", historyErr);
+      }
 
       // Clear sessionStorage
       sessionStorage.removeItem("bookmark_editor_text");
       sessionStorage.removeItem("bookmark_editor_post");
 
-      // Redirect after success
+      // Redirect after success (longer delay to let user see the link)
       setTimeout(() => {
         router.push("/bookmarks");
-      }, 2000);
+      }, 4000);
     } catch (err) {
       console.error("Post error:", err);
       setPostError(err instanceof Error ? err.message : "投稿に失敗しました");
@@ -214,7 +252,7 @@ export default function BookmarkEditorPage() {
     setShowScheduleModal(true);
   };
 
-  // Save scheduled post with videoInfo (動画プレイヤー＋投稿者表示)
+  // Save scheduled post with mediaInfo (動画プレイヤーまたは画像表示)
   const handleSaveSchedule = async () => {
     if (!user || !text.trim() || !savedPost) return;
 
@@ -226,10 +264,11 @@ export default function BookmarkEditorPage() {
         text: text.trim(),
         scheduledAt: Timestamp.fromDate(scheduledAt),
         status: "scheduled",
-        // 動画URLを末尾に追加（/video/1形式）
-        videoInfo: hasVideo ? {
+        // メディアURLを末尾に追加（/video/1 または /photo/1形式）
+        mediaInfo: hasMedia && mediaType ? {
           tweetId: savedPost.id,
           username: savedPost.authorUsername,
+          mediaType,
         } : undefined,
       });
 
@@ -276,7 +315,7 @@ export default function BookmarkEditorPage() {
           <div>
             <h1 className="text-2xl font-bold text-zinc-900">投稿を編集</h1>
             <p className="text-zinc-500">
-              {hasVideo ? "動画プレイヤー付きで投稿" : "投稿を作成"}
+              {hasVideo ? "動画プレイヤー付きで投稿" : hasPhoto ? "画像付きで投稿" : "投稿を作成"}
             </p>
           </div>
         </div>
@@ -284,11 +323,24 @@ export default function BookmarkEditorPage() {
 
       {/* Success Message */}
       {postSuccess && (
-        <div className="mb-6 p-4 bg-emerald-50 border border-emerald-200 rounded-xl flex items-center gap-3">
-          <CheckCircle2 className="w-6 h-6 text-emerald-500" />
-          <div>
-            <p className="font-medium text-emerald-700">投稿しました！</p>
-            <p className="text-sm text-emerald-600">保存済み投稿に戻ります...</p>
+        <div className="mb-6 p-4 bg-emerald-50 border border-emerald-200 rounded-xl">
+          <div className="flex items-center gap-3">
+            <CheckCircle2 className="w-6 h-6 text-emerald-500" />
+            <div className="flex-1">
+              <p className="font-medium text-emerald-700">投稿しました！</p>
+              {postedTweetUrl ? (
+                <a
+                  href={postedTweetUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-sm text-emerald-600 hover:text-emerald-800 underline"
+                >
+                  投稿を確認する →
+                </a>
+              ) : (
+                <p className="text-sm text-emerald-600">保存済み投稿に戻ります...</p>
+              )}
+            </div>
           </div>
         </div>
       )}
@@ -445,7 +497,7 @@ export default function BookmarkEditorPage() {
               ) : (
                 <>
                   <Send className="w-5 h-5" />
-                  {hasVideo ? "動画付きで投稿" : "投稿する"}
+                  {hasVideo ? "動画付きで投稿" : hasPhoto ? "画像付きで投稿" : "投稿する"}
                 </>
               )}
             </button>
@@ -462,14 +514,16 @@ export default function BookmarkEditorPage() {
             <div className="p-4">
               <div className="flex gap-3">
                 {savedPost.authorProfileImageUrl && (
-                  <Image
-                    src={savedPost.authorProfileImageUrl}
-                    alt={savedPost.authorName}
-                    width={40}
-                    height={40}
-                    className="rounded-full flex-shrink-0"
-                    unoptimized
-                  />
+                  <div className="flex-shrink-0 w-10 h-10">
+                    <Image
+                      src={savedPost.authorProfileImageUrl}
+                      alt={savedPost.authorName}
+                      width={40}
+                      height={40}
+                      className="rounded-full w-10 h-10 object-cover"
+                      unoptimized
+                    />
+                  </div>
                 )}
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-1 mb-1">
@@ -523,15 +577,46 @@ export default function BookmarkEditorPage() {
             </div>
           )}
 
+          {/* Photo Preview */}
+          {hasPhoto && !hasVideo && savedPost.media && savedPost.media[0].type === "photo" && (
+            <div className="bg-white rounded-2xl border border-zinc-200 shadow-sm overflow-hidden">
+              <div className="px-4 py-3 border-b border-zinc-100 bg-blue-50">
+                <div className="flex items-center gap-2">
+                  <Video className="w-5 h-5 text-blue-600" />
+                  <h3 className="font-semibold text-blue-800">画像プレビュー</h3>
+                </div>
+              </div>
+              <div className="p-4">
+                <div className="rounded-xl overflow-hidden border border-zinc-200">
+                  <Image
+                    src={savedPost.media[0].url}
+                    alt="Preview"
+                    width={400}
+                    height={300}
+                    className="w-full object-contain"
+                    unoptimized
+                  />
+                </div>
+                <p className="text-xs text-zinc-500 mt-2 text-center">
+                  /photo/1 URL形式で画像が表示されます
+                </p>
+              </div>
+            </div>
+          )}
+
           {/* Tips */}
-          <div className="bg-emerald-50 rounded-2xl border border-emerald-200 p-4">
-            <h4 className="font-semibold text-emerald-800 mb-2">/video/1形式のメリット</h4>
-            <ul className="text-sm text-emerald-700 space-y-1">
-              <li>• 動画プレイヤーがそのまま表示</li>
-              <li>• 「投稿者: ◯◯」が表示される</li>
-              <li>• 引用カードではなくプレビューで表示</li>
-            </ul>
-          </div>
+          {hasMedia && (
+            <div className="bg-emerald-50 rounded-2xl border border-emerald-200 p-4">
+              <h4 className="font-semibold text-emerald-800 mb-2">
+                {hasVideo ? "/video/1形式のメリット" : "/photo/1形式のメリット"}
+              </h4>
+              <ul className="text-sm text-emerald-700 space-y-1">
+                <li>• {hasVideo ? "動画プレイヤー" : "画像"}がそのまま表示</li>
+                <li>• 「投稿者: ◯◯」が表示される</li>
+                <li>• 引用カードではなくプレビューで表示</li>
+              </ul>
+            </div>
+          )}
         </div>
       </div>
 
@@ -551,7 +636,7 @@ export default function BookmarkEditorPage() {
                 <div>
                   <div className="font-semibold text-zinc-900">予約投稿</div>
                   <div className="text-sm text-zinc-500">
-                    {hasVideo ? "動画URL付きで予約" : "日時を選択"}
+                    {hasVideo ? "動画URL付きで予約" : hasPhoto ? "画像URL付きで予約" : "日時を選択"}
                   </div>
                 </div>
               </div>
@@ -605,12 +690,12 @@ export default function BookmarkEditorPage() {
                 ))}
               </div>
 
-              {/* Video badge */}
-              {hasVideo && (
+              {/* Media badge */}
+              {hasMedia && (
                 <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-lg flex items-center gap-2">
                   <Video className="w-5 h-5 text-emerald-600" />
                   <span className="text-sm font-medium text-emerald-700">
-                    /video/1 URLで動画プレイヤーが表示されます
+                    {hasVideo ? "/video/1 URLで動画プレイヤーが表示されます" : "/photo/1 URLで画像が表示されます"}
                   </span>
                 </div>
               )}

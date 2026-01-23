@@ -31,7 +31,10 @@ import { getContextPosts, getPosts, saveScheduledPost, getUserStyleAnalysis } fr
  * URLを除去する（t.co, x.com, twitter.com などすべて）
  * AI生成時に元ツイートのURLが混入しないようにする
  */
-function removeUrls(text: string): string {
+function removeUrls(text: string | null | undefined): string {
+  if (!text || typeof text !== "string") {
+    return "";
+  }
   // すべてのURL形式を除去（http, https, t.co短縮URL含む）
   return text
     .replace(/https?:\/\/[^\s]+/g, "")
@@ -430,7 +433,7 @@ export default function BookmarkGeneratePage({ params }: { params: Promise<{ pos
     setShowScheduleModal(true);
   };
 
-  // Save scheduled post with videoInfo (/video/1形式)
+  // Save scheduled post with mediaInfo (/video/1 or /photo/1形式)
   const handleSaveSchedule = async () => {
     if (!user || !scheduleText.trim() || !savedPost) return;
 
@@ -442,10 +445,11 @@ export default function BookmarkGeneratePage({ params }: { params: Promise<{ pos
         text: scheduleText,
         scheduledAt: Timestamp.fromDate(scheduledAt),
         status: "scheduled",
-        // 動画URLを末尾に追加（/video/1形式）
-        videoInfo: hasVideo ? {
+        // メディアURLを末尾に追加（/video/1 または /photo/1形式）
+        mediaInfo: hasMedia && mediaType ? {
           tweetId: savedPost.id,
           username: savedPost.authorUsername,
+          mediaType,
         } : undefined,
       });
 
@@ -463,6 +467,9 @@ export default function BookmarkGeneratePage({ params }: { params: Promise<{ pos
   const hasGenerated = cards.length > 0;
   const isAnyLoading = cards.some(c => c.isLoading);
   const hasVideo = savedPost?.media?.some(m => m.type === "video");
+  const hasPhoto = savedPost?.media?.some(m => m.type === "photo");
+  const hasMedia = hasVideo || hasPhoto;
+  const mediaType: "video" | "photo" | undefined = hasVideo ? "video" : hasPhoto ? "photo" : undefined;
 
   if (isLoadingSavedPost) {
     return (
@@ -517,10 +524,10 @@ export default function BookmarkGeneratePage({ params }: { params: Promise<{ pos
         <div className="flex items-center gap-2 mb-3">
           <Tag className="w-5 h-5 text-emerald-600" />
           <h3 className="font-semibold text-zinc-900">参照元の投稿</h3>
-          {hasVideo && (
+          {hasMedia && (
             <span className="flex items-center gap-1 px-2 py-0.5 bg-emerald-100 text-emerald-700 text-xs font-medium rounded-full">
               <Video className="w-3 h-3" />
-              /video/1で動画表示
+              {hasVideo ? "/video/1で動画表示" : "/photo/1で画像表示"}
             </span>
           )}
         </div>
@@ -733,12 +740,12 @@ export default function BookmarkGeneratePage({ params }: { params: Promise<{ pos
                     <p className="text-sm text-zinc-700 whitespace-pre-wrap leading-relaxed line-clamp-[8]">
                       {card.text}
                     </p>
-                    {/* Video preview badge */}
-                    {hasVideo && (
+                    {/* Media preview badge */}
+                    {hasMedia && (
                       <div className="mt-3 p-2 bg-zinc-50 rounded-lg border border-zinc-200">
                         <div className="flex items-center gap-2 text-xs text-zinc-500">
                           <Video className="w-4 h-4" />
-                          <span>/video/1 URLで動画プレイヤーが表示</span>
+                          <span>{hasVideo ? "/video/1 URLで動画プレイヤーが表示" : "/photo/1 URLで画像が表示"}</span>
                         </div>
                       </div>
                     )}
@@ -838,7 +845,7 @@ export default function BookmarkGeneratePage({ params }: { params: Promise<{ pos
                 <div>
                   <div className="font-semibold text-zinc-900">予約投稿</div>
                   <div className="text-sm text-zinc-500">
-                    {hasVideo ? "動画URL付きで予約" : "日時を選択してください"}
+                    {hasVideo ? "動画URL付きで予約" : hasPhoto ? "画像URL付きで予約" : "日時を選択してください"}
                   </div>
                 </div>
               </div>
@@ -906,13 +913,13 @@ export default function BookmarkGeneratePage({ params }: { params: Promise<{ pos
                 />
               </div>
 
-              {/* Video preview */}
-              {hasVideo && savedPost.media && (
+              {/* Media preview */}
+              {hasMedia && savedPost.media && (
                 <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-lg">
                   <div className="flex items-center gap-2">
                     <Video className="w-5 h-5 text-emerald-600" />
                     <span className="text-sm font-medium text-emerald-700">
-                      /video/1 URLで動画プレイヤーが表示されます
+                      {hasVideo ? "/video/1 URLで動画プレイヤーが表示されます" : "/photo/1 URLで画像が表示されます"}
                     </span>
                   </div>
                 </div>

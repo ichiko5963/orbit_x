@@ -154,13 +154,13 @@ export async function GET(request: NextRequest) {
         try {
           let result: { id: string; text: string } | undefined;
 
-          // If post has videoInfo, use user's OAuth token with /video/1 URL
-          if (post.videoInfo) {
+          // If post has mediaInfo, use user's OAuth token with /video/1 or /photo/1 URL
+          if (post.mediaInfo) {
             const userToken = await getUserAccessToken(db, userId);
             if (!userToken) {
-              throw new Error("User X token not available for video post");
+              throw new Error("User X token not available for media post");
             }
-            result = await postWithUserToken(userToken, post.text, post.videoInfo);
+            result = await postWithUserToken(userToken, post.text, post.mediaInfo);
           } else if (client) {
             // Use app-level client for regular posts
             const tweetResult = await client.postTweet(post.text);
