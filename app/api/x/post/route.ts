@@ -3,13 +3,31 @@ import { getAdminFirestore } from "@/lib/firebase-admin";
 import { refreshAccessToken } from "@/lib/x-oauth";
 
 /**
+ * Build media URL from tweet info
+ * Format: https://x.com/{username}/status/{tweetId}/video/1 or /photo/1
+ */
+function buildMediaUrl(username: string, tweetId: string, mediaType: "video" | "photo"): string {
+  const cleanTweetId = tweetId.split("?")[0];
+  const suffix = mediaType === "video" ? "video/1" : "photo/1";
+  return `https://x.com/${username}/status/${cleanTweetId}/${suffix}`;
+}
+
+/**
  * POST /api/x/post
  * Post a tweet using the user's OAuth 2.0 access token
- * Supports quote_tweet_id for quoting without URL in text
+ * Supports mediaInfo for embedding media via /video/1 or /photo/1 URL
  */
 export async function POST(request: NextRequest) {
   try {
-    const { userId, text, quoteTweetId } = await request.json();
+    const { userId, text, mediaInfo } = await request.json() as {
+      userId: string;
+      text: string;
+      mediaInfo?: {
+        tweetId: string;
+        username: string;
+        mediaType: "video" | "photo";
+      };
+    };
 
     if (!userId) {
       return NextResponse.json(
@@ -96,12 +114,16 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Build tweet payload
-    const tweetPayload: { text: string; quote_tweet_id?: string } = { text };
-
-    if (quoteTweetId) {
-      tweetPayload.quote_tweet_id = quoteTweetId;
+    // Build tweet text with media URL if mediaInfo provided
+    let finalText = text;
+    if (mediaInfo?.tweetId && mediaInfo?.username && mediaInfo?.mediaType) {
+      const mediaUrl = buildMediaUrl(mediaInfo.username, mediaInfo.tweetId, mediaInfo.mediaType);
+      // Append media URL to end of text (on new line)
+      finalText = `${text.trim()}\n\n${mediaUrl}`;
     }
+
+    // Build tweet payload (text only, no quote_tweet_id)
+    const tweetPayload = { text: finalText };
 
     // Post tweet using X API v2
     const response = await fetch("https://api.twitter.com/2/tweets", {

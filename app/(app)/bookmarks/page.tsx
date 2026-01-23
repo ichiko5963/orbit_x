@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
 import Image from "next/image";
 import {
   Bookmark,
@@ -15,13 +14,12 @@ import {
   AlertCircle,
   ExternalLink,
   Languages,
-  Quote,
   Plus,
   Trash2,
   Link as LinkIcon,
   X,
-  Play,
   CheckCircle2,
+  Video,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 import { useXProfile } from "@/lib/x-profile-context";
@@ -48,11 +46,12 @@ interface SavedPost {
 export default function BookmarksPage() {
   const router = useRouter();
   const { user } = useAuth();
-  const { profile: xProfile, isConnected: xConnected } = useXProfile();
+  const { profile: xProfile } = useXProfile();
 
   const [posts, setPosts] = useState<SavedPost[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   // Manual URL input state
   const [showUrlInput, setShowUrlInput] = useState(false);
@@ -110,7 +109,6 @@ export default function BookmarksPage() {
       return;
     }
 
-    // Check if already added
     if (posts.some((p) => p.id === tweetId)) {
       setError("この投稿は既に追加されています");
       return;
@@ -120,7 +118,6 @@ export default function BookmarksPage() {
     setError(null);
 
     try {
-      // Fetch tweet details
       const tweetResponse = await fetch(`/api/x/tweet?id=${tweetId}`);
       const tweetData = await tweetResponse.json();
 
@@ -130,7 +127,6 @@ export default function BookmarksPage() {
 
       const tweet = tweetData.tweet;
 
-      // Save to Firestore
       const saveResponse = await fetch("/api/x/saved-posts", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -160,10 +156,11 @@ export default function BookmarksPage() {
         throw new Error(saveData.error);
       }
 
-      // Add to local state
       setPosts((prev) => [saveData.post, ...prev]);
       setUrlInput("");
       setShowUrlInput(false);
+      setSuccessMessage("投稿を保存しました");
+      setTimeout(() => setSuccessMessage(null), 3000);
     } catch (err) {
       console.error("Add from URL error:", err);
       setError(err instanceof Error ? err.message : "投稿の追加に失敗しました");
@@ -194,152 +191,15 @@ export default function BookmarksPage() {
     }
   };
 
-  // Translate post
-  const handleTranslate = async (postId: string) => {
-    if (!user) return;
-
-    const post = posts.find((p) => p.id === postId);
-    if (!post || post.translatedText) return;
-
-    setPosts((prev) =>
-      prev.map((p) => (p.id === postId ? { ...p, isTranslating: true } : p))
-    );
-
-    try {
-      const response = await fetch("/api/translate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: post.text }),
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error);
-      }
-
-      // Update in Firestore
-      await fetch("/api/x/saved-posts", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          userId: user.uid,
-          postId,
-          updates: { translatedText: data.translated },
-        }),
-      });
-
-      setPosts((prev) =>
-        prev.map((p) =>
-          p.id === postId
-            ? { ...p, translatedText: data.translated, isTranslating: false }
-            : p
-        )
-      );
-    } catch (err) {
-      console.error("Translation error:", err);
-      setPosts((prev) =>
-        prev.map((p) => (p.id === postId ? { ...p, isTranslating: false } : p))
-      );
-    }
-  };
-
-  // Create quote post
-  const handleCreateQuotePost = (post: SavedPost) => {
-    const quoteData = {
-      tweetId: post.id,
-      text: post.translatedText || post.text,
-      author: post.authorName,
-      username: post.authorUsername,
-      likes: post.likes,
-      media: post.media,
-    };
-    sessionStorage.setItem("quoteTweetFromBookmark", JSON.stringify(quoteData));
-    router.push("/compose/editor");
-  };
-
-  // AI Generate - translates first if needed, then goes to compose
-  const handleAIGenerate = async (post: SavedPost) => {
-    // If not translated yet and likely English, translate first
-    const isLikelyEnglish = (text: string): boolean => {
-      const japaneseRatio =
-        (text.match(/[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FAF]/g) || []).length /
-        text.length;
-      return japaneseRatio < 0.2;
-    };
-
-    let textToUse = post.translatedText || post.text;
-
-    if (!post.translatedText && isLikelyEnglish(post.text)) {
-      // Translate first
-      setPosts((prev) =>
-        prev.map((p) => (p.id === post.id ? { ...p, isTranslating: true } : p))
-      );
-
-      try {
-        const response = await fetch("/api/translate", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ text: post.text }),
-        });
-
-        const data = await response.json();
-
-        if (response.ok && data.translated) {
-          textToUse = data.translated;
-
-          // Update in Firestore
-          await fetch("/api/x/saved-posts", {
-            method: "PATCH",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              userId: user?.uid,
-              postId: post.id,
-              updates: { translatedText: data.translated },
-            }),
-          });
-
-          setPosts((prev) =>
-            prev.map((p) =>
-              p.id === post.id
-                ? { ...p, translatedText: data.translated, isTranslating: false }
-                : p
-            )
-          );
-        }
-      } catch (err) {
-        console.error("Translation error:", err);
-      }
-
-      setPosts((prev) =>
-        prev.map((p) => (p.id === post.id ? { ...p, isTranslating: false } : p))
-      );
-    }
-
-    // Store reference data and go to compose
-    const referenceData = {
-      text: textToUse,
-      source: "saved_post",
-      author: post.authorName,
-      likes: post.likes,
-      tweetId: post.id,
-      media: post.media,
-    };
-    sessionStorage.setItem("bookmarkReference", JSON.stringify(referenceData));
-    router.push("/compose");
+  // Navigate to AI generation page
+  const handleStartAIGenerate = (post: SavedPost) => {
+    router.push(`/bookmarks/generate/${post.id}`);
   };
 
   const formatNumber = (num: number): string => {
     if (num >= 1000000) return (num / 1000000).toFixed(1) + "M";
     if (num >= 1000) return (num / 1000).toFixed(1) + "K";
     return num.toString();
-  };
-
-  const isLikelyEnglish = (text: string): boolean => {
-    const japaneseRatio =
-      (text.match(/[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FAF]/g) || []).length /
-      text.length;
-    return japaneseRatio < 0.2;
   };
 
   return (
@@ -411,11 +271,19 @@ export default function BookmarksPage() {
               </button>
             </div>
             <p className="text-xs text-zinc-500 mt-2">
-              X/TwitterのURLを貼り付けて保存できます（動画も対応）
+              X/TwitterのURLを貼り付けて保存（動画は引用投稿で自動添付）
             </p>
           </div>
         )}
       </div>
+
+      {/* Success Message */}
+      {successMessage && (
+        <div className="mx-4 mt-4 p-4 bg-emerald-50 border border-emerald-200 rounded-2xl flex items-center gap-3">
+          <CheckCircle2 className="w-5 h-5 text-emerald-500 flex-shrink-0" />
+          <span className="text-emerald-700 text-sm">{successMessage}</span>
+        </div>
+      )}
 
       {/* Error State */}
       {error && (
@@ -451,168 +319,142 @@ export default function BookmarksPage() {
         </div>
       ) : (
         <div className="divide-y divide-zinc-200">
-          {posts.map((post) => (
-            <article key={post.id} className="px-4 py-4 hover:bg-zinc-50/50">
-              <div className="flex gap-3">
-                {/* Avatar */}
-                <div className="flex-shrink-0">
-                  {post.authorProfileImageUrl ? (
-                    <Image
-                      src={post.authorProfileImageUrl}
-                      alt={post.authorName}
-                      width={48}
-                      height={48}
-                      className="rounded-full"
-                      unoptimized
-                    />
-                  ) : (
-                    <div className="w-12 h-12 rounded-full bg-zinc-300 flex items-center justify-center text-zinc-600 font-bold">
-                      {post.authorName?.[0] || "?"}
-                    </div>
-                  )}
-                </div>
+          {posts.map((post) => {
+            const hasVideo = post.media?.some(m => m.type === "video");
 
-                {/* Content */}
-                <div className="flex-1 min-w-0">
-                  {/* Author row */}
-                  <div className="flex items-center gap-1 mb-1">
-                    <span className="font-bold text-zinc-900 truncate">
-                      {post.authorName}
-                    </span>
-                    <span className="text-zinc-500 truncate">
-                      @{post.authorUsername}
-                    </span>
+            return (
+              <article key={post.id} className="px-4 py-4">
+                <div className="flex gap-3">
+                  {/* Avatar */}
+                  <div className="flex-shrink-0">
+                    {post.authorProfileImageUrl ? (
+                      <Image
+                        src={post.authorProfileImageUrl}
+                        alt={post.authorName}
+                        width={48}
+                        height={48}
+                        className="rounded-full"
+                        unoptimized
+                      />
+                    ) : (
+                      <div className="w-12 h-12 rounded-full bg-zinc-300 flex items-center justify-center text-zinc-600 font-bold">
+                        {post.authorName?.[0] || "?"}
+                      </div>
+                    )}
                   </div>
 
-                  {/* Tweet text with line breaks */}
-                  <p className="text-[15px] text-zinc-900 whitespace-pre-wrap break-words leading-relaxed">
-                    {post.text}
-                  </p>
-
-                  {/* Translated text */}
-                  {post.translatedText && (
-                    <div className="mt-3 p-3 bg-gradient-to-r from-blue-50 to-sky-50 border border-blue-100 rounded-xl">
-                      <p className="text-xs font-semibold text-blue-600 mb-1 flex items-center gap-1">
-                        <Languages className="w-3 h-3" />
-                        日本語訳
-                      </p>
-                      <p className="text-[15px] text-zinc-800 whitespace-pre-wrap leading-relaxed">
-                        {post.translatedText}
-                      </p>
+                  {/* Content */}
+                  <div className="flex-1 min-w-0">
+                    {/* Author row */}
+                    <div className="flex items-center gap-1 mb-1">
+                      <span className="font-bold text-zinc-900 truncate">
+                        {post.authorName}
+                      </span>
+                      <span className="text-zinc-500 truncate">
+                        @{post.authorUsername}
+                      </span>
                     </div>
-                  )}
 
-                  {/* Media */}
-                  {post.media && post.media.length > 0 && (
-                    <div className="mt-3 rounded-2xl overflow-hidden border border-zinc-200">
-                      {post.media[0].type === "video" ? (
-                        <div className="relative aspect-video bg-zinc-900">
-                          <video
-                            src={post.media[0].url}
-                            poster={post.media[0].thumbnailUrl}
-                            controls
-                            className="w-full h-full object-contain"
-                          />
-                        </div>
-                      ) : (
-                        <Image
-                          src={post.media[0].url || post.media[0].thumbnailUrl || ""}
-                          alt="メディア"
-                          width={500}
-                          height={300}
-                          className="w-full object-cover"
-                          unoptimized
-                        />
-                      )}
-                    </div>
-                  )}
+                    {/* Tweet text with line breaks */}
+                    <p className="text-[15px] text-zinc-900 whitespace-pre-wrap break-words leading-relaxed">
+                      {post.text}
+                    </p>
 
-                  {/* Metrics */}
-                  <div className="flex items-center gap-6 mt-3 text-zinc-500 text-sm">
-                    <span className="flex items-center gap-1">
-                      <MessageCircle className="w-4 h-4" />
-                      {formatNumber(post.replies)}
-                    </span>
-                    <span className="flex items-center gap-1">
-                      <Repeat2 className="w-4 h-4" />
-                      {formatNumber(post.retweets)}
-                    </span>
-                    <span className="flex items-center gap-1">
-                      <Heart className="w-4 h-4" />
-                      {formatNumber(post.likes)}
-                    </span>
-                  </div>
-
-                  {/* Action Buttons */}
-                  <div className="flex flex-wrap items-center gap-2 mt-4">
-                    {/* AI Generate Button - Primary Action */}
-                    <button
-                      onClick={() => handleAIGenerate(post)}
-                      disabled={post.isTranslating}
-                      className="flex items-center gap-2 px-4 py-2 bg-emerald-500 text-white text-sm font-bold rounded-full hover:bg-emerald-600 transition-colors disabled:opacity-50"
-                    >
-                      {post.isTranslating ? (
-                        <>
-                          <Loader2 className="w-4 h-4 animate-spin" />
-                          翻訳中...
-                        </>
-                      ) : (
-                        <>
-                          <Sparkles className="w-4 h-4" />
-                          AI投稿生成
-                        </>
-                      )}
-                    </button>
-
-                    {/* Quote Post */}
-                    <button
-                      onClick={() => handleCreateQuotePost(post)}
-                      className="flex items-center gap-2 px-3 py-2 bg-blue-500 text-white text-sm font-medium rounded-full hover:bg-blue-600 transition-colors"
-                    >
-                      <Quote className="w-4 h-4" />
-                      引用投稿
-                    </button>
-
-                    {/* Translate Button (if English and not yet translated) */}
-                    {isLikelyEnglish(post.text) && !post.translatedText && (
-                      <button
-                        onClick={() => handleTranslate(post.id)}
-                        disabled={post.isTranslating}
-                        className="flex items-center gap-2 px-3 py-2 border border-zinc-300 text-zinc-700 text-sm font-medium rounded-full hover:bg-zinc-50 transition-colors disabled:opacity-50"
-                      >
-                        {post.isTranslating ? (
-                          <Loader2 className="w-4 h-4 animate-spin" />
-                        ) : (
-                          <Languages className="w-4 h-4" />
-                        )}
-                        翻訳
-                      </button>
+                    {/* Translated text */}
+                    {post.translatedText && (
+                      <div className="mt-3 p-3 bg-gradient-to-r from-blue-50 to-sky-50 border border-blue-100 rounded-xl">
+                        <p className="text-xs font-semibold text-blue-600 mb-1 flex items-center gap-1">
+                          <Languages className="w-3 h-3" />
+                          日本語訳
+                        </p>
+                        <p className="text-[15px] text-zinc-800 whitespace-pre-wrap leading-relaxed">
+                          {post.translatedText}
+                        </p>
+                      </div>
                     )}
 
-                    {/* View on X */}
-                    <a
-                      href={`https://x.com/${post.authorUsername}/status/${post.id}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="flex items-center gap-2 px-3 py-2 border border-zinc-300 text-zinc-700 text-sm font-medium rounded-full hover:bg-zinc-50 transition-colors"
-                    >
-                      <ExternalLink className="w-4 h-4" />
-                      Xで見る
-                    </a>
+                    {/* Media */}
+                    {post.media && post.media.length > 0 && (
+                      <div className="mt-3 rounded-2xl overflow-hidden border border-zinc-200">
+                        {post.media[0].type === "video" ? (
+                          <div className="relative aspect-video bg-zinc-900">
+                            <video
+                              src={post.media[0].url}
+                              poster={post.media[0].thumbnailUrl}
+                              controls
+                              className="w-full h-full object-contain"
+                            />
+                          </div>
+                        ) : (
+                          <Image
+                            src={post.media[0].url || post.media[0].thumbnailUrl || ""}
+                            alt="メディア"
+                            width={500}
+                            height={300}
+                            className="w-full object-cover"
+                            unoptimized
+                          />
+                        )}
+                      </div>
+                    )}
 
-                    {/* Delete */}
-                    <button
-                      onClick={() => handleDelete(post.id)}
-                      className="flex items-center gap-2 px-3 py-2 border border-red-200 text-red-600 text-sm font-medium rounded-full hover:bg-red-50 transition-colors"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                      削除
-                    </button>
+                    {/* Metrics */}
+                    <div className="flex items-center gap-6 mt-3 text-zinc-500 text-sm">
+                      <span className="flex items-center gap-1">
+                        <MessageCircle className="w-4 h-4" />
+                        {formatNumber(post.replies)}
+                      </span>
+                      <span className="flex items-center gap-1">
+                        <Repeat2 className="w-4 h-4" />
+                        {formatNumber(post.retweets)}
+                      </span>
+                      <span className="flex items-center gap-1">
+                        <Heart className="w-4 h-4" />
+                        {formatNumber(post.likes)}
+                      </span>
+                    </div>
+
+                    {/* Action Buttons */}
+                    <div className="flex flex-wrap items-center gap-2 mt-4">
+                      {/* AI Generate Button */}
+                      <button
+                        onClick={() => handleStartAIGenerate(post)}
+                        className="flex items-center gap-2 px-4 py-2 bg-emerald-500 text-white text-sm font-bold rounded-full hover:bg-emerald-600 transition-colors"
+                      >
+                        <Sparkles className="w-4 h-4" />
+                        AI投稿生成
+                        {hasVideo && (
+                          <span className="flex items-center gap-1 px-1.5 py-0.5 bg-emerald-600 rounded-full text-xs">
+                            <Video className="w-3 h-3" />
+                          </span>
+                        )}
+                      </button>
+
+                      {/* View on X */}
+                      <a
+                        href={`https://x.com/${post.authorUsername}/status/${post.id}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-2 px-3 py-2 border border-zinc-300 text-zinc-700 text-sm font-medium rounded-full hover:bg-zinc-50 transition-colors"
+                      >
+                        <ExternalLink className="w-4 h-4" />
+                        Xで見る
+                      </a>
+
+                      {/* Delete */}
+                      <button
+                        onClick={() => handleDelete(post.id)}
+                        className="flex items-center gap-2 px-3 py-2 border border-red-200 text-red-600 text-sm font-medium rounded-full hover:bg-red-50 transition-colors"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                        削除
+                      </button>
+                    </div>
                   </div>
                 </div>
-              </div>
-            </article>
-          ))}
+              </article>
+            );
+          })}
         </div>
       )}
     </div>

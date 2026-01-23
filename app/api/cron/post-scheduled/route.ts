@@ -7,16 +7,30 @@ import { refreshAccessToken } from "@/lib/x-oauth";
 // Initialize Firebase Admin
 initAdmin();
 
-// Post tweet using user's OAuth 2.0 token (for quote_tweet_id support)
+/**
+ * Build media URL from tweet info
+ * Format: https://x.com/{username}/status/{tweetId}/video/1 or /photo/1
+ */
+function buildMediaUrl(username: string, tweetId: string, mediaType: "video" | "photo"): string {
+  const cleanTweetId = tweetId.split("?")[0];
+  const suffix = mediaType === "video" ? "video/1" : "photo/1";
+  return `https://x.com/${username}/status/${cleanTweetId}/${suffix}`;
+}
+
+// Post tweet using user's OAuth 2.0 token
 async function postWithUserToken(
   accessToken: string,
   text: string,
-  quoteTweetId?: string
+  mediaInfo?: { tweetId: string; username: string; mediaType: "video" | "photo" }
 ): Promise<{ id: string; text: string }> {
-  const payload: { text: string; quote_tweet_id?: string } = { text };
-  if (quoteTweetId) {
-    payload.quote_tweet_id = quoteTweetId;
+  // Build final text with media URL if mediaInfo provided
+  let finalText = text;
+  if (mediaInfo?.tweetId && mediaInfo?.username && mediaInfo?.mediaType) {
+    const mediaUrl = buildMediaUrl(mediaInfo.username, mediaInfo.tweetId, mediaInfo.mediaType);
+    finalText = `${text.trim()}\n\n${mediaUrl}`;
   }
+
+  const payload = { text: finalText };
 
   const response = await fetch("https://api.twitter.com/2/tweets", {
     method: "POST",
@@ -140,13 +154,13 @@ export async function GET(request: NextRequest) {
         try {
           let result: { id: string; text: string } | undefined;
 
-          // If post has quoteTweetId, use user's OAuth token
-          if (post.quoteTweetId) {
+          // If post has videoInfo, use user's OAuth token with /video/1 URL
+          if (post.videoInfo) {
             const userToken = await getUserAccessToken(db, userId);
             if (!userToken) {
-              throw new Error("User X token not available for quote tweet");
+              throw new Error("User X token not available for video post");
             }
-            result = await postWithUserToken(userToken, post.text, post.quoteTweetId);
+            result = await postWithUserToken(userToken, post.text, post.videoInfo);
           } else if (client) {
             // Use app-level client for regular posts
             const tweetResult = await client.postTweet(post.text);

@@ -155,7 +155,7 @@ export async function fetchCuratedAIRepos(): Promise<ExternalArticle[]> {
     });
 
     const results = await Promise.all(promises);
-    return results.filter((r): r is ExternalArticle => r !== null);
+    return results.filter((r) => r !== null) as ExternalArticle[];
   } catch (error) {
     console.error("Curated repos fetch error:", error);
     return [];

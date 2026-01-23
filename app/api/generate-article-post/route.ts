@@ -54,9 +54,12 @@ export async function POST(request: NextRequest) {
     }
 
     // Fetch full content if requested and not already provided
-    let fullContent = article.fullContent;
+    let fullContent: string | undefined = article.fullContent;
     if (fetchFull && !fullContent && article.url) {
-      fullContent = await fetchFullContent(article.url);
+      const fetched = await fetchFullContent(article.url);
+      if (fetched) {
+        fullContent = fetched;
+      }
     }
 
     // Use full content if available, otherwise fall back to description
