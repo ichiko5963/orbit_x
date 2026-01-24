@@ -28,6 +28,11 @@ import {
   AlertCircle,
   Search,
   Check,
+  ShieldCheck,
+  RefreshCw,
+  AlertTriangle,
+  ChevronRight,
+  Type,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 import { useXProfile } from "@/lib/x-profile-context";
@@ -128,6 +133,38 @@ export default function PostEditorPage() {
   const [isSearchingImages, setIsSearchingImages] = useState(false);
   const [imageSearchResults, setImageSearchResults] = useState<{url: string; title: string; source: string; selected?: boolean}[]>([]);
   const [imageSearchError, setImageSearchError] = useState<string | null>(null);
+
+  // Hallucination check (fact-check) state
+  const [showFactCheck, setShowFactCheck] = useState(false);
+  const [isFactChecking, setIsFactChecking] = useState(false);
+  const [factCheckResults, setFactCheckResults] = useState<{
+    wasModified: boolean;
+    correctedContent: string;
+    summary: { totalClaims: number; accurateClaims: number; inaccurateClaims: number; flowIssues: number };
+    details: {
+      factCheckResults: { claim: string; isAccurate: boolean; correction: string | null; confidence: string }[];
+      flowCheck: { hasIssues: boolean; issues: string[] };
+    };
+  } | null>(null);
+
+  // AI Correction state
+  const [showAICorrection, setShowAICorrection] = useState(false);
+  const [isAICorrecting, setIsAICorrecting] = useState(false);
+  const [aiCorrectionPatterns, setAiCorrectionPatterns] = useState<{
+    type: string;
+    text: string;
+    changes: string;
+    structureValid: boolean;
+    warning?: string;
+  }[]>([]);
+
+  // Text selection enhancement state
+  const [selectedText, setSelectedText] = useState("");
+  const [selectionRange, setSelectionRange] = useState<{ start: number; end: number; postId: number } | null>(null);
+  const [showTextEnhance, setShowTextEnhance] = useState(false);
+  const [textEnhanceOptions, setTextEnhanceOptions] = useState<{ text: string; style: string; reason: string }[]>([]);
+  const [isTextEnhancing, setIsTextEnhancing] = useState(false);
+  const [textEnhancePosition, setTextEnhancePosition] = useState<{ x: number; y: number } | null>(null);
 
   // Actions
   const [copied, setCopied] = useState(false);
@@ -608,6 +645,197 @@ export default function PostEditorPage() {
     }, 300);
   };
 
+  // Hallucination check (fact-check)
+  const handleFactCheck = async () => {
+    if (!activePost.text.trim()) return;
+
+    setIsFactChecking(true);
+    setShowFactCheck(true);
+    setFactCheckResults(null);
+
+    try {
+      const response = await fetch("/api/generate/fact-check", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          content: activePost.text,
+        }),
+      });
+
+      const data = await response.json();
+      if (data.success) {
+        setFactCheckResults(data);
+      }
+    } catch (error) {
+      console.error("Fact check failed:", error);
+    } finally {
+      setIsFactChecking(false);
+    }
+  };
+
+  // Apply fact check correction
+  const applyFactCheckCorrection = () => {
+    if (factCheckResults?.correctedContent) {
+      updatePostText(activePostId, factCheckResults.correctedContent);
+      setShowFactCheck(false);
+      setFactCheckResults(null);
+
+      setTimeout(() => {
+        const textarea = textareaRefs.current.get(activePostId);
+        if (textarea) {
+          autoResizeTextarea(textarea);
+        }
+      }, 50);
+    }
+  };
+
+  // AI Correction
+  const handleAICorrection = async () => {
+    if (!activePost.text.trim()) return;
+
+    setIsAICorrecting(true);
+    setShowAICorrection(true);
+    setAiCorrectionPatterns([]);
+
+    try {
+      const response = await fetch("/api/generate/ai-correct", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          currentText: activePost.text,
+          originalContent: activePost.text,
+          referenceText: activePost.text,
+        }),
+      });
+
+      const data = await response.json();
+      if (data.success && data.patterns) {
+        setAiCorrectionPatterns(data.patterns);
+      }
+    } catch (error) {
+      console.error("AI correction failed:", error);
+    } finally {
+      setIsAICorrecting(false);
+    }
+  };
+
+  // Apply AI correction
+  const applyAICorrection = (newText: string) => {
+    updatePostText(activePostId, newText);
+    setShowAICorrection(false);
+    setAiCorrectionPatterns([]);
+
+    setTimeout(() => {
+      const textarea = textareaRefs.current.get(activePostId);
+      if (textarea) {
+        autoResizeTextarea(textarea);
+      }
+    }, 50);
+  };
+
+  // Handle text selection for enhancement
+  const handleTextSelection = (postId: number, e: React.MouseEvent<HTMLTextAreaElement> | React.TouchEvent<HTMLTextAreaElement>) => {
+    const textarea = e.currentTarget;
+    const selection = window.getSelection();
+
+    // Get selection from textarea
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+
+    if (start !== end) {
+      const selected = textarea.value.substring(start, end);
+      if (selected.trim().length >= 3) {
+        setSelectedText(selected);
+        setSelectionRange({ start, end, postId });
+
+        // Calculate position for popup
+        const rect = textarea.getBoundingClientRect();
+        const lineHeight = 28;
+        const charsPerLine = Math.floor(textarea.clientWidth / 8);
+        const lineNum = Math.floor(start / charsPerLine);
+
+        setTextEnhancePosition({
+          x: rect.left + Math.min(200, (start % charsPerLine) * 8),
+          y: rect.top + lineNum * lineHeight + 30,
+        });
+        setShowTextEnhance(true);
+      } else {
+        setShowTextEnhance(false);
+        setSelectedText("");
+        setSelectionRange(null);
+      }
+    } else {
+      setShowTextEnhance(false);
+      setSelectedText("");
+      setSelectionRange(null);
+    }
+  };
+
+  // Generate text enhancement options
+  const handleTextEnhance = async () => {
+    if (!selectedText || !selectionRange) return;
+
+    setIsTextEnhancing(true);
+    setTextEnhanceOptions([]);
+
+    try {
+      const post = threadPosts.find(p => p.id === selectionRange.postId);
+      if (!post) return;
+
+      const response = await fetch("/api/generate/text-enhance", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          selectedText,
+          fullText: post.text,
+          selectionStart: selectionRange.start,
+          selectionEnd: selectionRange.end,
+        }),
+      });
+
+      const data = await response.json();
+      if (data.success && data.options) {
+        setTextEnhanceOptions(data.options);
+      }
+    } catch (error) {
+      console.error("Text enhance failed:", error);
+    } finally {
+      setIsTextEnhancing(false);
+    }
+  };
+
+  // Apply text enhancement
+  const applyTextEnhancement = (newText: string) => {
+    if (!selectionRange) return;
+
+    const post = threadPosts.find(p => p.id === selectionRange.postId);
+    if (!post) return;
+
+    const updatedText = post.text.substring(0, selectionRange.start) + newText + post.text.substring(selectionRange.end);
+    updatePostText(selectionRange.postId, updatedText);
+
+    setShowTextEnhance(false);
+    setSelectedText("");
+    setSelectionRange(null);
+    setTextEnhanceOptions([]);
+
+    setTimeout(() => {
+      const textarea = textareaRefs.current.get(selectionRange.postId);
+      if (textarea) {
+        autoResizeTextarea(textarea);
+      }
+    }, 50);
+  };
+
+  // Close text enhance popup
+  const closeTextEnhance = () => {
+    setShowTextEnhance(false);
+    setSelectedText("");
+    setSelectionRange(null);
+    setTextEnhanceOptions([]);
+    setTextEnhancePosition(null);
+  };
+
   return (
     <div className="min-h-screen animate-fade-in">
       {/* Header */}
@@ -680,6 +908,8 @@ export default function PostEditorPage() {
                     autoResizeTextarea(e.target);
                   }}
                   onPaste={(e) => handleTextareaPaste(post.id, e)}
+                  onMouseUp={(e) => handleTextSelection(post.id, e)}
+                  onTouchEnd={(e) => handleTextSelection(post.id, e)}
                   placeholder={index === 0 ? "いまどうしてる？（画像も貼り付け可能）" : "スレッドを続ける...（画像も貼り付け可能）"}
                   className="w-full min-h-[150px] text-base text-zinc-900 placeholder:text-zinc-400 resize-none focus:outline-none leading-relaxed overflow-hidden"
                   style={{ lineHeight: "1.8" }}
@@ -837,6 +1067,32 @@ export default function PostEditorPage() {
                   <Wand2 className="w-5 h-5" />
                 )}
                 <span className="text-sm font-medium">AI強化</span>
+              </button>
+              <button
+                onClick={handleFactCheck}
+                disabled={!activePost.text.trim() || isFactChecking}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-emerald-600 hover:bg-emerald-50 transition-colors disabled:opacity-50"
+                title="ハルシネーションチェック"
+              >
+                {isFactChecking ? (
+                  <Loader2 className="w-5 h-5 animate-spin" />
+                ) : (
+                  <ShieldCheck className="w-5 h-5" />
+                )}
+                <span className="text-sm font-medium hidden sm:inline">チェック</span>
+              </button>
+              <button
+                onClick={handleAICorrection}
+                disabled={!activePost.text.trim() || isAICorrecting}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-blue-600 hover:bg-blue-50 transition-colors disabled:opacity-50"
+                title="AI補正"
+              >
+                {isAICorrecting ? (
+                  <Loader2 className="w-5 h-5 animate-spin" />
+                ) : (
+                  <RefreshCw className="w-5 h-5" />
+                )}
+                <span className="text-sm font-medium hidden sm:inline">AI補正</span>
               </button>
               <div className="w-px h-6 bg-zinc-200 mx-1" />
               <button
@@ -1484,6 +1740,345 @@ export default function PostEditorPage() {
                 </div>
               )}
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Fact Check (Hallucination Check) Modal */}
+      {showFactCheck && (
+        <div className="fixed inset-0 z-50 flex items-start justify-center pt-20 overflow-y-auto">
+          <div
+            className="fixed inset-0 bg-black/50 backdrop-blur-sm"
+            onClick={() => setShowFactCheck(false)}
+          />
+
+          <div className="relative w-full max-w-2xl bg-white rounded-2xl shadow-xl mx-4 mb-20 overflow-hidden">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-200 bg-gradient-to-r from-emerald-50 to-teal-50">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-emerald-100 rounded-lg">
+                  <ShieldCheck className="w-5 h-5 text-emerald-600" />
+                </div>
+                <div>
+                  <h2 className="text-lg font-semibold text-zinc-900">ハルシネーションチェック</h2>
+                  <p className="text-sm text-zinc-500">事実確認と文章の流れをチェック</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowFactCheck(false)}
+                className="p-2 rounded-lg hover:bg-white/50 transition-colors"
+              >
+                <X className="w-5 h-5 text-zinc-500" />
+              </button>
+            </div>
+
+            {/* Modal Content */}
+            <div className="p-6">
+              {isFactChecking ? (
+                <div className="flex flex-col items-center justify-center py-12">
+                  <div className="relative">
+                    <div className="w-16 h-16 border-4 border-emerald-200 border-t-emerald-500 rounded-full animate-spin" />
+                    <ShieldCheck className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-6 h-6 text-emerald-500" />
+                  </div>
+                  <p className="mt-4 text-zinc-600 font-medium">投稿内容をチェック中...</p>
+                  <p className="text-sm text-zinc-400 mt-1">事実確認と文章の流れを分析しています</p>
+                </div>
+              ) : factCheckResults ? (
+                <div className="space-y-6">
+                  {/* Summary */}
+                  <div className={`p-4 rounded-xl ${
+                    factCheckResults.wasModified
+                      ? "bg-amber-50 border border-amber-200"
+                      : "bg-emerald-50 border border-emerald-200"
+                  }`}>
+                    <div className="flex items-center gap-2 mb-2">
+                      {factCheckResults.wasModified ? (
+                        <>
+                          <AlertTriangle className="w-5 h-5 text-amber-600" />
+                          <span className="font-medium text-amber-800">修正箇所があります</span>
+                        </>
+                      ) : (
+                        <>
+                          <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+                          <span className="font-medium text-emerald-800">問題ありません</span>
+                        </>
+                      )}
+                    </div>
+                    <div className="flex gap-4 text-sm">
+                      <span className="text-zinc-600">
+                        主張チェック: {factCheckResults.summary.accurateClaims}/{factCheckResults.summary.totalClaims}件OK
+                      </span>
+                      {factCheckResults.summary.flowIssues > 0 && (
+                        <span className="text-zinc-600">
+                          流れの問題: {factCheckResults.summary.flowIssues}件
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Fact Check Details */}
+                  {factCheckResults.details.factCheckResults.length > 0 && (
+                    <div>
+                      <h3 className="text-sm font-semibold text-zinc-700 mb-3">事実チェック結果</h3>
+                      <div className="space-y-2">
+                        {factCheckResults.details.factCheckResults.map((item, index) => (
+                          <div
+                            key={index}
+                            className={`p-3 rounded-lg border ${
+                              item.isAccurate
+                                ? "bg-emerald-50 border-emerald-200"
+                                : "bg-red-50 border-red-200"
+                            }`}
+                          >
+                            <div className="flex items-start gap-2">
+                              {item.isAccurate ? (
+                                <CheckCircle2 className="w-4 h-4 text-emerald-600 mt-0.5" />
+                              ) : (
+                                <AlertTriangle className="w-4 h-4 text-red-600 mt-0.5" />
+                              )}
+                              <div className="flex-1 min-w-0">
+                                <p className="text-sm text-zinc-900">{item.claim}</p>
+                                {item.correction && (
+                                  <p className="text-sm text-red-700 mt-1">
+                                    → 修正案: {item.correction}
+                                  </p>
+                                )}
+                                <span className={`text-xs px-1.5 py-0.5 rounded mt-1 inline-block ${
+                                  item.confidence === "high" ? "bg-emerald-100 text-emerald-700" :
+                                  item.confidence === "medium" ? "bg-amber-100 text-amber-700" :
+                                  "bg-zinc-100 text-zinc-600"
+                                }`}>
+                                  信頼度: {item.confidence}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Flow Issues */}
+                  {factCheckResults.details.flowCheck.hasIssues && (
+                    <div>
+                      <h3 className="text-sm font-semibold text-zinc-700 mb-3">文章の流れ</h3>
+                      <ul className="space-y-1">
+                        {factCheckResults.details.flowCheck.issues.map((issue, index) => (
+                          <li key={index} className="flex items-start gap-2 text-sm text-zinc-600">
+                            <ChevronRight className="w-4 h-4 text-zinc-400 mt-0.5" />
+                            {issue}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  {/* Corrected Content */}
+                  {factCheckResults.wasModified && (
+                    <div>
+                      <h3 className="text-sm font-semibold text-zinc-700 mb-3">修正後の投稿</h3>
+                      <div className="p-4 bg-zinc-50 rounded-xl border border-zinc-200">
+                        <p className="text-sm text-zinc-900 whitespace-pre-wrap">
+                          {factCheckResults.correctedContent}
+                        </p>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Actions */}
+                  <div className="flex items-center gap-3 pt-4 border-t border-zinc-200">
+                    <button
+                      onClick={() => setShowFactCheck(false)}
+                      className="flex-1 py-2.5 text-zinc-600 font-medium rounded-xl hover:bg-zinc-100 transition-colors"
+                    >
+                      閉じる
+                    </button>
+                    {factCheckResults.wasModified && (
+                      <button
+                        onClick={applyFactCheckCorrection}
+                        className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-emerald-500 text-white font-medium rounded-xl hover:bg-emerald-600 transition-colors"
+                      >
+                        <CheckCircle2 className="w-4 h-4" />
+                        修正を適用
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <div className="text-center py-12 text-zinc-500">
+                  <p>チェックに失敗しました</p>
+                  <button
+                    onClick={handleFactCheck}
+                    className="mt-4 text-emerald-600 hover:underline"
+                  >
+                    再試行
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* AI Correction Modal */}
+      {showAICorrection && (
+        <div className="fixed inset-0 z-50 flex items-start justify-center pt-20 overflow-y-auto">
+          <div
+            className="fixed inset-0 bg-black/50 backdrop-blur-sm"
+            onClick={() => setShowAICorrection(false)}
+          />
+
+          <div className="relative w-full max-w-2xl bg-white rounded-2xl shadow-xl mx-4 mb-20 overflow-hidden">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-200 bg-gradient-to-r from-blue-50 to-indigo-50">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-blue-100 rounded-lg">
+                  <RefreshCw className="w-5 h-5 text-blue-600" />
+                </div>
+                <div>
+                  <h2 className="text-lg font-semibold text-zinc-900">AI補正</h2>
+                  <p className="text-sm text-zinc-500">構造を維持しつつ表現を改善</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowAICorrection(false)}
+                className="p-2 rounded-lg hover:bg-white/50 transition-colors"
+              >
+                <X className="w-5 h-5 text-zinc-500" />
+              </button>
+            </div>
+
+            {/* Modal Content */}
+            <div className="p-6">
+              {isAICorrecting ? (
+                <div className="flex flex-col items-center justify-center py-12">
+                  <div className="relative">
+                    <div className="w-16 h-16 border-4 border-blue-200 border-t-blue-500 rounded-full animate-spin" />
+                    <RefreshCw className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-6 h-6 text-blue-500" />
+                  </div>
+                  <p className="mt-4 text-zinc-600 font-medium">3パターンを生成中...</p>
+                  <p className="text-sm text-zinc-400 mt-1">構造を維持しつつ表現を改善</p>
+                </div>
+              ) : aiCorrectionPatterns.length > 0 ? (
+                <div className="space-y-4">
+                  {aiCorrectionPatterns.map((pattern, index) => {
+                    const colors = [
+                      { bg: "bg-blue-50", border: "border-blue-200", icon: "text-blue-500" },
+                      { bg: "bg-purple-50", border: "border-purple-200", icon: "text-purple-500" },
+                      { bg: "bg-emerald-50", border: "border-emerald-200", icon: "text-emerald-500" },
+                    ];
+                    const color = colors[index] || colors[0];
+
+                    return (
+                      <button
+                        key={index}
+                        onClick={() => applyAICorrection(pattern.text)}
+                        className={`w-full p-4 rounded-xl border-2 ${color.border} ${color.bg} text-left transition-all hover:shadow-md group`}
+                      >
+                        <div className="flex items-start justify-between mb-2">
+                          <div className="flex items-center gap-2">
+                            <span className="font-semibold text-zinc-900">{pattern.type}</span>
+                            {pattern.warning && (
+                              <span className="text-xs text-amber-600 bg-amber-100 px-1.5 py-0.5 rounded">
+                                {pattern.warning}
+                              </span>
+                            )}
+                          </div>
+                          <CheckCircle2 className={`w-5 h-5 ${color.icon} opacity-0 group-hover:opacity-100 transition-opacity`} />
+                        </div>
+                        <p className="text-sm text-zinc-600 whitespace-pre-wrap line-clamp-4 leading-relaxed mb-2">
+                          {pattern.text}
+                        </p>
+                        <p className="text-xs text-zinc-500">{pattern.changes}</p>
+                      </button>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="text-center py-12 text-zinc-500">
+                  <p>補正案を生成できませんでした</p>
+                  <button
+                    onClick={handleAICorrection}
+                    className="mt-4 text-blue-600 hover:underline"
+                  >
+                    再試行
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Text Selection Enhancement Popup */}
+      {showTextEnhance && textEnhancePosition && (
+        <div
+          className="fixed z-50 bg-white rounded-xl shadow-2xl border border-zinc-200 overflow-hidden"
+          style={{
+            left: Math.min(textEnhancePosition.x, window.innerWidth - 320),
+            top: Math.min(textEnhancePosition.y, window.innerHeight - 400),
+            width: "300px",
+          }}
+        >
+          {/* Header */}
+          <div className="flex items-center justify-between px-4 py-3 bg-gradient-to-r from-violet-50 to-purple-50 border-b border-zinc-200">
+            <div className="flex items-center gap-2">
+              <Type className="w-4 h-4 text-violet-600" />
+              <span className="text-sm font-semibold text-zinc-900">テキスト強化</span>
+            </div>
+            <button
+              onClick={closeTextEnhance}
+              className="p-1 rounded hover:bg-white/50 transition-colors"
+            >
+              <X className="w-4 h-4 text-zinc-500" />
+            </button>
+          </div>
+
+          {/* Selected Text */}
+          <div className="px-4 py-2 bg-zinc-50 border-b border-zinc-200">
+            <p className="text-xs text-zinc-500 mb-1">選択中:</p>
+            <p className="text-sm text-zinc-900 line-clamp-2">&ldquo;{selectedText}&rdquo;</p>
+          </div>
+
+          {/* Content */}
+          <div className="p-3 max-h-64 overflow-y-auto">
+            {isTextEnhancing ? (
+              <div className="flex flex-col items-center justify-center py-6">
+                <Loader2 className="w-6 h-6 text-violet-500 animate-spin mb-2" />
+                <p className="text-sm text-zinc-600">候補を生成中...</p>
+              </div>
+            ) : textEnhanceOptions.length > 0 ? (
+              <div className="space-y-2">
+                {textEnhanceOptions.map((option, index) => (
+                  <button
+                    key={index}
+                    onClick={() => applyTextEnhancement(option.text)}
+                    className="w-full p-3 rounded-lg border border-zinc-200 hover:border-violet-300 hover:bg-violet-50 text-left transition-all group"
+                  >
+                    <p className="text-sm text-zinc-900 mb-1">{option.text}</p>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-violet-600 bg-violet-100 px-1.5 py-0.5 rounded">
+                        {option.style}
+                      </span>
+                      <span className="text-xs text-zinc-400">{option.reason}</span>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <div className="py-4">
+                <button
+                  onClick={handleTextEnhance}
+                  className="w-full flex items-center justify-center gap-2 py-2.5 bg-violet-500 text-white text-sm font-medium rounded-lg hover:bg-violet-600 transition-colors"
+                >
+                  <Sparkles className="w-4 h-4" />
+                  バズる表現に変換
+                </button>
+                <p className="text-xs text-zinc-400 text-center mt-2">
+                  AIが5つの候補を提案します
+                </p>
+              </div>
+            )}
           </div>
         </div>
       )}

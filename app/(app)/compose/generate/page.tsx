@@ -1863,6 +1863,36 @@ export default function GeneratePage() {
         </div>
       )}
 
+      {/* 検索結果トグル（カード生成後も表示） */}
+      {deepResearch && (
+        <div className="mb-6 bg-white rounded-2xl border border-zinc-200 shadow-sm overflow-hidden">
+          <button
+            onClick={() => setShowFullResearch(!showFullResearch)}
+            className="w-full flex items-center justify-between p-4 hover:bg-zinc-50 transition-colors"
+          >
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-lg bg-blue-100 flex items-center justify-center">
+                <BookOpen className="w-5 h-5 text-blue-600" />
+              </div>
+              <div className="text-left">
+                <p className="font-medium text-zinc-900">リサーチ情報</p>
+                <p className="text-sm text-zinc-500">{deepResearch.length.toLocaleString()}文字の情報を収集済み</p>
+              </div>
+            </div>
+            <ChevronDown className={`w-5 h-5 text-zinc-400 transition-transform ${showFullResearch ? "rotate-180" : ""}`} />
+          </button>
+          {showFullResearch && (
+            <div className="border-t border-zinc-100">
+              <div className="p-4 max-h-96 overflow-y-auto">
+                <p className="text-sm text-zinc-700 whitespace-pre-wrap leading-relaxed">
+                  {deepResearch}
+                </p>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* 6 Cards Grid */}
       {hasGenerated && (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
