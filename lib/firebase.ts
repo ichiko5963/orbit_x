@@ -772,11 +772,24 @@ export const saveAIGenerationHistory = async (userId: string, history: Omit<AIGe
     const expiresAt = new Date();
     expiresAt.setDate(expiresAt.getDate() + 7); // 1週間後
 
-    await setDoc(historyRef, {
-      ...history,
+    // Filter out undefined values (Firestore doesn't accept undefined)
+    const historyData: Record<string, any> = {
+      content: history.content,
+      generatedTexts: history.generatedTexts,
+      referenceSource: history.referenceSource,
       createdAt: Timestamp.now(),
       expiresAt: Timestamp.fromDate(expiresAt),
-    });
+    };
+
+    // Only add optional fields if they have values
+    if (history.category) {
+      historyData.category = history.category;
+    }
+    if (history.urls && history.urls.length > 0) {
+      historyData.urls = history.urls;
+    }
+
+    await setDoc(historyRef, historyData);
     return historyRef.id;
   } catch (error) {
     console.error("Save AI generation history error:", error);

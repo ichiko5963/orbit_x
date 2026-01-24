@@ -26,6 +26,8 @@ import {
   Plus,
   Trash2,
   History,
+  Search,
+  Info,
 } from "lucide-react";
 import { Timestamp } from "firebase/firestore";
 import Image from "next/image";
@@ -89,6 +91,15 @@ export default function GeneratePage() {
   const [content, setContent] = useState("");
   const [previousContent, setPreviousContent] = useState("");
   const [isContentExpanded, setIsContentExpanded] = useState(false);
+
+  // Content enrichment state
+  const [isEnrichingContent, setIsEnrichingContent] = useState(false);
+  const [enrichedContent, setEnrichedContent] = useState<string | null>(null);
+  const [enrichmentInfo, setEnrichmentInfo] = useState<{
+    reason: string;
+    searchQueries: string[];
+  } | null>(null);
+  const [autoEnrich, setAutoEnrich] = useState(true); // 自動補足ON/OFF
 
   // URL input state
   const [referenceUrls, setReferenceUrls] = useState<string[]>([]);
@@ -436,6 +447,39 @@ export default function GeneratePage() {
     // AIおまかせモードではカテゴリー不要
     if (postSource !== "aiAuto" && !selectedCategory) return;
 
+    // コンテンツ補強: 情報が薄い場合はネット検索で補足
+    let contentToUse = content;
+    if (autoEnrich) {
+      setIsEnrichingContent(true);
+      setEnrichedContent(null);
+      setEnrichmentInfo(null);
+
+      try {
+        const enrichResponse = await fetch("/api/generate/enrich-content", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ content }),
+        });
+
+        const enrichData = await enrichResponse.json();
+
+        if (enrichData.success && enrichData.enriched) {
+          contentToUse = enrichData.enrichedContent;
+          setEnrichedContent(enrichData.enrichedContent);
+          setEnrichmentInfo({
+            reason: enrichData.reason,
+            searchQueries: enrichData.searchQueries || [],
+          });
+          console.log("[Generate] Content enriched:", enrichData.reason);
+        }
+      } catch (err) {
+        console.error("Content enrichment failed:", err);
+        // 補強失敗してもそのまま続行
+      } finally {
+        setIsEnrichingContent(false);
+      }
+    }
+
     let postsToUse: ReferencePostExtended[] = [];
 
     if (postSource === "aiAuto") {
@@ -520,7 +564,7 @@ export default function GeneratePage() {
       const batchPromises = batchCards.map(async (card) => {
         const body = {
           mode: "reference",
-          content,
+          content: contentToUse, // 補強されたコンテンツを使用
           referenceText: card.referencePost.text,
           userStyle: userStyle || undefined,
         };
@@ -835,7 +879,7 @@ export default function GeneratePage() {
                       likes: 0,
                       tier: "A" as const,
                       category: history.category || "",
-                      source: history.referenceSource,
+                      source: history.referenceSource === "aiAuto" ? "myPosts" : history.referenceSource,
                     },
                     isLoading: false,
                   }));
@@ -1108,19 +1152,94 @@ export default function GeneratePage() {
         </div>
       )}
 
+      {/* Auto-enrich toggle */}
+      {!hasGenerated && (
+        <div className="bg-white rounded-xl border border-zinc-200 shadow-sm mb-6 p-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-lg bg-blue-50 flex items-center justify-center">
+                <Search className="w-5 h-5 text-blue-500" />
+              </div>
+              <div>
+                <p className="font-medium text-zinc-900">情報自動補足</p>
+                <p className="text-sm text-zinc-500">
+                  内容が薄い場合、AIが自動でリサーチして情報を補足します
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={() => setAutoEnrich(!autoEnrich)}
+              className={`relative w-12 h-6 rounded-full transition-colors ${
+                autoEnrich ? "bg-blue-500" : "bg-zinc-300"
+              }`}
+            >
+              <span
+                className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${
+                  autoEnrich ? "translate-x-6" : "translate-x-0"
+                }`}
+              />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Enrichment Status (shown during/after enrichment) */}
+      {isEnrichingContent && (
+        <div className="bg-blue-50 rounded-xl border border-blue-200 shadow-sm mb-6 p-4">
+          <div className="flex items-center gap-3">
+            <Loader2 className="w-5 h-5 text-blue-500 animate-spin" />
+            <div>
+              <p className="font-medium text-blue-900">情報をリサーチ中...</p>
+              <p className="text-sm text-blue-600">
+                投稿内容を分析し、補足情報を検索しています
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {enrichmentInfo && enrichedContent && !isEnrichingContent && (
+        <div className="bg-blue-50 rounded-xl border border-blue-200 shadow-sm mb-6 p-4">
+          <div className="flex items-start gap-3">
+            <Info className="w-5 h-5 text-blue-500 flex-shrink-0 mt-0.5" />
+            <div className="flex-1">
+              <p className="font-medium text-blue-900">情報を補足しました</p>
+              <p className="text-sm text-blue-600 mb-2">{enrichmentInfo.reason}</p>
+              {enrichmentInfo.searchQueries.length > 0 && (
+                <div className="flex flex-wrap gap-1.5">
+                  {enrichmentInfo.searchQueries.map((query, i) => (
+                    <span
+                      key={i}
+                      className="px-2 py-0.5 bg-blue-100 text-blue-700 text-xs rounded-full"
+                    >
+                      {query}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Generate Button (if not yet generated) */}
       {!hasGenerated && (
         <div className="flex justify-center mb-8">
           <button
             onClick={handleGenerateAll}
-            disabled={!content.trim() || (postSource !== "aiAuto" && !selectedCategory) || isLoadingPosts}
+            disabled={!content.trim() || (postSource !== "aiAuto" && !selectedCategory) || isLoadingPosts || isEnrichingContent}
             className={`flex items-center gap-3 px-8 py-4 text-white text-lg font-semibold rounded-xl disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-lg ${
               postSource === "aiAuto"
                 ? "bg-gradient-to-r from-violet-500 to-purple-500 hover:from-violet-600 hover:to-purple-600 shadow-violet-500/25"
                 : "bg-emerald-500 hover:bg-emerald-600 shadow-emerald-500/25"
             }`}
           >
-            {postSource === "aiAuto" ? (
+            {isEnrichingContent ? (
+              <>
+                <Loader2 className="w-6 h-6 animate-spin" />
+                情報をリサーチ中...
+              </>
+            ) : postSource === "aiAuto" ? (
               <>
                 <Wand2 className="w-6 h-6" />
                 AIおまかせで6パターン生成
