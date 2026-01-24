@@ -22,6 +22,9 @@ import {
   Zap,
   X as XIcon,
   Clock,
+  Link as LinkIcon,
+  Plus,
+  Trash2,
 } from "lucide-react";
 import { Timestamp } from "firebase/firestore";
 import Image from "next/image";
@@ -75,6 +78,10 @@ export default function GeneratePage() {
   const [content, setContent] = useState("");
   const [previousContent, setPreviousContent] = useState("");
   const [isContentExpanded, setIsContentExpanded] = useState(false);
+
+  // URL input state
+  const [referenceUrls, setReferenceUrls] = useState<string[]>([]);
+  const [newUrlInput, setNewUrlInput] = useState("");
 
   // Source toggle: 過去投稿一覧 (myPosts) or 他者バズ投稿 (othersPosts) or AIおまかせ (aiAuto)
   const [postSource, setPostSource] = useState<PostSource>("myPosts");
@@ -371,6 +378,7 @@ export default function GeneratePage() {
           content,
           referenceText: card.referencePost.text,
           userStyle: userStyle || undefined,
+          referenceUrls: referenceUrls.length > 0 ? referenceUrls : undefined,
         };
 
         const response = await fetch("/api/generate", {
@@ -466,6 +474,7 @@ export default function GeneratePage() {
         content,
         referenceText: card.referencePost.text,
         userStyle: userStyle || undefined,
+        referenceUrls: referenceUrls.length > 0 ? referenceUrls : undefined,
       };
 
       const response = await fetch("/api/generate", {
@@ -607,6 +616,84 @@ export default function GeneratePage() {
             />
           </div>
         )}
+      </div>
+
+      {/* URL Input Section */}
+      <div className="bg-white rounded-xl border border-zinc-200 shadow-sm mb-6 p-4">
+        <div className="flex items-center gap-2 mb-3">
+          <LinkIcon className="w-5 h-5 text-blue-500" />
+          <span className="font-medium text-zinc-900">参考URL（任意）</span>
+          <span className="text-xs text-zinc-400">生成時に参照したいURLを追加</span>
+        </div>
+
+        {/* URL List */}
+        {referenceUrls.length > 0 && (
+          <div className="space-y-2 mb-3">
+            {referenceUrls.map((url, index) => (
+              <div
+                key={index}
+                className="flex items-center gap-2 p-2 bg-blue-50 rounded-lg group"
+              >
+                <LinkIcon className="w-4 h-4 text-blue-500 flex-shrink-0" />
+                <span className="flex-1 text-sm text-blue-600 truncate font-mono">
+                  {url}
+                </span>
+                <a
+                  href={url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="p-1.5 rounded text-blue-500 hover:bg-blue-100 transition-colors"
+                  title="URLを開く"
+                >
+                  <ExternalLink className="w-4 h-4" />
+                </a>
+                <button
+                  onClick={() => setReferenceUrls(prev => prev.filter((_, i) => i !== index))}
+                  className="p-1.5 rounded text-red-400 hover:text-red-500 hover:bg-red-50 transition-colors"
+                  title="削除"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Add URL Input */}
+        <div className="flex gap-2">
+          <input
+            type="url"
+            value={newUrlInput}
+            onChange={(e) => setNewUrlInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && newUrlInput.trim()) {
+                e.preventDefault();
+                if (newUrlInput.startsWith("http://") || newUrlInput.startsWith("https://")) {
+                  setReferenceUrls(prev => [...prev, newUrlInput.trim()]);
+                  setNewUrlInput("");
+                }
+              }
+            }}
+            placeholder="https://example.com/article"
+            className="flex-1 h-10 px-3 bg-zinc-50 border border-zinc-200 rounded-lg text-zinc-900 placeholder:text-zinc-400 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+          <button
+            onClick={() => {
+              if (newUrlInput.trim() && (newUrlInput.startsWith("http://") || newUrlInput.startsWith("https://"))) {
+                setReferenceUrls(prev => [...prev, newUrlInput.trim()]);
+                setNewUrlInput("");
+              }
+            }}
+            disabled={!newUrlInput.trim() || (!newUrlInput.startsWith("http://") && !newUrlInput.startsWith("https://"))}
+            className="px-4 h-10 bg-blue-500 text-white text-sm font-medium rounded-lg hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-1.5"
+          >
+            <Plus className="w-4 h-4" />
+            追加
+          </button>
+        </div>
+        <p className="text-xs text-zinc-400 mt-2">
+          ※ URLを追加すると、AI生成時に記事内容を参考にします
+        </p>
       </div>
 
       {/* Category Selection (if not yet generated) */}

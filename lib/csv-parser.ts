@@ -193,12 +193,33 @@ export function calculateTier(likes: number): "S" | "A" | "B" | "C" {
 }
 
 /**
+ * Extract URLs from text
+ * Matches http/https URLs
+ */
+export function extractUrls(text: string): string[] {
+  // URL pattern: matches http:// or https:// followed by non-whitespace characters
+  const urlPattern = /https?:\/\/[^\s\u3000\u200B\u200C\u200D\uFEFF]+/gi;
+  const matches = text.match(urlPattern);
+
+  if (!matches) return [];
+
+  // Clean up URLs (remove trailing punctuation that might have been captured)
+  return matches.map(url => {
+    // Remove trailing punctuation like 。、」）etc.
+    return url.replace(/[。、！？」）】』"'…]+$/, '');
+  });
+}
+
+/**
  * Convert CSV rows to Post objects
  */
 export function convertRowsToPosts(rows: CSVRow[]): Post[] {
   return rows.map((row, index) => {
     const likes = parseInt(row.likes, 10) || 0;
     const retweets = row.retweets ? parseInt(row.retweets, 10) || 0 : 0;
+
+    // Extract URLs from text
+    const urls = extractUrls(row.text);
 
     return {
       id: `post_${Date.now()}_${index}`,
@@ -214,6 +235,7 @@ export function convertRowsToPosts(rows: CSVRow[]): Post[] {
       structure: [],
       repostCount: 0,
       lastRepostedAt: null,
+      urls: urls.length > 0 ? urls : undefined,
     };
   });
 }

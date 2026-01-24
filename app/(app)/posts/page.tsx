@@ -19,6 +19,8 @@ import {
   Tag,
   Plus,
   Trash2,
+  Link as LinkIcon,
+  ExternalLink,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 import { getPosts, clearPosts } from "@/lib/firebase";
@@ -34,6 +36,7 @@ interface Post {
   retweets: number;
   replies: number;
   structure: { role: string; text: string }[];
+  urls?: string[];
 }
 
 const tierConfig = {
@@ -349,6 +352,12 @@ export default function PostsPage() {
                       <span className="px-3 py-1 text-sm bg-zinc-100 text-zinc-600 rounded-lg">
                         {post.category}
                       </span>
+                      {post.urls && post.urls.length > 0 && (
+                        <span className="px-2 py-1 text-xs bg-blue-100 text-blue-600 rounded-lg flex items-center gap-1">
+                          <LinkIcon className="w-3 h-3" />
+                          URL
+                        </span>
+                      )}
                       <span className="text-sm text-zinc-400 flex items-center gap-1.5">
                         <Calendar className="w-4 h-4" />
                         {formatDate(post.createdAt)}
@@ -451,6 +460,44 @@ export default function PostsPage() {
                     </p>
                   </div>
                 </div>
+
+                {/* URLs (if available) */}
+                {selectedPost.urls && selectedPost.urls.length > 0 && (
+                  <div className="p-6 border-b border-zinc-100">
+                    <h4 className="text-sm font-semibold text-zinc-500 uppercase tracking-wider mb-3 flex items-center gap-2">
+                      <LinkIcon className="w-4 h-4" />
+                      含まれるURL
+                    </h4>
+                    <div className="space-y-2">
+                      {selectedPost.urls.map((url, index) => (
+                        <div
+                          key={index}
+                          className="flex items-center gap-2 p-3 bg-blue-50 rounded-lg group"
+                        >
+                          <span className="flex-1 text-sm text-blue-600 truncate font-mono">
+                            {url}
+                          </span>
+                          <button
+                            onClick={() => handleCopy(url, `url_${index}`)}
+                            className="p-1.5 rounded-lg text-blue-500 hover:bg-blue-100 transition-colors"
+                            title="URLをコピー"
+                          >
+                            <Copy className="w-4 h-4" />
+                          </button>
+                          <a
+                            href={url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="p-1.5 rounded-lg text-blue-500 hover:bg-blue-100 transition-colors"
+                            title="URLを開く"
+                          >
+                            <ExternalLink className="w-4 h-4" />
+                          </a>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
 
                 {/* Structure (if available) */}
                 {selectedPost.structure && selectedPost.structure.length > 0 && (

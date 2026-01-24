@@ -13,6 +13,7 @@ export interface Post {
   structure: PostStructure[];
   repostCount: number;
   lastRepostedAt: string | null;
+  urls?: string[];  // 投稿本文に含まれるURL
 }
 
 export interface PostStructure {
