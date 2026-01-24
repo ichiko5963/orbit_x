@@ -256,7 +256,7 @@ export function convertRowsToPosts(rows: CSVRow[]): Post[] {
     // Extract URLs from text
     const urls = extractUrls(row.text);
 
-    return {
+    const post: Post = {
       id: `post_${Date.now()}_${index}`,
       tweetId: row.link ? row.link.split("/").pop() || `post_${index}` : `post_${index}`,
       text: row.text,
@@ -270,8 +270,14 @@ export function convertRowsToPosts(rows: CSVRow[]): Post[] {
       structure: [],
       repostCount: 0,
       lastRepostedAt: null,
-      urls: urls.length > 0 ? urls : undefined,
     };
+
+    // Only add urls field if there are URLs (Firestore doesn't accept undefined)
+    if (urls.length > 0) {
+      post.urls = urls;
+    }
+
+    return post;
   });
 }
 
