@@ -234,23 +234,25 @@ function AppLayoutContent({ children }: { children: ReactNode }) {
               height={44}
               className="rounded-xl flex-shrink-0"
             />
-            {!collapsed && (
-              <span className="text-xl font-bold text-zinc-900 whitespace-nowrap">
-                OrbitX
-              </span>
-            )}
+            <span className={clsx(
+              "text-xl font-bold text-zinc-900 whitespace-nowrap transition-[opacity,transform] duration-300",
+              collapsed ? "opacity-0 -translate-x-2 w-0" : "opacity-100 translate-x-0"
+            )}>
+              OrbitX
+            </span>
           </Link>
         </div>
 
         {/* Navigation */}
-        <nav className="flex-1 p-4 space-y-8 overflow-y-auto">
+        <nav className="flex-1 p-4 space-y-8 overflow-y-auto overflow-x-hidden">
           {/* Main Navigation */}
           <div>
-            {!collapsed && (
-              <p className="px-4 mb-3 text-xs font-semibold text-zinc-400 uppercase tracking-widest">
-                メイン
-              </p>
-            )}
+            <p className={clsx(
+              "px-4 mb-3 text-xs font-semibold text-zinc-400 uppercase tracking-widest transition-opacity duration-300 whitespace-nowrap",
+              collapsed ? "opacity-0 h-0 mb-0 overflow-hidden" : "opacity-100"
+            )}>
+              メイン
+            </p>
             <div className="space-y-1.5">
               {mainNav.map((item) => {
                 const isActive = pathname === item.href;
@@ -260,11 +262,11 @@ function AppLayoutContent({ children }: { children: ReactNode }) {
                     key={item.href}
                     href={item.href}
                     className={clsx(
-                      "group flex items-center gap-4 px-4 py-3.5 rounded-xl transition-all duration-200",
+                      "group flex items-center gap-4 py-3.5 rounded-xl transition-all duration-200",
                       isActive
                         ? "bg-emerald-500 text-white shadow-lg shadow-emerald-500/25"
                         : "text-zinc-600 hover:text-zinc-900 hover:bg-zinc-100",
-                      collapsed && "justify-center px-3"
+                      collapsed ? "justify-center px-3" : "px-4"
                     )}
                     title={collapsed ? item.name : undefined}
                   >
@@ -274,9 +276,12 @@ function AppLayoutContent({ children }: { children: ReactNode }) {
                         !isActive && "group-hover:scale-110"
                       )}
                     />
-                    {!collapsed && (
-                      <span className="text-base font-medium">{item.name}</span>
-                    )}
+                    <span className={clsx(
+                      "text-base font-medium whitespace-nowrap transition-[opacity,width] duration-300 overflow-hidden",
+                      collapsed ? "opacity-0 w-0" : "opacity-100 w-auto"
+                    )}>
+                      {item.name}
+                    </span>
                   </Link>
                 );
               })}
@@ -285,11 +290,12 @@ function AppLayoutContent({ children }: { children: ReactNode }) {
 
           {/* Sub Navigation */}
           <div>
-            {!collapsed && (
-              <p className="px-4 mb-3 text-xs font-semibold text-zinc-400 uppercase tracking-widest">
-                管理
-              </p>
-            )}
+            <p className={clsx(
+              "px-4 mb-3 text-xs font-semibold text-zinc-400 uppercase tracking-widest transition-opacity duration-300 whitespace-nowrap",
+              collapsed ? "opacity-0 h-0 mb-0 overflow-hidden" : "opacity-100"
+            )}>
+              管理
+            </p>
             <div className="space-y-1.5">
               {subNav.map((item) => {
                 const isActive = pathname === item.href;
@@ -298,11 +304,11 @@ function AppLayoutContent({ children }: { children: ReactNode }) {
                     key={item.href}
                     href={item.href}
                     className={clsx(
-                      "group flex items-center gap-4 px-4 py-3.5 rounded-xl transition-all duration-200",
+                      "group flex items-center gap-4 py-3.5 rounded-xl transition-all duration-200",
                       isActive
                         ? "bg-emerald-500 text-white shadow-lg shadow-emerald-500/25"
                         : "text-zinc-600 hover:text-zinc-900 hover:bg-zinc-100",
-                      collapsed && "justify-center px-3"
+                      collapsed ? "justify-center px-3" : "px-4"
                     )}
                     title={collapsed ? item.name : undefined}
                   >
@@ -312,9 +318,12 @@ function AppLayoutContent({ children }: { children: ReactNode }) {
                         !isActive && "group-hover:scale-110"
                       )}
                     />
-                    {!collapsed && (
-                      <span className="text-base font-medium">{item.name}</span>
-                    )}
+                    <span className={clsx(
+                      "text-base font-medium whitespace-nowrap transition-[opacity,width] duration-300 overflow-hidden",
+                      collapsed ? "opacity-0 w-0" : "opacity-100 w-auto"
+                    )}>
+                      {item.name}
+                    </span>
                   </Link>
                 );
               })}
@@ -323,10 +332,13 @@ function AppLayoutContent({ children }: { children: ReactNode }) {
         </nav>
 
         {/* User Profile */}
-        <div className="p-4 border-t border-zinc-100">
-          {!collapsed ? (
-            <div className="flex items-center gap-3 p-3 rounded-xl bg-zinc-50">
-              {/* Show X profile if connected, otherwise Google profile */}
+        <div className="p-4 border-t border-zinc-100 overflow-hidden">
+          <div className={clsx(
+            "flex items-center gap-3 p-3 rounded-xl transition-all duration-300",
+            collapsed ? "justify-center bg-transparent" : "bg-zinc-50"
+          )}>
+            {/* Avatar - always visible */}
+            <div className="flex-shrink-0">
               {xConnected && xProfile?.profileImageUrl ? (
                 <Image
                   src={xProfile.profileImageUrl.replace("_normal", "_200x200")}
@@ -348,45 +360,44 @@ function AppLayoutContent({ children }: { children: ReactNode }) {
                   {user.displayName?.[0] || user.email?.[0] || "U"}
                 </div>
               )}
-              <div className="flex-1 min-w-0">
-                {/* Show X name/username if connected */}
-                {xConnected && xProfile ? (
-                  <>
-                    <p className="text-base font-semibold text-zinc-900 truncate">
-                      {xProfile.name}
-                    </p>
-                    <p className="text-sm text-blue-500 truncate">
-                      @{xProfile.username}
-                    </p>
-                  </>
-                ) : (
-                  <>
-                    <p className="text-base font-semibold text-zinc-900 truncate">
-                      {user.displayName || "ユーザー"}
-                    </p>
-                    <p className="text-sm text-zinc-500 truncate">
-                      {user.email}
-                    </p>
-                  </>
-                )}
-              </div>
-              <button
-                onClick={signOut}
-                className="p-2 rounded-lg text-zinc-400 hover:text-red-500 hover:bg-red-50 transition-colors"
-                title="ログアウト"
-              >
-                <LogOut className="w-5 h-5" />
-              </button>
             </div>
-          ) : (
+            {/* User info - CSS hidden when collapsed */}
+            <div className={clsx(
+              "min-w-0 transition-[opacity,width] duration-300 overflow-hidden",
+              collapsed ? "opacity-0 w-0" : "opacity-100 flex-1"
+            )}>
+              {xConnected && xProfile ? (
+                <>
+                  <p className="text-base font-semibold text-zinc-900 truncate whitespace-nowrap">
+                    {xProfile.name}
+                  </p>
+                  <p className="text-sm text-blue-500 truncate whitespace-nowrap">
+                    @{xProfile.username}
+                  </p>
+                </>
+              ) : (
+                <>
+                  <p className="text-base font-semibold text-zinc-900 truncate whitespace-nowrap">
+                    {user.displayName || "ユーザー"}
+                  </p>
+                  <p className="text-sm text-zinc-500 truncate whitespace-nowrap">
+                    {user.email}
+                  </p>
+                </>
+              )}
+            </div>
+            {/* Logout button - CSS hidden when collapsed */}
             <button
               onClick={signOut}
-              className="w-full p-3 rounded-xl text-zinc-400 hover:text-red-500 hover:bg-red-50 transition-colors flex items-center justify-center"
+              className={clsx(
+                "p-2 rounded-lg text-zinc-400 hover:text-red-500 hover:bg-red-50 transition-all duration-300",
+                collapsed ? "opacity-0 w-0 p-0 overflow-hidden" : "opacity-100"
+              )}
               title="ログアウト"
             >
-              <LogOut className="w-6 h-6" />
+              <LogOut className="w-5 h-5" />
             </button>
-          )}
+          </div>
         </div>
       </aside>
 
