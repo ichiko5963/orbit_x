@@ -82,7 +82,7 @@ export function ImportProvider({ children }: { children: ReactNode }) {
     });
 
     try {
-      // Step 0: ファイル読み込み
+      // Step 0: ファイル読み込み (0-10%)
       setProgress((prev) => ({
         ...prev,
         currentStep: 0,
@@ -109,17 +109,17 @@ export function ImportProvider({ children }: { children: ReactNode }) {
       setProgress((prev) => ({
         ...prev,
         totalCount: totalPosts,
-        percentage: 15,
+        percentage: 10,
       }));
 
       await new Promise((resolve) => setTimeout(resolve, 300));
 
-      // Step 1: データ検証
+      // Step 1: データ検証 (10-20%)
       setProgress((prev) => ({
         ...prev,
         currentStep: 1,
         stepName: steps[1].name,
-        percentage: 25,
+        percentage: 15,
       }));
 
       const filteredCsv = filteredLines.join("\n");
@@ -135,39 +135,34 @@ export function ImportProvider({ children }: { children: ReactNode }) {
         ...prev,
         currentStep: 2,
         stepName: steps[2].name,
-        percentage: 35,
+        percentage: 20,
         processedCount: 0,
       }));
 
       // Start a progress simulation during API call
-      // This simulates progress while the actual API processes all items
+      // Percentage is directly tied to processedCount/totalCount
+      // 20% = start of processing, 95% = end of processing
       let simulatedProgress = 0;
       const progressInterval = setInterval(() => {
         setProgress((prev) => {
-          // Simulate gradual progress during API call
-          // Progress goes up to 80% of totalCount during API processing
-          const targetCount = Math.floor(prev.totalCount * 0.85);
+          // Progress goes up to 90% of totalCount during API processing
+          const targetCount = Math.floor(prev.totalCount * 0.9);
           if (simulatedProgress < targetCount) {
-            // Increment by random amount (1-5 items at a time)
-            const increment = Math.floor(Math.random() * 5) + 1;
+            // Increment by random amount (1-3 items at a time)
+            const increment = Math.floor(Math.random() * 3) + 1;
             simulatedProgress = Math.min(simulatedProgress + increment, targetCount);
 
-            // Calculate which step we're in based on progress
+            // Percentage directly tied to progress ratio
+            // Range: 20% (start) to 95% (end)
             const progressRatio = simulatedProgress / prev.totalCount;
-            let currentStep = 2; // 構造抽出
-            let percentage = 35;
+            const percentage = 20 + (progressRatio * 75); // 20% + up to 75% = 95%
 
-            if (progressRatio > 0.25 && progressRatio <= 0.5) {
-              currentStep = 3; // カテゴリー分類
-              percentage = 35 + (progressRatio - 0.25) * 80;
-            } else if (progressRatio > 0.5 && progressRatio <= 0.75) {
-              currentStep = 4; // 型テンプレート生成
-              percentage = 55 + (progressRatio - 0.5) * 80;
-            } else if (progressRatio > 0.75) {
-              currentStep = 5; // 口調分析
-              percentage = 75 + (progressRatio - 0.75) * 60;
-            } else {
-              percentage = 35 + progressRatio * 80;
+            // Determine step based on progress ratio
+            let currentStep = 2; // 構造抽出 (0-33%)
+            if (progressRatio > 0.66) {
+              currentStep = 4; // 型テンプレート生成 (66-100%)
+            } else if (progressRatio > 0.33) {
+              currentStep = 3; // カテゴリー分類 (33-66%)
             }
 
             return {
@@ -175,12 +170,12 @@ export function ImportProvider({ children }: { children: ReactNode }) {
               currentStep,
               stepName: steps[currentStep].name,
               processedCount: simulatedProgress,
-              percentage: Math.min(percentage, 90),
+              percentage: Math.round(percentage),
             };
           }
           return prev;
         });
-      }, 150); // Update every 150ms for smooth progress
+      }, 100); // Update every 100ms for smooth progress
 
       const response = await fetch("/api/import", {
         method: "POST",
