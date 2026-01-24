@@ -22,20 +22,25 @@ interface ProcessStep {
 
 const steps: ProcessStep[] = [
   { name: "ファイル読み込み", description: "CSVファイルを解析中" },
-  { name: "データ検証", description: "必須カラムを確認中" },
+  { name: "データ検証", description: "カラムを確認中" },
   { name: "構造抽出", description: "AIが投稿構造を分析中" },
   { name: "カテゴリー分類", description: "投稿をカテゴリーに分類中" },
   { name: "型テンプレート生成", description: "再利用可能な型を抽出中" },
   { name: "口調分析", description: "文体パターンを分析中" },
 ];
 
-const requiredColumns = [
-  { name: "日付", description: "投稿日時" },
-  { name: "ポスト本文", description: "投稿内容" },
-  { name: "ポストのリンク", description: "投稿URL" },
-  { name: "インプレッション数", description: "表示回数" },
-  { name: "いいね", description: "いいね数" },
-  { name: "エンゲージメント", description: "反応数" },
+// Supported CSV formats
+const csvFormats = [
+  {
+    name: "X Premium形式",
+    description: "X Premiumのエクスポート",
+    columns: ["日付", "ポスト本文", "ポストのリンク", "インプレッション数", "いいね", "エンゲージメント"],
+  },
+  {
+    name: "シンプル形式",
+    description: "基本的なCSV",
+    columns: ["投稿日時", "投稿本文", "いいね数", "リツイート数"],
+  },
 ];
 
 const tiers = [
@@ -367,23 +372,38 @@ export default function ImportPage() {
 
         {/* Sidebar Info */}
         <div className="lg:col-span-2 space-y-6">
-          {/* Required Columns */}
+          {/* Supported Formats */}
           <div className="bg-white p-6 rounded-2xl border border-zinc-200 shadow-sm">
             <div className="flex items-center gap-2 mb-4">
               <Info className="w-5 h-5 text-zinc-400" />
-              <h3 className="text-lg font-semibold text-zinc-900">必須カラム</h3>
+              <h3 className="text-lg font-semibold text-zinc-900">対応フォーマット</h3>
             </div>
-            <div className="space-y-2">
-              {requiredColumns.map((col) => (
-                <div
-                  key={col.name}
-                  className="flex items-center justify-between py-2 px-3 bg-zinc-50 rounded-lg"
-                >
-                  <code className="text-sm text-emerald-600 font-mono">{col.name}</code>
-                  <span className="text-sm text-zinc-500">{col.description}</span>
+            <div className="space-y-4">
+              {csvFormats.map((format, index) => (
+                <div key={format.name} className="space-y-2">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-medium text-zinc-900">{format.name}</span>
+                    <span className="text-xs text-zinc-400">{format.description}</span>
+                  </div>
+                  <div className="flex flex-wrap gap-1">
+                    {format.columns.map((col) => (
+                      <code
+                        key={col}
+                        className="text-xs text-emerald-600 font-mono bg-zinc-50 px-2 py-1 rounded"
+                      >
+                        {col}
+                      </code>
+                    ))}
+                  </div>
+                  {index < csvFormats.length - 1 && (
+                    <div className="border-t border-zinc-100 mt-3" />
+                  )}
                 </div>
               ))}
             </div>
+            <p className="text-xs text-zinc-400 mt-4">
+              ※ 日付（投稿日時）と本文は必須です。その他のカラムは任意です。
+            </p>
           </div>
 
           {/* Tier System */}

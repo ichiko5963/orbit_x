@@ -20,14 +20,15 @@ export interface PostStructure {
   text: string;
 }
 
-// CSV row type from X Premium export
+// CSV row type (supports multiple formats)
 export interface CSVRow {
-  date: string;           // 日付
-  text: string;           // ポスト本文
-  link: string;           // ポストのリンク
-  impressions: string;    // インプレッション数
-  likes: string;          // いいね
-  engagement: string;     // エンゲージメント
+  date: string;           // 日付 / 投稿日時
+  text: string;           // ポスト本文 / 投稿本文
+  link: string;           // ポストのリンク (optional)
+  impressions: string;    // インプレッション数 (optional)
+  likes: string;          // いいね / いいね数
+  engagement: string;     // エンゲージメント (optional)
+  retweets?: string;      // リツイート数 (optional)
 }
 
 // Import result type

@@ -1,5 +1,71 @@
 import { CSVRow, Post, ImportResult } from "./types";
 
+// Column name variations for different CSV formats
+// Each key is the internal field name, value is array of possible column names
+const columnVariations: Record<string, string[]> = {
+  date: ["日付", "投稿日時", "日時", "created_at", "timestamp"],
+  text: ["ポスト本文", "投稿本文", "本文", "テキスト", "text", "content"],
+  link: ["ポストのリンク", "投稿リンク", "リンク", "URL", "url", "link"],
+  impressions: ["インプレッション数", "インプレッション", "表示回数", "impressions"],
+  likes: ["いいね", "いいね数", "ライク", "likes", "like_count"],
+  retweets: ["リツイート数", "リツイート", "RT数", "retweets", "retweet_count"],
+  engagement: ["エンゲージメント", "エンゲージメント数", "反応数", "engagement"],
+};
+
+// Minimum required fields (at least date, text, and one metric)
+const minimumRequiredFields = ["date", "text"];
+
+/**
+ * Find column index by checking all variations
+ */
+function findColumnIndex(header: string[], fieldName: string): number {
+  const variations = columnVariations[fieldName] || [];
+  for (const variation of variations) {
+    const index = header.findIndex(h => h.trim() === variation);
+    if (index !== -1) return index;
+  }
+  return -1;
+}
+
+/**
+ * Detect CSV format and return column indices
+ */
+function detectCSVFormat(header: string[]): {
+  indices: Record<string, number>;
+  format: "x-premium" | "simple" | "unknown";
+  missingRequired: string[];
+} {
+  const indices: Record<string, number> = {};
+  const missingRequired: string[] = [];
+
+  // Try to find all known columns
+  for (const fieldName of Object.keys(columnVariations)) {
+    const index = findColumnIndex(header, fieldName);
+    if (index !== -1) {
+      indices[fieldName] = index;
+    }
+  }
+
+  // Check minimum required fields
+  for (const required of minimumRequiredFields) {
+    if (indices[required] === undefined) {
+      missingRequired.push(required);
+    }
+  }
+
+  // Detect format type
+  let format: "x-premium" | "simple" | "unknown" = "unknown";
+  if (indices.date !== undefined && indices.text !== undefined) {
+    if (indices.link !== undefined && indices.impressions !== undefined) {
+      format = "x-premium";
+    } else if (indices.likes !== undefined || indices.retweets !== undefined) {
+      format = "simple";
+    }
+  }
+
+  return { indices, format, missingRequired };
+}
+
 /**
  * Parse CSV text into rows (handles multi-line quoted fields)
  */
@@ -14,31 +80,18 @@ export function parseCSV(csvText: string): CSVRow[] {
   // First row is header
   const header = allRows[0];
 
-  // Column mapping (Japanese column names from X Premium CSV)
-  const columnMapping: Record<string, string> = {
-    "日付": "date",
-    "ポスト本文": "text",
-    "ポストのリンク": "link",
-    "インプレッション数": "impressions",
-    "いいね": "likes",
-    "エンゲージメント": "engagement",
-  };
+  // Detect format and get column indices
+  const { indices, format, missingRequired } = detectCSVFormat(header);
 
-  const requiredColumns = Object.keys(columnMapping);
-
-  // Validate required columns
-  const missingColumns = requiredColumns.filter(
-    (col) => !header.includes(col)
-  );
-  if (missingColumns.length > 0) {
-    throw new Error(`必須カラムが不足しています: ${missingColumns.join(", ")}`);
+  if (missingRequired.length > 0) {
+    const missingNames = missingRequired.map(field => {
+      const variations = columnVariations[field];
+      return variations.slice(0, 2).join("または");
+    });
+    throw new Error(`必須カラムが見つかりません: ${missingNames.join(", ")}\n\n対応カラム名: ${missingRequired.map(f => columnVariations[f].join(", ")).join(" / ")}`);
   }
 
-  // Get column indices
-  const columnIndices = requiredColumns.reduce((acc, col) => {
-    acc[columnMapping[col]] = header.indexOf(col);
-    return acc;
-  }, {} as Record<string, number>);
+  console.log(`[CSV] Detected format: ${format}, columns:`, indices);
 
   // Parse data rows (skip header at index 0)
   const rows: CSVRow[] = [];
@@ -46,13 +99,20 @@ export function parseCSV(csvText: string): CSVRow[] {
     const values = allRows[i];
     if (values.length === 0 || values.every(v => !v.trim())) continue;
 
+    const getValue = (field: string, defaultValue: string = ""): string => {
+      const index = indices[field];
+      return index !== undefined ? (values[index] || defaultValue) : defaultValue;
+    };
+
     rows.push({
-      date: values[columnIndices.date] || "",
-      text: values[columnIndices.text] || "",
-      link: values[columnIndices.link] || "",
-      impressions: values[columnIndices.impressions] || "0",
-      likes: values[columnIndices.likes] || "0",
-      engagement: values[columnIndices.engagement] || "0",
+      date: getValue("date"),
+      text: getValue("text"),
+      link: getValue("link"),
+      impressions: getValue("impressions", "0"),
+      likes: getValue("likes", "0"),
+      engagement: getValue("engagement", "0"),
+      // Store retweets separately if available
+      retweets: getValue("retweets", "0"),
     });
   }
 
@@ -138,16 +198,17 @@ export function calculateTier(likes: number): "S" | "A" | "B" | "C" {
 export function convertRowsToPosts(rows: CSVRow[]): Post[] {
   return rows.map((row, index) => {
     const likes = parseInt(row.likes, 10) || 0;
+    const retweets = row.retweets ? parseInt(row.retweets, 10) || 0 : 0;
 
     return {
       id: `post_${Date.now()}_${index}`,
-      tweetId: row.link.split("/").pop() || `post_${index}`,
+      tweetId: row.link ? row.link.split("/").pop() || `post_${index}` : `post_${index}`,
       text: row.text,
       createdAt: row.date,
       impressions: parseInt(row.impressions, 10) || 0,
       likes,
-      retweets: 0, // Not available in the new CSV format
-      replies: 0,  // Not available in the new CSV format
+      retweets,
+      replies: 0,  // Not typically available in CSV exports
       tier: calculateTier(likes),
       category: "未分類",
       structure: [],
