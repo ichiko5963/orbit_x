@@ -407,10 +407,65 @@ export default function SchedulePage() {
     }
   };
 
-  // Post now
-  const handlePostNow = (text: string) => {
-    const encodedText = encodeURIComponent(text);
-    window.open(`https://twitter.com/intent/tweet?text=${encodedText}`, "_blank");
+  // Post now state
+  const [isPostingNow, setIsPostingNow] = useState(false);
+
+  // Post now using X API
+  const handlePostNow = async (post: ScheduledPost) => {
+    if (!user) return;
+    if (!confirm("この投稿を今すぐXに投稿しますか？")) return;
+
+    setIsPostingNow(true);
+    try {
+      const response = await fetch("/api/x/post-now", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userId: user.uid,
+          text: post.text,
+          threadPosts: post.threadPosts,
+          quoteTweetId: post.quoteTweetUrl ? extractTweetId(post.quoteTweetUrl) : undefined,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || "投稿に失敗しました");
+      }
+
+      // Update post status to posted
+      await updateScheduledPost(user.uid, post.id, {
+        status: "posted",
+        tweetId: data.tweet?.id,
+      });
+
+      // Update local state
+      setPosts((prev) =>
+        prev.map((p) =>
+          p.id === post.id ? { ...p, status: "posted" } : p
+        )
+      );
+
+      setSelectedPost(null);
+      showToast("投稿しました！");
+
+      // Open the tweet in a new tab
+      if (data.tweetUrl) {
+        window.open(data.tweetUrl, "_blank");
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "投稿に失敗しました";
+      alert(message);
+    } finally {
+      setIsPostingNow(false);
+    }
+  };
+
+  // Helper to extract tweet ID from URL
+  const extractTweetId = (url: string): string | undefined => {
+    const match = url.match(/status\/(\d+)/);
+    return match ? match[1] : undefined;
   };
 
   // Duplicate post
@@ -956,11 +1011,16 @@ export default function SchedulePage() {
                     <span className="text-xs">複製</span>
                   </button>
                   <button
-                    onClick={() => handlePostNow(selectedPost.text)}
-                    className="flex flex-col items-center gap-1 py-3 text-emerald-600 hover:bg-emerald-50 rounded-xl"
+                    onClick={() => handlePostNow(selectedPost)}
+                    disabled={isPostingNow}
+                    className="flex flex-col items-center gap-1 py-3 text-emerald-600 hover:bg-emerald-50 rounded-xl disabled:opacity-50"
                   >
-                    <ExternalLink className="w-5 h-5" />
-                    <span className="text-xs">今すぐ投稿</span>
+                    {isPostingNow ? (
+                      <Loader2 className="w-5 h-5 animate-spin" />
+                    ) : (
+                      <ExternalLink className="w-5 h-5" />
+                    )}
+                    <span className="text-xs">{isPostingNow ? "投稿中..." : "今すぐ投稿"}</span>
                   </button>
                 </div>
               </div>

@@ -175,6 +175,12 @@ export const saveScheduledPost = async (userId: string, post: any) => {
     const cleanedPost = Object.fromEntries(
       Object.entries(post).filter(([_, v]) => v !== undefined)
     );
+
+    // Convert scheduledAt to Firestore Timestamp if it's a Date
+    if (cleanedPost.scheduledAt instanceof Date) {
+      cleanedPost.scheduledAt = Timestamp.fromDate(cleanedPost.scheduledAt);
+    }
+
     await setDoc(postRef, {
       ...cleanedPost,
       createdAt: Timestamp.now(),
