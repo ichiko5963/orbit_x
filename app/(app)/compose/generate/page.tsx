@@ -45,6 +45,8 @@ import {
   deleteAIGenerationHistory,
   cleanupExpiredAIHistories,
   AIGenerationHistory,
+  getBuzzPrompt,
+  BuzzPrompt,
 } from "@/lib/firebase";
 
 // Practical X post categories (must match database)
@@ -198,6 +200,25 @@ export default function GeneratePage() {
   const [correctionPatterns, setCorrectionPatterns] = useState<CorrectionPattern[]>([]);
   const [isLoadingCorrection, setIsLoadingCorrection] = useState(false);
   const [correctionCardText, setCorrectionCardText] = useState("");
+
+  // バズるプロンプト（AI補正で使用）
+  const [buzzPrompt, setBuzzPrompt] = useState<BuzzPrompt | null>(null);
+
+  // バズるプロンプトを読み込み
+  useEffect(() => {
+    const loadBuzzPrompt = async () => {
+      if (!user) return;
+      try {
+        const savedPrompt = await getBuzzPrompt(user.uid);
+        if (savedPrompt) {
+          setBuzzPrompt(savedPrompt);
+        }
+      } catch (error) {
+        console.error("Failed to load buzz prompt:", error);
+      }
+    };
+    loadBuzzPrompt();
+  }, [user]);
 
   // Load content and link from sessionStorage
   useEffect(() => {
@@ -1002,7 +1023,7 @@ export default function GeneratePage() {
     }
   };
 
-  // AI補正: 構造維持で一貫性・有益性を高める3パターン生成
+  // AI補正: 構造維持で一貫性・有益性を高める3パターン生成（バズるプロンプト使用）
   const handleAICorrect = async (cardId: number) => {
     const card = cards.find(c => c.id === cardId);
     if (!card || !card.text) return;
@@ -1022,6 +1043,14 @@ export default function GeneratePage() {
           originalContent: content,
           referenceText: card.referencePost.text,
           researchData: deepResearch || undefined,
+          // バズるプロンプトがあれば渡す
+          buzzPrompt: buzzPrompt ? {
+            prompt: buzzPrompt.prompt,
+            patterns: buzzPrompt.patterns,
+            characteristics: buzzPrompt.characteristics,
+            avoidPatterns: buzzPrompt.avoidPatterns,
+            samplePhrases: buzzPrompt.samplePhrases,
+          } : undefined,
         }),
       });
 

@@ -891,5 +891,67 @@ export interface ScheduledPostExtended {
   updatedAt?: any;
 }
 
+// ==========================================
+// Buzz Prompt (バズるプロンプト)
+// ==========================================
+
+export interface BuzzPrompt {
+  id?: string;
+  prompt: string; // バズる投稿を作るためのプロンプト
+  patterns: {
+    name: string; // パターン名
+    description: string; // 説明
+    template: string; // 抽象化されたテンプレート
+  }[];
+  characteristics: string[]; // バズる投稿の特徴
+  avoidPatterns: string[]; // 避けるべきパターン
+  samplePhrases: string[]; // 使える表現例
+  analyzedPosts: number; // 分析した投稿数
+  avgLikesAnalyzed: number; // 分析した投稿の平均いいね数
+  createdAt?: any;
+  updatedAt?: any;
+}
+
+// Save buzz prompt (バズるプロンプトを保存)
+export const saveBuzzPrompt = async (userId: string, buzzPrompt: Omit<BuzzPrompt, "id" | "createdAt" | "updatedAt">) => {
+  try {
+    const promptRef = doc(db, "users", userId, "settings", "buzzPrompt");
+    await setDoc(promptRef, {
+      ...buzzPrompt,
+      createdAt: Timestamp.now(),
+      updatedAt: Timestamp.now(),
+    });
+  } catch (error) {
+    console.error("Save buzz prompt error:", error);
+    throw error;
+  }
+};
+
+// Get buzz prompt (バズるプロンプトを取得)
+export const getBuzzPrompt = async (userId: string): Promise<BuzzPrompt | null> => {
+  try {
+    const promptRef = doc(db, "users", userId, "settings", "buzzPrompt");
+    const snapshot = await getDoc(promptRef);
+    if (snapshot.exists()) {
+      return snapshot.data() as BuzzPrompt;
+    }
+    return null;
+  } catch (error) {
+    console.error("Get buzz prompt error:", error);
+    return null;
+  }
+};
+
+// Delete buzz prompt (バズるプロンプトを削除)
+export const deleteBuzzPrompt = async (userId: string) => {
+  try {
+    const promptRef = doc(db, "users", userId, "settings", "buzzPrompt");
+    await deleteDoc(promptRef);
+  } catch (error) {
+    console.error("Delete buzz prompt error:", error);
+    throw error;
+  }
+};
+
 export { auth, db, onAuthStateChanged };
 export type { User };

@@ -23,10 +23,12 @@ import {
   ExternalLink,
   Send,
   Clock,
+  Wand2,
+  Zap,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
-import { getPosts, clearPosts } from "@/lib/firebase";
+import { getPosts, clearPosts, saveBuzzPrompt, getBuzzPrompt, BuzzPrompt } from "@/lib/firebase";
 
 interface Post {
   id: string;
@@ -103,6 +105,11 @@ export default function PostsPage() {
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [showCategoryFilter, setShowCategoryFilter] = useState(false);
 
+  // バズるプロンプト関連
+  const [buzzPrompt, setBuzzPrompt] = useState<BuzzPrompt | null>(null);
+  const [isAnalyzingBuzz, setIsAnalyzingBuzz] = useState(false);
+  const [showBuzzModal, setShowBuzzModal] = useState(false);
+
   // Load posts from Firebase
   useEffect(() => {
     const loadPosts = async () => {
@@ -111,6 +118,12 @@ export default function PostsPage() {
       try {
         const fetchedPosts = await getPosts(user.uid);
         setPosts(fetchedPosts as Post[]);
+
+        // バズるプロンプトも読み込み
+        const savedBuzzPrompt = await getBuzzPrompt(user.uid);
+        if (savedBuzzPrompt) {
+          setBuzzPrompt(savedBuzzPrompt);
+        }
       } catch (error) {
         console.error("Failed to load posts:", error);
       } finally {
@@ -119,6 +132,50 @@ export default function PostsPage() {
     };
     loadPosts();
   }, [user]);
+
+  // バズるプロンプト分析
+  const handleAnalyzeBuzz = async () => {
+    if (!user) return;
+
+    const sTierPosts = posts.filter(p => p.tier === "S");
+    if (sTierPosts.length < 3) {
+      alert("S tier投稿が3件以上必要です。まずは投稿をインポートしてください。");
+      return;
+    }
+
+    setIsAnalyzingBuzz(true);
+    try {
+      const response = await fetch("/api/generate/analyze-buzz", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          posts: sTierPosts.map(p => ({
+            text: p.text,
+            likes: p.likes,
+            tier: p.tier,
+          })),
+        }),
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || "分析に失敗しました");
+      }
+
+      const data = await response.json();
+      if (data.success && data.buzzPrompt) {
+        // Firestoreに保存
+        await saveBuzzPrompt(user.uid, data.buzzPrompt);
+        setBuzzPrompt(data.buzzPrompt);
+        setShowBuzzModal(true);
+      }
+    } catch (error) {
+      console.error("Buzz analysis error:", error);
+      alert(error instanceof Error ? error.message : "分析に失敗しました");
+    } finally {
+      setIsAnalyzingBuzz(false);
+    }
+  };
 
   // Filter posts
   const filteredPosts = posts.filter((post) => {
@@ -210,6 +267,25 @@ export default function PostsPage() {
           </p>
         </div>
         <div className="flex items-center gap-4">
+          {/* バズるプロンプト作成ボタン */}
+          {stats.tierS >= 3 && (
+            <button
+              onClick={() => buzzPrompt ? setShowBuzzModal(true) : handleAnalyzeBuzz()}
+              disabled={isAnalyzingBuzz}
+              className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-medium transition-all ${
+                buzzPrompt
+                  ? "bg-amber-100 text-amber-700 hover:bg-amber-200 border border-amber-300"
+                  : "bg-gradient-to-r from-amber-500 to-orange-500 text-white hover:from-amber-600 hover:to-orange-600 shadow-md"
+              }`}
+            >
+              {isAnalyzingBuzz ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <Wand2 className="w-4 h-4" />
+              )}
+              {buzzPrompt ? "バズるプロンプト確認" : "S tier投稿からバズるプロンプト作成"}
+            </button>
+          )}
           <div className="flex items-center gap-2 px-4 py-2 bg-white border border-zinc-200 rounded-xl">
             <span className="text-sm text-zinc-500">総投稿数:</span>
             <span className="text-lg font-bold text-zinc-900">{stats.total}</span>
@@ -601,6 +677,146 @@ export default function PostsPage() {
                 </p>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* バズるプロンプト モーダル */}
+      {showBuzzModal && buzzPrompt && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div
+            className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+            onClick={() => setShowBuzzModal(false)}
+          />
+          <div className="relative w-full max-w-3xl bg-white rounded-2xl shadow-xl mx-4 overflow-hidden max-h-[90vh] flex flex-col">
+            {/* Header */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-200 bg-gradient-to-r from-amber-50 to-orange-50">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-amber-100 rounded-lg">
+                  <Wand2 className="w-5 h-5 text-amber-600" />
+                </div>
+                <div>
+                  <div className="font-semibold text-zinc-900">バズるプロンプト</div>
+                  <div className="text-sm text-zinc-500">
+                    {buzzPrompt.analyzedPosts}件のS tier投稿を分析（平均{buzzPrompt.avgLikesAnalyzed}いいね）
+                  </div>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={handleAnalyzeBuzz}
+                  disabled={isAnalyzingBuzz}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-amber-600 hover:bg-amber-100 rounded-lg transition-colors"
+                >
+                  {isAnalyzingBuzz ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <RefreshCw className="w-4 h-4" />
+                  )}
+                  再生成
+                </button>
+                <button
+                  onClick={() => setShowBuzzModal(false)}
+                  className="p-2 rounded-lg hover:bg-zinc-100"
+                >
+                  <X className="w-5 h-5 text-zinc-500" />
+                </button>
+              </div>
+            </div>
+
+            {/* Content */}
+            <div className="flex-1 overflow-y-auto p-6 space-y-6">
+              {/* Prompt */}
+              <div>
+                <h4 className="text-sm font-semibold text-zinc-500 uppercase tracking-wider mb-2 flex items-center gap-2">
+                  <Zap className="w-4 h-4" />
+                  AI生成用プロンプト
+                </h4>
+                <div className="p-4 bg-amber-50 rounded-xl border border-amber-200">
+                  <p className="text-sm text-zinc-700 whitespace-pre-wrap leading-relaxed">
+                    {buzzPrompt.prompt}
+                  </p>
+                </div>
+              </div>
+
+              {/* Patterns */}
+              <div>
+                <h4 className="text-sm font-semibold text-zinc-500 uppercase tracking-wider mb-3">
+                  バズるパターン（3種類）
+                </h4>
+                <div className="grid gap-3">
+                  {buzzPrompt.patterns.map((pattern, i) => (
+                    <div key={i} className="p-4 bg-white rounded-xl border border-zinc-200">
+                      <div className="flex items-center gap-2 mb-2">
+                        <span className={`px-2 py-0.5 text-xs font-semibold rounded ${
+                          i === 0 ? "bg-blue-100 text-blue-700" :
+                          i === 1 ? "bg-emerald-100 text-emerald-700" :
+                          "bg-violet-100 text-violet-700"
+                        }`}>
+                          パターン{i + 1}
+                        </span>
+                        <span className="font-medium text-zinc-900">{pattern.name}</span>
+                      </div>
+                      <p className="text-sm text-zinc-500 mb-2">{pattern.description}</p>
+                      <div className="p-3 bg-zinc-50 rounded-lg text-sm text-zinc-600 font-mono">
+                        {pattern.template}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Characteristics */}
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <h4 className="text-sm font-semibold text-zinc-500 uppercase tracking-wider mb-2">
+                    バズる投稿の特徴
+                  </h4>
+                  <ul className="space-y-1.5">
+                    {buzzPrompt.characteristics.map((char, i) => (
+                      <li key={i} className="flex items-start gap-2 text-sm text-zinc-600">
+                        <CheckCircle2 className="w-4 h-4 text-emerald-500 flex-shrink-0 mt-0.5" />
+                        {char}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+                <div>
+                  <h4 className="text-sm font-semibold text-zinc-500 uppercase tracking-wider mb-2">
+                    避けるべきパターン
+                  </h4>
+                  <ul className="space-y-1.5">
+                    {buzzPrompt.avoidPatterns.map((pattern, i) => (
+                      <li key={i} className="flex items-start gap-2 text-sm text-zinc-600">
+                        <X className="w-4 h-4 text-red-500 flex-shrink-0 mt-0.5" />
+                        {pattern}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+
+              {/* Sample Phrases */}
+              <div>
+                <h4 className="text-sm font-semibold text-zinc-500 uppercase tracking-wider mb-2">
+                  使える表現例
+                </h4>
+                <div className="flex flex-wrap gap-2">
+                  {buzzPrompt.samplePhrases.map((phrase, i) => (
+                    <span key={i} className="px-3 py-1.5 bg-zinc-100 text-zinc-700 text-sm rounded-lg">
+                      「{phrase}」
+                    </span>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="px-6 py-4 border-t border-zinc-200 bg-zinc-50">
+              <p className="text-xs text-zinc-500 text-center">
+                💡 このプロンプトはAI補正時に自動で使用されます
+              </p>
+            </div>
           </div>
         </div>
       )}

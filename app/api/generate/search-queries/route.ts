@@ -5,93 +5,50 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
-// カテゴリー別の検索クエリ生成ガイド
-const CATEGORY_SEARCH_GUIDES: Record<string, string> = {
-  "速報・ニュース系": `
-【速報・ニュース系の検索クエリ】
-- 公式発表、プレスリリース、リリースノート
-- 「〇〇 発表」「〇〇 リリース」「〇〇 アップデート」
-- 業界の最新動向、トレンド
-- 具体的なバージョン番号や日付を含める
-例: "OpenAI GPT-5 発表 2026年1月", "Apple Vision Pro 2 新機能 2026"`,
+// Perplexity APIを使用してリアルタイムWeb検索
+async function searchWithPerplexity(query: string): Promise<string> {
+  const perplexityKey = process.env.PERPLEXITY_API_KEY;
+  if (!perplexityKey) {
+    console.log("[SearchQueries] Perplexity API key not found, using OpenAI only");
+    return "";
+  }
 
-  "Tips・ノウハウ系": `
-【Tips・ノウハウ系の検索クエリ】
-- ベストプラクティス、効率的な方法
-- 「〇〇 コツ」「〇〇 テクニック」「〇〇 効率化」
-- 具体的な使い方、設定方法
-- プロのやり方、上級者向けTips
-例: "Claude プロンプト テクニック 2026", "React パフォーマンス最適化 ベストプラクティス"`,
+  try {
+    const response = await fetch("https://api.perplexity.ai/chat/completions", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${perplexityKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: "llama-3.1-sonar-small-128k-online",
+        messages: [
+          {
+            role: "system",
+            content: "You are a research assistant. Find the most recent and specific information about the given topic. Focus on concrete updates, releases, announcements from the last 2 weeks. Provide specific details like version numbers, dates, feature names. Answer in Japanese.",
+          },
+          {
+            role: "user",
+            content: `「${query}」について、直近2週間の最新情報を具体的に教えてください。具体的なアップデート内容、リリース情報、記事、有識者の発言などを含めてください。`,
+          },
+        ],
+        max_tokens: 1000,
+        temperature: 0.2,
+      }),
+    });
 
-  "記事・コンテンツ紹介系": `
-【記事・コンテンツ紹介系の検索クエリ】
-- 元記事の主題に関する詳細情報
-- 関連する技術的背景、歴史
-- 著者や企業についての情報
-- 類似の事例、比較対象
-例: "LLM エージェント 最新研究 2026", "〇〇 の仕組み 技術解説"`,
+    if (!response.ok) {
+      console.error("[SearchQueries] Perplexity API error:", response.status);
+      return "";
+    }
 
-  "ツール・サービス紹介系": `
-【ツール・サービス紹介系の検索クエリ】
-- ツールの公式情報、機能一覧
-- 料金プラン、無料版の制限
-- 競合ツールとの比較
-- 実際の使用感、レビュー
-例: "Cursor vs GitHub Copilot 2026 比較", "〇〇 料金 プラン 2026"`,
-
-  "動画・メディア紹介系": `
-【動画・メディア紹介系の検索クエリ】
-- 動画の主題に関する詳細情報
-- 登場人物、企業の背景
-- 関連する最新ニュース
-- 視聴者の反応、コメント
-例: "〇〇 インタビュー 最新", "〇〇 カンファレンス 2026 まとめ"`,
-
-  "プロンプト・AI活用系": `
-【プロンプト・AI活用系の検索クエリ】
-- 最新のAIモデルの機能、特徴
-- プロンプトエンジニアリング手法
-- AI活用の具体的な事例
-- 料金、API、制限事項
-例: "Claude 3.5 Sonnet プロンプト 2026", "GPT-4o 新機能 活用法"`,
-
-  "プロダクト・リリース系": `
-【プロダクト・リリース系の検索クエリ】
-- 類似プロダクトの市場動向
-- 技術スタック、アーキテクチャ
-- 競合分析、差別化ポイント
-- ユーザー獲得、マーケティング手法
-例: "SaaS ローンチ 戦略 2026", "〇〇 市場規模 2026"`,
-
-  "イベント・登壇系": `
-【イベント・登壇系の検索クエリ】
-- イベントの概要、参加者
-- 登壇トピックの詳細情報
-- 過去の同イベントの内容
-- 業界のトレンド、注目テーマ
-例: "〇〇 カンファレンス 2026 登壇者", "〇〇 勉強会 最新"`,
-
-  "プレゼント・キャンペーン系": `
-【プレゼント・キャンペーン系の検索クエリ】
-- プレゼント対象の製品/サービス情報
-- 製品の特徴、レビュー
-- 市場価格、入手方法
-例: "〇〇 レビュー 2026", "〇〇 価格 比較"`,
-
-  "採用・メンバー募集系": `
-【採用・メンバー募集系の検索クエリ】
-- 企業の最新情報、事業内容
-- 業界の採用トレンド
-- 給与相場、福利厚生
-例: "〇〇 企業 最新ニュース", "エンジニア 採用 トレンド 2026"`,
-
-  "日常・つぶやき系": `
-【日常・つぶやき系の検索クエリ】
-- つぶやきの主題に関する詳細情報
-- トレンドや話題のニュース
-- 共感を呼ぶ最新の事例
-例: "〇〇 トレンド 2026", "〇〇 あるある"`,
-};
+    const data = await response.json();
+    return data.choices?.[0]?.message?.content || "";
+  } catch (error) {
+    console.error("[SearchQueries] Perplexity search error:", error);
+    return "";
+  }
+}
 
 export async function POST(request: NextRequest) {
   try {
@@ -115,75 +72,97 @@ export async function POST(request: NextRequest) {
       to: todayDate.toISOString().split("T")[0],
     };
 
-    console.log("[SearchQueries] Generating queries for:", content.slice(0, 100));
+    console.log("[SearchQueries] Content:", content.slice(0, 100));
     console.log("[SearchQueries] Category:", postCategory || "none");
-    console.log("[SearchQueries] Source:", postSource || "unknown");
-    console.log("[SearchQueries] Date range:", dateRange);
 
-    // カテゴリー別のガイドを取得
-    const categoryGuide = postCategory ? CATEGORY_SEARCH_GUIDES[postCategory] || "" : "";
+    // Step 1: 投稿内容からキーワードを抽出
+    const keywordResponse = await openai.chat.completions.create({
+      model: "gpt-4o-mini",
+      messages: [
+        {
+          role: "system",
+          content: "投稿内容から最新情報を検索するための主要キーワードを3つ抽出してください。具体的なサービス名、技術名、人名などを優先。",
+        },
+        {
+          role: "user",
+          content: `【投稿内容】\n${content}\n\nJSON形式で回答: {"keywords": ["keyword1", "keyword2", "keyword3"]}`,
+        },
+      ],
+      temperature: 0.1,
+      response_format: { type: "json_object" },
+    });
 
+    let keywords: string[] = [];
+    try {
+      const parsed = JSON.parse(keywordResponse.choices[0]?.message?.content || "{}");
+      keywords = parsed.keywords || [];
+    } catch {
+      keywords = [content.slice(0, 50)];
+    }
+
+    console.log("[SearchQueries] Extracted keywords:", keywords);
+
+    // Step 2: Perplexityで実際にWeb検索して最新情報を取得
+    let webSearchResults = "";
+    if (keywords.length > 0) {
+      const searchPromises = keywords.slice(0, 2).map(async (keyword) => {
+        const result = await searchWithPerplexity(`${keyword} 最新ニュース アップデート 2026年1月`);
+        return result ? `【${keyword}の検索結果】\n${result}` : "";
+      });
+      const results = await Promise.all(searchPromises);
+      webSearchResults = results.filter(r => r).join("\n\n");
+    }
+
+    console.log("[SearchQueries] Web search completed, results length:", webSearchResults.length);
+
+    // Step 3: 検索結果を元に具体的なクエリを生成
     const response = await openai.chat.completions.create({
       model: "gpt-4o",
       messages: [
         {
           role: "system",
           content: `あなたは最新情報リサーチの専門家です。
-投稿内容とカテゴリーを分析し、直近2週間以内の最新情報を検索するための【具体的で実用的な】クエリを10個生成してください。
+Web検索で見つかった【実際の最新情報】を元に、さらに詳しく調べるための具体的な検索クエリを生成してください。
 
-【重要】本日は ${today || todayDate.toISOString().split("T")[0]} です。
-検索クエリには必ず「2026」「最新」「${todayDate.getMonth() + 1}月」などの時期を示すキーワードを含めてください。
+【重要】抽象的なクエリは禁止
+✗ NG: 「Claude 最新情報 2026年1月」
+✗ NG: 「AI ツール アップデート」
+○ OK: 「Claude 3.5 Opus computer use機能 ベータ版」
+○ OK: 「GPT-4o 画像生成 DALL-E統合 1月リリース」
 
-【クエリ生成の原則】
-1. 【具体的に】抽象的なクエリではなく、具体的な機能名、サービス名、技術名を含める
-2. 【最新情報】2026年1月の最新情報を取得できるクエリにする
-3. 【多角的に】公式情報、技術詳細、比較、事例、最新動向など異なる角度から
-4. 【実用的に】実際に有用な情報が得られるクエリにする
+【クエリの条件】
+1. 具体的な機能名、バージョン、日付を含める
+2. 検索結果で見つかった実際の情報を反映
+3. さらに深掘りできる角度を提案
+4. 有識者の記事、公式ドキュメント、比較記事などを見つけられるクエリ`,
+        },
+        {
+          role: "user",
+          content: `【投稿内容】
+${content}
 
-${postCategory ? `【選択されたカテゴリー】${postCategory}
-${categoryGuide}` : ""}
+${postCategory ? `【カテゴリー】${postCategory}` : ""}
 
-【クエリのカテゴリー分類】
-各クエリに以下のカテゴリーを付与：
-- 公式情報: 公式ドキュメント、公式発表、プレスリリース
-- 技術詳細: 技術仕様、実装方法、ベストプラクティス
-- 比較・評価: ベンチマーク、比較、レビュー、評価
-- 活用事例: 使用例、事例紹介、体験談
-- 最新動向: 最新ニュース、アップデート、トレンド
+【Web検索で見つかった最新情報】
+${webSearchResults || "（検索結果なし - 一般的な情報で生成）"}
+
+上記を元に、さらに詳しく調べるための【具体的な】検索クエリを10個生成してください。
+検索結果で見つかった具体的な情報（機能名、バージョン、日付など）を必ずクエリに含めてください。
 
 JSON形式で回答：
 {
   "queries": [
     {
-      "query": "具体的な検索クエリ文字列",
+      "query": "具体的な検索クエリ（機能名やバージョンを含む）",
       "category": "公式情報 | 技術詳細 | 比較・評価 | 活用事例 | 最新動向",
-      "description": "このクエリで何を調べるか（具体的に15文字程度）"
+      "description": "このクエリで見つかる具体的な情報",
+      "source": "検索結果のどの情報を元にしたか"
     }
   ]
 }`,
         },
-        {
-          role: "user",
-          content: `以下の投稿内容について、最新情報を検索するためのクエリを10個生成してください。
-
-【投稿内容】
-${content}
-
-${postCategory ? `【投稿カテゴリー】${postCategory}` : ""}
-
-【検索対象期間】
-${dateRange.from} 〜 ${dateRange.to}（直近2週間の最新情報）
-
-【重要】
-- 投稿内容に含まれる具体的なキーワード（サービス名、技術名、人名など）を活用する
-- 2026年1月の最新情報を取得できるよう時期指定を含める
-- 抽象的なクエリではなく、実際に検索して有用な情報が得られる具体的なクエリを生成する
-- ${postCategory ? `「${postCategory}」に適した情報を得られるクエリにする` : ""}
-
-カテゴリーをバランスよく、異なる角度から情報を収集できるクエリを生成してください。`,
-        },
       ],
-      temperature: 0.4,
+      temperature: 0.3,
       response_format: { type: "json_object" },
     });
 
@@ -193,7 +172,7 @@ ${dateRange.from} 〜 ${dateRange.to}（直近2週間の最新情報）
 
       console.log("[SearchQueries] Generated", queries.length, "queries");
       if (queries.length > 0) {
-        console.log("[SearchQueries] Sample query:", queries[0].query);
+        console.log("[SearchQueries] Sample:", queries[0].query);
       }
 
       return NextResponse.json({
@@ -201,6 +180,7 @@ ${dateRange.from} 〜 ${dateRange.to}（直近2週間の最新情報）
         queries,
         dateRange,
         postCategory: postCategory || null,
+        webSearchUsed: webSearchResults.length > 0,
       });
     } catch {
       return NextResponse.json({
