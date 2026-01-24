@@ -378,7 +378,6 @@ export default function GeneratePage() {
           content,
           referenceText: card.referencePost.text,
           userStyle: userStyle || undefined,
-          referenceUrls: referenceUrls.length > 0 ? referenceUrls : undefined,
         };
 
         const response = await fetch("/api/generate", {
@@ -393,7 +392,13 @@ export default function GeneratePage() {
           throw new Error(data.error || "生成に失敗しました");
         }
 
-        return { index, text: data.text, error: undefined };
+        // Append URL to generated text if provided
+        let generatedText = data.text;
+        if (referenceUrls.length > 0) {
+          generatedText = `${generatedText}\n\n${referenceUrls[0]}`;
+        }
+
+        return { index, text: generatedText, error: undefined };
       } catch (err) {
         const message = err instanceof Error ? err.message : "エラー";
         return { index, text: "", error: message };
@@ -474,7 +479,6 @@ export default function GeneratePage() {
         content,
         referenceText: card.referencePost.text,
         userStyle: userStyle || undefined,
-        referenceUrls: referenceUrls.length > 0 ? referenceUrls : undefined,
       };
 
       const response = await fetch("/api/generate", {
@@ -489,8 +493,14 @@ export default function GeneratePage() {
         throw new Error(data.error || "生成に失敗しました");
       }
 
+      // Append URL to generated text if provided
+      let generatedText = data.text;
+      if (referenceUrls.length > 0) {
+        generatedText = `${generatedText}\n\n${referenceUrls[0]}`;
+      }
+
       setCards(prev => prev.map(c =>
-        c.id === cardId ? { ...c, text: data.text, isLoading: false } : c
+        c.id === cardId ? { ...c, text: generatedText, isLoading: false } : c
       ));
     } catch (err) {
       const message = err instanceof Error ? err.message : "エラー";
@@ -582,11 +592,12 @@ export default function GeneratePage() {
         )}
       </div>
 
-      {/* Compact Content Input */}
+      {/* Content & Link Input */}
       <div className="bg-white rounded-xl border border-zinc-200 shadow-sm mb-6">
+        {/* Content Section */}
         <button
           onClick={() => setIsContentExpanded(!isContentExpanded)}
-          className="w-full flex items-center justify-between p-4 text-left"
+          className="w-full flex items-center justify-between p-4 text-left border-b border-zinc-100"
         >
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-lg bg-zinc-100 flex items-center justify-center">
@@ -607,93 +618,90 @@ export default function GeneratePage() {
         </button>
 
         {isContentExpanded && (
-          <div className="px-4 pb-4">
+          <div className="px-4 py-4 border-b border-zinc-100">
             <textarea
               value={content}
               onChange={(e) => setContent(e.target.value)}
-              placeholder="投稿したい内容・記事のURL・アイデアなどを入力..."
+              placeholder="投稿したい内容・アイデアなどを入力..."
               className="w-full h-32 p-4 bg-zinc-50 border border-zinc-200 rounded-xl text-zinc-900 placeholder:text-zinc-400 resize-none focus:outline-none focus:ring-2 focus:ring-emerald-500"
             />
           </div>
         )}
-      </div>
 
-      {/* URL Input Section */}
-      <div className="bg-white rounded-xl border border-zinc-200 shadow-sm mb-6 p-4">
-        <div className="flex items-center gap-2 mb-3">
-          <LinkIcon className="w-5 h-5 text-blue-500" />
-          <span className="font-medium text-zinc-900">参考URL（任意）</span>
-          <span className="text-xs text-zinc-400">生成時に参照したいURLを追加</span>
-        </div>
-
-        {/* URL List */}
-        {referenceUrls.length > 0 && (
-          <div className="space-y-2 mb-3">
-            {referenceUrls.map((url, index) => (
-              <div
-                key={index}
-                className="flex items-center gap-2 p-2 bg-blue-50 rounded-lg group"
-              >
-                <LinkIcon className="w-4 h-4 text-blue-500 flex-shrink-0" />
-                <span className="flex-1 text-sm text-blue-600 truncate font-mono">
-                  {url}
-                </span>
-                <a
-                  href={url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="p-1.5 rounded text-blue-500 hover:bg-blue-100 transition-colors"
-                  title="URLを開く"
-                >
-                  <ExternalLink className="w-4 h-4" />
-                </a>
-                <button
-                  onClick={() => setReferenceUrls(prev => prev.filter((_, i) => i !== index))}
-                  className="p-1.5 rounded text-red-400 hover:text-red-500 hover:bg-red-50 transition-colors"
-                  title="削除"
-                >
-                  <Trash2 className="w-4 h-4" />
-                </button>
-              </div>
-            ))}
+        {/* Link Input Section */}
+        <div className="p-4">
+          <div className="flex items-center gap-2 mb-3">
+            <LinkIcon className="w-5 h-5 text-emerald-500" />
+            <span className="font-medium text-zinc-900">入れ込むリンク</span>
+            <span className="text-xs text-zinc-400">生成した投稿に含めるURL（任意）</span>
           </div>
-        )}
 
-        {/* Add URL Input */}
-        <div className="flex gap-2">
-          <input
-            type="url"
-            value={newUrlInput}
-            onChange={(e) => setNewUrlInput(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && newUrlInput.trim()) {
-                e.preventDefault();
-                if (newUrlInput.startsWith("http://") || newUrlInput.startsWith("https://")) {
+          {/* URL List */}
+          {referenceUrls.length > 0 && (
+            <div className="space-y-2 mb-3">
+              {referenceUrls.map((url, index) => (
+                <div
+                  key={index}
+                  className="flex items-center gap-2 p-2 bg-emerald-50 rounded-lg group"
+                >
+                  <LinkIcon className="w-4 h-4 text-emerald-500 flex-shrink-0" />
+                  <span className="flex-1 text-sm text-emerald-600 truncate font-mono">
+                    {url}
+                  </span>
+                  <a
+                    href={url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="p-1.5 rounded text-emerald-500 hover:bg-emerald-100 transition-colors"
+                    title="URLを開く"
+                  >
+                    <ExternalLink className="w-4 h-4" />
+                  </a>
+                  <button
+                    onClick={() => setReferenceUrls(prev => prev.filter((_, i) => i !== index))}
+                    className="p-1.5 rounded text-red-400 hover:text-red-500 hover:bg-red-50 transition-colors"
+                    title="削除"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Add URL Input */}
+          <div className="flex gap-2">
+            <input
+              type="url"
+              value={newUrlInput}
+              onChange={(e) => setNewUrlInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && newUrlInput.trim()) {
+                  e.preventDefault();
+                  if (newUrlInput.startsWith("http://") || newUrlInput.startsWith("https://")) {
+                    setReferenceUrls(prev => [...prev, newUrlInput.trim()]);
+                    setNewUrlInput("");
+                  }
+                }
+              }}
+              placeholder="https://example.com/article"
+              className="flex-1 h-10 px-3 bg-zinc-50 border border-zinc-200 rounded-lg text-zinc-900 placeholder:text-zinc-400 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+            />
+            <button
+              onClick={() => {
+                if (newUrlInput.trim() && (newUrlInput.startsWith("http://") || newUrlInput.startsWith("https://"))) {
                   setReferenceUrls(prev => [...prev, newUrlInput.trim()]);
                   setNewUrlInput("");
                 }
-              }
-            }}
-            placeholder="https://example.com/article"
-            className="flex-1 h-10 px-3 bg-zinc-50 border border-zinc-200 rounded-lg text-zinc-900 placeholder:text-zinc-400 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-          />
-          <button
-            onClick={() => {
-              if (newUrlInput.trim() && (newUrlInput.startsWith("http://") || newUrlInput.startsWith("https://"))) {
-                setReferenceUrls(prev => [...prev, newUrlInput.trim()]);
-                setNewUrlInput("");
-              }
-            }}
-            disabled={!newUrlInput.trim() || (!newUrlInput.startsWith("http://") && !newUrlInput.startsWith("https://"))}
-            className="px-4 h-10 bg-blue-500 text-white text-sm font-medium rounded-lg hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-1.5"
-          >
-            <Plus className="w-4 h-4" />
-            追加
-          </button>
+              }}
+              disabled={!newUrlInput.trim() || (!newUrlInput.startsWith("http://") && !newUrlInput.startsWith("https://"))}
+              className="px-4 h-10 bg-emerald-500 text-white text-sm font-medium rounded-lg hover:bg-emerald-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-1.5"
+            >
+              <Plus className="w-4 h-4" />
+              追加
+            </button>
+          </div>
         </div>
-        <p className="text-xs text-zinc-400 mt-2">
-          ※ URLを追加すると、AI生成時に記事内容を参考にします
-        </p>
       </div>
 
       {/* Category Selection (if not yet generated) */}

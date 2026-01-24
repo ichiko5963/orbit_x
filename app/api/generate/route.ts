@@ -1,45 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { generatePost, imitatePost, generateWithReference } from "@/lib/openai";
 
-/**
- * Fetch content from URLs using internal scrape API
- */
-async function fetchUrlContents(urls: string[], baseUrl: string): Promise<string> {
-  if (!urls || urls.length === 0) return "";
-
-  const contents: string[] = [];
-
-  for (const url of urls.slice(0, 3)) { // Limit to 3 URLs
-    try {
-      const response = await fetch(`${baseUrl}/api/scrape-article`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url }),
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        if (data.article) {
-          contents.push(`【${data.article.title}】\n${data.article.content.slice(0, 2000)}`);
-        }
-      }
-    } catch (error) {
-      console.error(`Failed to fetch URL content: ${url}`, error);
-    }
-  }
-
-  return contents.length > 0 ? `\n\n━━━━━━━━━━━━━━━━━━━━\n■ 参考URL内容\n━━━━━━━━━━━━━━━━━━━━\n${contents.join("\n\n")}` : "";
-}
-
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { mode, template, templateId, topic, content, category, tone, emojiSet, referenceText, userStyle, referenceUrls } = body;
-
-    // Get base URL for internal API calls
-    const baseUrl = process.env.NEXTAUTH_URL || process.env.VERCEL_URL
-      ? `https://${process.env.VERCEL_URL}`
-      : "http://localhost:3000";
+    const { mode, template, templateId, topic, content, category, tone, emojiSet, referenceText, userStyle } = body;
 
     // Reference mode - uses reference post structure + user's content + optional user style
     if (mode === "reference" && referenceText) {
@@ -50,14 +15,8 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      // Fetch URL contents if provided
-      const urlContent = await fetchUrlContents(referenceUrls, baseUrl);
-
-      // Combine user content with URL content
-      const enrichedContent = urlContent ? `${content}${urlContent}` : content;
-
       const generatedText = await generateWithReference({
-        content: enrichedContent,
+        content,
         templateId: templateId || "reference", // Default if not provided
         referenceText,
         category,
