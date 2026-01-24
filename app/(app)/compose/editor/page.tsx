@@ -133,6 +133,8 @@ export default function PostEditorPage() {
   const [isSearchingImages, setIsSearchingImages] = useState(false);
   const [imageSearchResults, setImageSearchResults] = useState<{url: string; title: string; source: string; selected?: boolean}[]>([]);
   const [imageSearchError, setImageSearchError] = useState<string | null>(null);
+  const [imageSearchWarning, setImageSearchWarning] = useState<string | null>(null);
+  const [imageSearchKeywords, setImageSearchKeywords] = useState<string[]>([]);
 
   // Hallucination check (fact-check) state
   const [showFactCheck, setShowFactCheck] = useState(false);
@@ -383,6 +385,8 @@ export default function PostEditorPage() {
     setShowImageSearch(true);
     setIsSearchingImages(true);
     setImageSearchError(null);
+    setImageSearchWarning(null);
+    setImageSearchKeywords([]);
     setImageSearchResults([]);
 
     try {
@@ -399,6 +403,10 @@ export default function PostEditorPage() {
       }
 
       setImageSearchResults(data.images || []);
+      setImageSearchKeywords(data.keywords || []);
+      if (data.message) {
+        setImageSearchWarning(data.message);
+      }
     } catch (error) {
       console.error("Image search failed:", error);
       setImageSearchError(error instanceof Error ? error.message : "画像検索に失敗しました");
@@ -1106,9 +1114,9 @@ export default function PostEditorPage() {
                 onClick={handleImageSearch}
                 disabled={!activePost.text.trim() || activePost.images.length >= 4}
                 className="p-2.5 rounded-lg text-blue-500 hover:text-blue-700 hover:bg-blue-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                title="画像を検索"
+                title="AIで画像検索"
               >
-                <Search className="w-5 h-5" />
+                <Sparkles className="w-5 h-5" />
               </button>
               <button
                 onClick={() => setShowQuoteModal(true)}
@@ -1447,565 +1455,445 @@ export default function PostEditorPage() {
         </div>
       )}
 
-      {/* AI Enhancement Modal */}
+      {/* AI Enhancement Side Panel */}
       {showAIEnhance && (
-        <div className="fixed inset-0 z-50 flex items-start justify-center pt-20 overflow-y-auto">
-          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setShowAIEnhance(false)} />
+        <div className="fixed right-4 top-24 bottom-4 z-50 w-96 bg-white rounded-2xl shadow-2xl border border-zinc-200 overflow-hidden flex flex-col animate-fade-in">
+          {/* Panel Header */}
+          <div className="flex items-center justify-between px-4 py-3 bg-gradient-to-r from-amber-50 to-orange-50 border-b border-zinc-200 flex-shrink-0">
+            <div className="flex items-center gap-2">
+              <Wand2 className="w-4 h-4 text-amber-600" />
+              <span className="font-semibold text-zinc-900 text-sm">AI強化</span>
+            </div>
+            <button onClick={() => setShowAIEnhance(false)} className="p-1 rounded hover:bg-white/50">
+              <X className="w-4 h-4 text-zinc-500" />
+            </button>
+          </div>
 
-          <div className="relative w-full max-w-2xl bg-white rounded-2xl shadow-xl mx-4 mb-20 overflow-hidden">
-            {/* Modal Header */}
-            <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-200 bg-gradient-to-r from-amber-50 to-orange-50">
-              <div className="flex items-center gap-3">
-                <div className="p-2 bg-amber-100 rounded-lg">
-                  <Wand2 className="w-5 h-5 text-amber-600" />
+          {/* Panel Content */}
+          <div className="flex-1 overflow-y-auto p-4">
+            {isEnhancing ? (
+              <div className="flex flex-col items-center justify-center py-8">
+                <div className="relative">
+                  <div className="w-12 h-12 border-3 border-amber-200 border-t-amber-500 rounded-full animate-spin" />
+                  <Sparkles className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-5 h-5 text-amber-500" />
                 </div>
-                <div>
-                  <h2 className="text-lg font-semibold text-zinc-900">AI強化</h2>
-                  <p className="text-sm text-zinc-500">元の投稿を活かして微調整</p>
-                </div>
+                <p className="mt-3 text-sm text-zinc-600">生成中...</p>
               </div>
-              <button onClick={() => setShowAIEnhance(false)} className="p-2 rounded-lg hover:bg-white/50 transition-colors">
-                <X className="w-5 h-5 text-zinc-500" />
-              </button>
-            </div>
+            ) : aiEnhanceOptions.length > 0 ? (
+              <div className="space-y-3">
+                {aiEnhanceOptions.map((option, index) => {
+                  const icons = [
+                    { icon: Plus, color: "text-blue-500", bg: "bg-blue-50", label: "続きを追加" },
+                    { icon: Sparkles, color: "text-purple-500", bg: "bg-purple-50", label: "表現を磨く" },
+                    { icon: Target, color: "text-emerald-500", bg: "bg-emerald-50", label: "要素を補強" },
+                  ];
+                  const style = icons[index] || icons[0];
 
-            {/* Modal Content */}
-            <div className="p-6">
-              {isEnhancing ? (
-                <div className="flex flex-col items-center justify-center py-12">
-                  <div className="relative">
-                    <div className="w-16 h-16 border-4 border-amber-200 border-t-amber-500 rounded-full animate-spin" />
-                    <Sparkles className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-6 h-6 text-amber-500" />
-                  </div>
-                  <p className="mt-4 text-zinc-600 font-medium">3つの強化案を生成中...</p>
-                </div>
-              ) : aiEnhanceOptions.length > 0 ? (
-                <div className="space-y-4">
-                  {aiEnhanceOptions.map((option, index) => {
-                    const icons = [
-                      { icon: Plus, color: "text-blue-500", bg: "bg-blue-50", label: "続きを追加" },
-                      { icon: Sparkles, color: "text-purple-500", bg: "bg-purple-50", label: "表現を磨く" },
-                      { icon: Target, color: "text-emerald-500", bg: "bg-emerald-50", label: "要素を補強" },
-                    ];
-                    const style = icons[index] || icons[0];
-
-                    return (
-                      <button
-                        key={option.id}
-                        onClick={() => applyEnhancement(option.text)}
-                        disabled={enhancingType === "applying"}
-                        className={`w-full p-4 rounded-xl border-2 border-zinc-200 hover:border-zinc-300 text-left transition-all group ${
-                          enhancingType === "applying" ? "opacity-50" : ""
-                        }`}
-                      >
-                        <div className="flex items-start gap-3">
-                          <div className={`p-2 rounded-lg ${style.bg}`}>
-                            <style.icon className={`w-5 h-5 ${style.color}`} />
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2 mb-2">
-                              <span className="font-semibold text-zinc-900">{option.label || style.label}</span>
-                              <span className="text-xs text-zinc-400">{option.text.length}文字</span>
-                            </div>
-                            <p className="text-sm text-zinc-600 whitespace-pre-wrap line-clamp-4 leading-relaxed">
-                              {option.text}
-                            </p>
-                          </div>
-                          <div className="opacity-0 group-hover:opacity-100 transition-opacity">
-                            <CheckCircle2 className="w-5 h-5 text-emerald-500" />
-                          </div>
+                  return (
+                    <button
+                      key={option.id}
+                      onClick={() => applyEnhancement(option.text)}
+                      disabled={enhancingType === "applying"}
+                      className={`w-full p-3 rounded-xl border border-zinc-200 hover:border-amber-300 hover:bg-amber-50/50 text-left transition-all ${
+                        enhancingType === "applying" ? "opacity-50" : ""
+                      }`}
+                    >
+                      <div className="flex items-center gap-2 mb-2">
+                        <div className={`p-1.5 rounded-lg ${style.bg}`}>
+                          <style.icon className={`w-4 h-4 ${style.color}`} />
                         </div>
-                      </button>
-                    );
-                  })}
-                </div>
-              ) : (
-                <div className="text-center py-12 text-zinc-500">
-                  <p>強化案を生成できませんでした</p>
-                  <button
-                    onClick={handleAIEnhance}
-                    className="mt-4 text-amber-600 hover:underline"
-                  >
-                    再試行
-                  </button>
-                </div>
-              )}
-            </div>
+                        <span className="font-medium text-sm text-zinc-900">{option.label || style.label}</span>
+                        <span className="text-xs text-zinc-400 ml-auto">{option.text.length}文字</span>
+                      </div>
+                      <p className="text-xs text-zinc-600 whitespace-pre-wrap line-clamp-4 leading-relaxed">
+                        {option.text}
+                      </p>
+                    </button>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="text-center py-8 text-zinc-500">
+                <p className="text-sm">生成できませんでした</p>
+                <button onClick={handleAIEnhance} className="mt-2 text-amber-600 text-sm hover:underline">
+                  再試行
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}
 
-      {/* Schedule Modal */}
+      {/* Schedule Inline Panel */}
       {showScheduleModal && (
-        <div className="fixed inset-0 z-50 flex items-start justify-center pt-20 overflow-y-auto">
-          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setShowScheduleModal(false)} />
-
-          <div className="relative w-full max-w-md bg-white rounded-2xl shadow-xl mx-4 mb-20 overflow-hidden">
-            {/* Modal Header */}
-            <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-200">
-              <h2 className="text-xl font-semibold text-zinc-900">投稿を予約</h2>
-              <button onClick={() => setShowScheduleModal(false)} className="p-2 rounded-lg hover:bg-zinc-100 transition-colors">
-                <X className="w-5 h-5 text-zinc-500" />
-              </button>
+        <div className="fixed bottom-24 right-4 z-50 w-80 bg-white rounded-2xl shadow-2xl border border-zinc-200 overflow-hidden animate-fade-in">
+          {/* Panel Header */}
+          <div className="flex items-center justify-between px-4 py-3 bg-gradient-to-r from-blue-50 to-indigo-50 border-b border-zinc-200">
+            <div className="flex items-center gap-2">
+              <Calendar className="w-4 h-4 text-blue-600" />
+              <span className="font-semibold text-zinc-900 text-sm">予約投稿</span>
             </div>
-
-            {/* Modal Content */}
-            <div className="p-6">
-              {/* AI Suggested Time */}
-              {isLoadingSuggestion ? (
-                <div className="flex items-center gap-3 p-4 bg-amber-50 border border-amber-200 rounded-xl mb-4">
-                  <Loader2 className="w-5 h-5 animate-spin text-amber-600" />
-                  <span className="text-amber-800">最適な時間を分析中...</span>
-                </div>
-              ) : suggestedTime && (
-                <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl mb-4">
-                  <div className="flex items-center gap-2 text-amber-600 text-sm mb-2">
-                    <Sparkles className="w-4 h-4" />
-                    AIが選んだ最適な投稿日時
-                  </div>
-                  <p className="text-xl font-bold text-zinc-900">
-                    {suggestedTime.toLocaleDateString("ja-JP", { month: "long", day: "numeric", weekday: "short" })} {suggestedTime.toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" })}
-                  </p>
-                  <p className="text-sm text-zinc-600 mt-1">{suggestedReason}</p>
-                </div>
-              )}
-
-              {/* Manual Date/Time Input */}
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-zinc-700 mb-2">日付</label>
-                  <input
-                    type="date"
-                    value={scheduledDate}
-                    onChange={(e) => setScheduledDate(e.target.value)}
-                    className="w-full px-4 py-3 bg-zinc-50 border border-zinc-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-zinc-700 mb-2">時間</label>
-                  <input
-                    type="time"
-                    value={scheduledTime}
-                    onChange={(e) => setScheduledTime(e.target.value)}
-                    className="w-full px-4 py-3 bg-zinc-50 border border-zinc-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                  />
-                </div>
-              </div>
-
-              {/* Thread info */}
-              {threadPosts.length > 1 && (
-                <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-xl">
-                  <p className="text-sm text-blue-700">
-                    <MessageSquare className="w-4 h-4 inline mr-1" />
-                    {threadPosts.length}件のスレッド投稿を予約します
-                  </p>
-                </div>
-              )}
-
-              {/* Actions */}
-              <div className="flex items-center gap-3 mt-6">
-                <button
-                  onClick={() => setShowScheduleModal(false)}
-                  className="flex-1 py-3 text-zinc-600 font-medium rounded-xl hover:bg-zinc-100 transition-colors"
-                >
-                  キャンセル
-                </button>
-                <button
-                  onClick={handleSchedule}
-                  disabled={!scheduledDate || !scheduledTime || isScheduling}
-                  className="flex-1 flex items-center justify-center gap-2 py-3 bg-blue-500 text-white font-medium rounded-xl hover:bg-blue-600 disabled:opacity-50 transition-colors"
-                >
-                  {isScheduling ? (
-                    <Loader2 className="w-5 h-5 animate-spin" />
-                  ) : (
-                    <Clock className="w-5 h-5" />
-                  )}
-                  予約する
-                </button>
-              </div>
-            </div>
+            <button onClick={() => setShowScheduleModal(false)} className="p-1 rounded hover:bg-white/50">
+              <X className="w-4 h-4 text-zinc-500" />
+            </button>
           </div>
-        </div>
-      )}
 
-      {/* Image Search Modal */}
-      {showImageSearch && (
-        <div className="fixed inset-0 z-50 flex items-start justify-center pt-20 overflow-y-auto">
-          <div
-            className="fixed inset-0 bg-black/50 backdrop-blur-sm"
-            onClick={() => setShowImageSearch(false)}
-          />
-
-          <div className="relative w-full max-w-2xl bg-white rounded-2xl shadow-xl mx-4 mb-20 overflow-hidden">
-            {/* Modal Header */}
-            <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-200 bg-gradient-to-r from-blue-50 to-sky-50">
-              <div className="flex items-center gap-3">
-                <div className="p-2 bg-blue-100 rounded-lg">
-                  <Search className="w-5 h-5 text-blue-600" />
-                </div>
-                <div>
-                  <h2 className="text-lg font-semibold text-zinc-900">投稿に使う画像を検索</h2>
-                  <p className="text-sm text-zinc-500">AIが投稿内容に合う画像を提案します</p>
-                </div>
+          {/* Panel Content */}
+          <div className="p-4 max-h-96 overflow-y-auto">
+            {/* AI Suggested Time */}
+            {isLoadingSuggestion ? (
+              <div className="flex items-center gap-2 p-3 bg-amber-50 border border-amber-200 rounded-lg mb-3">
+                <Loader2 className="w-4 h-4 animate-spin text-amber-600" />
+                <span className="text-amber-800 text-sm">分析中...</span>
               </div>
+            ) : suggestedTime && (
               <button
-                onClick={() => setShowImageSearch(false)}
-                className="p-2 rounded-lg hover:bg-white/50 transition-colors"
+                onClick={() => {
+                  setScheduledDate(suggestedTime.toISOString().split("T")[0]);
+                  setScheduledTime(suggestedTime.toTimeString().slice(0, 5));
+                }}
+                className="w-full p-3 bg-amber-50 border border-amber-200 rounded-lg mb-3 text-left hover:bg-amber-100 transition-colors"
               >
-                <X className="w-5 h-5 text-zinc-500" />
+                <div className="flex items-center gap-1.5 text-amber-600 text-xs mb-1">
+                  <Sparkles className="w-3 h-3" />
+                  AI推奨
+                </div>
+                <p className="font-bold text-zinc-900 text-sm">
+                  {suggestedTime.toLocaleDateString("ja-JP", { month: "short", day: "numeric", weekday: "short" })} {suggestedTime.toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" })}
+                </p>
+                <p className="text-xs text-zinc-500 mt-0.5">{suggestedReason}</p>
               </button>
+            )}
+
+            {/* Date/Time Input */}
+            <div className="grid grid-cols-2 gap-2 mb-3">
+              <div>
+                <label className="block text-xs font-medium text-zinc-500 mb-1">日付</label>
+                <input
+                  type="date"
+                  value={scheduledDate}
+                  onChange={(e) => setScheduledDate(e.target.value)}
+                  className="w-full h-10 px-2.5 text-sm bg-zinc-50 border border-zinc-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-zinc-500 mb-1">時間</label>
+                <input
+                  type="time"
+                  value={scheduledTime}
+                  onChange={(e) => setScheduledTime(e.target.value)}
+                  className="w-full h-10 px-2.5 text-sm bg-zinc-50 border border-zinc-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
             </div>
 
-            {/* Modal Content */}
-            <div className="p-6">
-              {isSearchingImages ? (
-                <div className="flex flex-col items-center justify-center py-12">
-                  <Loader2 className="w-10 h-10 text-blue-500 animate-spin mb-4" />
-                  <p className="text-zinc-600 font-medium">関連画像を検索中...</p>
-                  <p className="text-sm text-zinc-400 mt-1">公式ロゴや関連画像を探しています</p>
-                </div>
-              ) : imageSearchError ? (
-                <div className="text-center py-12">
-                  <p className="text-red-500 mb-4">{imageSearchError}</p>
-                  <button
-                    onClick={handleImageSearch}
-                    className="text-blue-600 hover:underline"
-                  >
-                    再試行
-                  </button>
-                </div>
-              ) : imageSearchResults.length > 0 ? (
-                <>
-                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 max-h-96 overflow-y-auto">
-                    {imageSearchResults.map((img, index) => (
-                      <button
-                        key={index}
-                        onClick={() => toggleImageSelection(index)}
-                        className={`relative aspect-square rounded-xl overflow-hidden border-2 transition-all ${
-                          img.selected
-                            ? "border-blue-500 ring-2 ring-blue-500/30"
-                            : "border-zinc-200 hover:border-zinc-300"
-                        }`}
-                      >
-                        <img
-                          src={img.url}
-                          alt={img.title}
-                          className="w-full h-full object-cover"
-                          onError={(e) => {
-                            (e.target as HTMLImageElement).style.display = "none";
-                          }}
-                        />
-                        {img.selected && (
-                          <div className="absolute inset-0 bg-blue-500/20 flex items-center justify-center">
-                            <div className="w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center">
-                              <Check className="w-5 h-5 text-white" />
-                            </div>
-                          </div>
-                        )}
-                        <div className="absolute bottom-0 left-0 right-0 p-1.5 bg-gradient-to-t from-black/70 to-transparent">
-                          <p className="text-xs text-white truncate">{img.title}</p>
-                          <p className="text-xs text-white/70 truncate">{img.source}</p>
-                        </div>
-                      </button>
-                    ))}
-                  </div>
+            {/* Thread info */}
+            {threadPosts.length > 1 && (
+              <div className="p-2 bg-blue-50 border border-blue-200 rounded-lg mb-3">
+                <p className="text-xs text-blue-700">
+                  <MessageSquare className="w-3 h-3 inline mr-1" />
+                  {threadPosts.length}件のスレッド
+                </p>
+              </div>
+            )}
 
-                  {/* Selection info and add button */}
-                  <div className="flex items-center justify-between mt-4 pt-4 border-t border-zinc-200">
-                    <p className="text-sm text-zinc-500">
-                      {imageSearchResults.filter(img => img.selected).length > 0
-                        ? `${imageSearchResults.filter(img => img.selected).length}枚選択中 (最大${4 - activePost.images.length}枚追加可能)`
-                        : "画像をクリックして選択"}
-                    </p>
-                    <button
-                      onClick={addSelectedImages}
-                      disabled={imageSearchResults.filter(img => img.selected).length === 0}
-                      className="flex items-center gap-2 px-4 py-2 bg-blue-500 text-white font-medium rounded-xl hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                    >
-                      <Plus className="w-4 h-4" />
-                      選択した画像を追加
-                    </button>
-                  </div>
-                </>
+            {/* Action Button */}
+            <button
+              onClick={handleSchedule}
+              disabled={!scheduledDate || !scheduledTime || isScheduling}
+              className="w-full flex items-center justify-center gap-2 py-2.5 bg-blue-500 text-white text-sm font-medium rounded-lg hover:bg-blue-600 disabled:opacity-50 transition-colors"
+            >
+              {isScheduling ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
               ) : (
-                <div className="text-center py-12 text-zinc-500">
-                  <Search className="w-12 h-12 mx-auto mb-4 text-zinc-300" />
-                  <p>画像が見つかりませんでした</p>
-                  <button
-                    onClick={handleImageSearch}
-                    className="mt-4 text-blue-600 hover:underline"
-                  >
-                    再検索
-                  </button>
-                </div>
+                <Clock className="w-4 h-4" />
               )}
-            </div>
+              予約する
+            </button>
           </div>
         </div>
       )}
 
-      {/* Fact Check (Hallucination Check) Modal */}
-      {showFactCheck && (
-        <div className="fixed inset-0 z-50 flex items-start justify-center pt-20 overflow-y-auto">
-          <div
-            className="fixed inset-0 bg-black/50 backdrop-blur-sm"
-            onClick={() => setShowFactCheck(false)}
-          />
+      {/* Image Search Side Panel */}
+      {showImageSearch && (
+        <div className="fixed right-4 top-24 bottom-4 z-50 w-96 bg-white rounded-2xl shadow-2xl border border-zinc-200 overflow-hidden flex flex-col animate-fade-in">
+          {/* Panel Header */}
+          <div className="flex items-center justify-between px-4 py-3 bg-gradient-to-r from-blue-50 to-sky-50 border-b border-zinc-200 flex-shrink-0">
+            <div className="flex items-center gap-2">
+              <Sparkles className="w-4 h-4 text-blue-600" />
+              <span className="font-semibold text-zinc-900 text-sm">AIで画像検索</span>
+              {imageSearchResults.length > 0 && (
+                <span className="text-xs text-zinc-500">({imageSearchResults.length}件)</span>
+              )}
+            </div>
+            <button onClick={() => setShowImageSearch(false)} className="p-1 rounded hover:bg-white/50">
+              <X className="w-4 h-4 text-zinc-500" />
+            </button>
+          </div>
 
-          <div className="relative w-full max-w-2xl bg-white rounded-2xl shadow-xl mx-4 mb-20 overflow-hidden">
-            {/* Modal Header */}
-            <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-200 bg-gradient-to-r from-emerald-50 to-teal-50">
-              <div className="flex items-center gap-3">
-                <div className="p-2 bg-emerald-100 rounded-lg">
-                  <ShieldCheck className="w-5 h-5 text-emerald-600" />
-                </div>
-                <div>
-                  <h2 className="text-lg font-semibold text-zinc-900">ハルシネーションチェック</h2>
-                  <p className="text-sm text-zinc-500">事実確認と文章の流れをチェック</p>
-                </div>
+          {/* Keywords Display */}
+          {imageSearchKeywords.length > 0 && !isSearchingImages && (
+            <div className="px-3 py-2 bg-zinc-50 border-b border-zinc-200 flex-shrink-0">
+              <p className="text-xs text-zinc-500 mb-1">検索キーワード:</p>
+              <div className="flex flex-wrap gap-1">
+                {imageSearchKeywords.map((kw, i) => (
+                  <span key={i} className="px-2 py-0.5 bg-blue-100 text-blue-700 text-xs rounded-full">{kw}</span>
+                ))}
               </div>
+            </div>
+          )}
+
+          {/* Warning Message */}
+          {imageSearchWarning && !isSearchingImages && (
+            <div className="px-3 py-2 bg-amber-50 border-b border-amber-200 flex-shrink-0">
+              <p className="text-xs text-amber-700">{imageSearchWarning}</p>
+            </div>
+          )}
+
+          {/* Panel Content */}
+          <div className="flex-1 overflow-y-auto p-3">
+            {isSearchingImages ? (
+              <div className="flex flex-col items-center justify-center py-8">
+                <Loader2 className="w-8 h-8 text-blue-500 animate-spin mb-3" />
+                <p className="text-sm text-zinc-600">キーワード抽出・画像検索中...</p>
+              </div>
+            ) : imageSearchError ? (
+              <div className="text-center py-8">
+                <p className="text-red-500 text-sm mb-2">{imageSearchError}</p>
+                <button onClick={handleImageSearch} className="text-blue-600 text-sm hover:underline">
+                  再試行
+                </button>
+              </div>
+            ) : imageSearchResults.length > 0 ? (
+              <div className="grid grid-cols-2 gap-2">
+                {imageSearchResults.map((img, index) => (
+                  <button
+                    key={index}
+                    onClick={() => toggleImageSelection(index)}
+                    className={`relative rounded-lg overflow-hidden border-2 transition-all bg-zinc-100 ${
+                      img.selected ? "border-blue-500 ring-2 ring-blue-500/30" : "border-zinc-200 hover:border-zinc-300"
+                    }`}
+                  >
+                    <img src={img.url} alt={img.title} className="w-full h-auto max-h-32 object-contain" onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
+                    {img.selected && (
+                      <div className="absolute inset-0 bg-blue-500/20 flex items-center justify-center">
+                        <div className="w-6 h-6 bg-blue-500 rounded-full flex items-center justify-center">
+                          <Check className="w-4 h-4 text-white" />
+                        </div>
+                      </div>
+                    )}
+                    <div className="absolute bottom-0 left-0 right-0 p-1 bg-gradient-to-t from-black/70 to-transparent">
+                      <p className="text-[10px] text-white truncate">{img.title}</p>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <div className="text-center py-8 text-zinc-500">
+                <Search className="w-8 h-8 mx-auto mb-2 text-zinc-300" />
+                <p className="text-sm">画像が見つかりません</p>
+                <button onClick={handleImageSearch} className="mt-2 text-blue-600 text-sm hover:underline">
+                  再検索
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* Footer */}
+          {imageSearchResults.length > 0 && (
+            <div className="flex-shrink-0 p-3 border-t border-zinc-200 bg-zinc-50">
+              <p className="text-xs text-zinc-500 mb-2">
+                {imageSearchResults.filter(img => img.selected).length > 0
+                  ? `${imageSearchResults.filter(img => img.selected).length}枚選択中`
+                  : "タップで選択"}
+              </p>
               <button
-                onClick={() => setShowFactCheck(false)}
-                className="p-2 rounded-lg hover:bg-white/50 transition-colors"
+                onClick={addSelectedImages}
+                disabled={imageSearchResults.filter(img => img.selected).length === 0}
+                className="w-full flex items-center justify-center gap-1.5 py-2 bg-blue-500 text-white text-sm font-medium rounded-lg hover:bg-blue-600 disabled:opacity-50 transition-colors"
               >
-                <X className="w-5 h-5 text-zinc-500" />
+                <Plus className="w-4 h-4" />
+                追加
               </button>
             </div>
+          )}
+        </div>
+      )}
 
-            {/* Modal Content */}
-            <div className="p-6">
-              {isFactChecking ? (
-                <div className="flex flex-col items-center justify-center py-12">
-                  <div className="relative">
-                    <div className="w-16 h-16 border-4 border-emerald-200 border-t-emerald-500 rounded-full animate-spin" />
-                    <ShieldCheck className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-6 h-6 text-emerald-500" />
-                  </div>
-                  <p className="mt-4 text-zinc-600 font-medium">投稿内容をチェック中...</p>
-                  <p className="text-sm text-zinc-400 mt-1">事実確認と文章の流れを分析しています</p>
+      {/* Fact Check Side Panel */}
+      {showFactCheck && (
+        <div className="fixed right-4 top-24 bottom-4 z-50 w-96 bg-white rounded-2xl shadow-2xl border border-zinc-200 overflow-hidden flex flex-col animate-fade-in">
+          {/* Panel Header */}
+          <div className="flex items-center justify-between px-4 py-3 bg-gradient-to-r from-emerald-50 to-teal-50 border-b border-zinc-200 flex-shrink-0">
+            <div className="flex items-center gap-2">
+              <ShieldCheck className="w-4 h-4 text-emerald-600" />
+              <span className="font-semibold text-zinc-900 text-sm">チェック</span>
+            </div>
+            <button onClick={() => setShowFactCheck(false)} className="p-1 rounded hover:bg-white/50">
+              <X className="w-4 h-4 text-zinc-500" />
+            </button>
+          </div>
+
+          {/* Panel Content */}
+          <div className="flex-1 overflow-y-auto p-4">
+            {isFactChecking ? (
+              <div className="flex flex-col items-center justify-center py-8">
+                <div className="relative">
+                  <div className="w-12 h-12 border-3 border-emerald-200 border-t-emerald-500 rounded-full animate-spin" />
+                  <ShieldCheck className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-5 h-5 text-emerald-500" />
                 </div>
-              ) : factCheckResults ? (
-                <div className="space-y-6">
-                  {/* Summary */}
-                  <div className={`p-4 rounded-xl ${
-                    factCheckResults.wasModified
-                      ? "bg-amber-50 border border-amber-200"
-                      : "bg-emerald-50 border border-emerald-200"
-                  }`}>
-                    <div className="flex items-center gap-2 mb-2">
-                      {factCheckResults.wasModified ? (
-                        <>
-                          <AlertTriangle className="w-5 h-5 text-amber-600" />
-                          <span className="font-medium text-amber-800">修正箇所があります</span>
-                        </>
-                      ) : (
-                        <>
-                          <CheckCircle2 className="w-5 h-5 text-emerald-600" />
-                          <span className="font-medium text-emerald-800">問題ありません</span>
-                        </>
-                      )}
-                    </div>
-                    <div className="flex gap-4 text-sm">
-                      <span className="text-zinc-600">
-                        主張チェック: {factCheckResults.summary.accurateClaims}/{factCheckResults.summary.totalClaims}件OK
-                      </span>
-                      {factCheckResults.summary.flowIssues > 0 && (
-                        <span className="text-zinc-600">
-                          流れの問題: {factCheckResults.summary.flowIssues}件
-                        </span>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Fact Check Details */}
-                  {factCheckResults.details.factCheckResults.length > 0 && (
-                    <div>
-                      <h3 className="text-sm font-semibold text-zinc-700 mb-3">事実チェック結果</h3>
-                      <div className="space-y-2">
-                        {factCheckResults.details.factCheckResults.map((item, index) => (
-                          <div
-                            key={index}
-                            className={`p-3 rounded-lg border ${
-                              item.isAccurate
-                                ? "bg-emerald-50 border-emerald-200"
-                                : "bg-red-50 border-red-200"
-                            }`}
-                          >
-                            <div className="flex items-start gap-2">
-                              {item.isAccurate ? (
-                                <CheckCircle2 className="w-4 h-4 text-emerald-600 mt-0.5" />
-                              ) : (
-                                <AlertTriangle className="w-4 h-4 text-red-600 mt-0.5" />
-                              )}
-                              <div className="flex-1 min-w-0">
-                                <p className="text-sm text-zinc-900">{item.claim}</p>
-                                {item.correction && (
-                                  <p className="text-sm text-red-700 mt-1">
-                                    → 修正案: {item.correction}
-                                  </p>
-                                )}
-                                <span className={`text-xs px-1.5 py-0.5 rounded mt-1 inline-block ${
-                                  item.confidence === "high" ? "bg-emerald-100 text-emerald-700" :
-                                  item.confidence === "medium" ? "bg-amber-100 text-amber-700" :
-                                  "bg-zinc-100 text-zinc-600"
-                                }`}>
-                                  信頼度: {item.confidence}
-                                </span>
-                              </div>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Flow Issues */}
-                  {factCheckResults.details.flowCheck.hasIssues && (
-                    <div>
-                      <h3 className="text-sm font-semibold text-zinc-700 mb-3">文章の流れ</h3>
-                      <ul className="space-y-1">
-                        {factCheckResults.details.flowCheck.issues.map((issue, index) => (
-                          <li key={index} className="flex items-start gap-2 text-sm text-zinc-600">
-                            <ChevronRight className="w-4 h-4 text-zinc-400 mt-0.5" />
-                            {issue}
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
-
-                  {/* Corrected Content */}
-                  {factCheckResults.wasModified && (
-                    <div>
-                      <h3 className="text-sm font-semibold text-zinc-700 mb-3">修正後の投稿</h3>
-                      <div className="p-4 bg-zinc-50 rounded-xl border border-zinc-200">
-                        <p className="text-sm text-zinc-900 whitespace-pre-wrap">
-                          {factCheckResults.correctedContent}
-                        </p>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Actions */}
-                  <div className="flex items-center gap-3 pt-4 border-t border-zinc-200">
-                    <button
-                      onClick={() => setShowFactCheck(false)}
-                      className="flex-1 py-2.5 text-zinc-600 font-medium rounded-xl hover:bg-zinc-100 transition-colors"
-                    >
-                      閉じる
-                    </button>
-                    {factCheckResults.wasModified && (
-                      <button
-                        onClick={applyFactCheckCorrection}
-                        className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-emerald-500 text-white font-medium rounded-xl hover:bg-emerald-600 transition-colors"
-                      >
-                        <CheckCircle2 className="w-4 h-4" />
-                        修正を適用
-                      </button>
+                <p className="mt-3 text-sm text-zinc-600">チェック中...</p>
+              </div>
+            ) : factCheckResults ? (
+              <div className="space-y-4">
+                {/* Summary */}
+                <div className={`p-3 rounded-lg ${
+                  factCheckResults.wasModified ? "bg-amber-50 border border-amber-200" : "bg-emerald-50 border border-emerald-200"
+                }`}>
+                  <div className="flex items-center gap-2 mb-1">
+                    {factCheckResults.wasModified ? (
+                      <>
+                        <AlertTriangle className="w-4 h-4 text-amber-600" />
+                        <span className="text-sm font-medium text-amber-800">修正あり</span>
+                      </>
+                    ) : (
+                      <>
+                        <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                        <span className="text-sm font-medium text-emerald-800">問題なし</span>
+                      </>
                     )}
                   </div>
+                  <p className="text-xs text-zinc-600">
+                    {factCheckResults.summary.accurateClaims}/{factCheckResults.summary.totalClaims}件OK
+                  </p>
                 </div>
-              ) : (
-                <div className="text-center py-12 text-zinc-500">
-                  <p>チェックに失敗しました</p>
-                  <button
-                    onClick={handleFactCheck}
-                    className="mt-4 text-emerald-600 hover:underline"
-                  >
-                    再試行
-                  </button>
-                </div>
-              )}
-            </div>
+
+                {/* Details */}
+                {factCheckResults.details.factCheckResults.length > 0 && (
+                  <div className="space-y-2">
+                    {factCheckResults.details.factCheckResults.map((item, index) => (
+                      <div key={index} className={`p-2 rounded-lg border text-xs ${
+                        item.isAccurate ? "bg-emerald-50 border-emerald-200" : "bg-red-50 border-red-200"
+                      }`}>
+                        <div className="flex items-start gap-1.5">
+                          {item.isAccurate ? (
+                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 mt-0.5 flex-shrink-0" />
+                          ) : (
+                            <AlertTriangle className="w-3.5 h-3.5 text-red-600 mt-0.5 flex-shrink-0" />
+                          )}
+                          <div className="min-w-0">
+                            <p className="text-zinc-900">{item.claim}</p>
+                            {item.correction && (
+                              <p className="text-red-700 mt-1">→ {item.correction}</p>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Corrected Content */}
+                {factCheckResults.wasModified && (
+                  <div>
+                    <p className="text-xs font-medium text-zinc-500 mb-2">修正後</p>
+                    <div className="p-3 bg-zinc-50 rounded-lg border border-zinc-200">
+                      <p className="text-xs text-zinc-900 whitespace-pre-wrap leading-relaxed">
+                        {factCheckResults.correctedContent}
+                      </p>
+                    </div>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="text-center py-8 text-zinc-500">
+                <p className="text-sm">チェックに失敗</p>
+                <button onClick={handleFactCheck} className="mt-2 text-emerald-600 text-sm hover:underline">
+                  再試行
+                </button>
+              </div>
+            )}
           </div>
+
+          {/* Footer */}
+          {factCheckResults?.wasModified && (
+            <div className="flex-shrink-0 p-3 border-t border-zinc-200 bg-zinc-50">
+              <button
+                onClick={applyFactCheckCorrection}
+                className="w-full flex items-center justify-center gap-1.5 py-2 bg-emerald-500 text-white text-sm font-medium rounded-lg hover:bg-emerald-600 transition-colors"
+              >
+                <CheckCircle2 className="w-4 h-4" />
+                修正を適用
+              </button>
+            </div>
+          )}
         </div>
       )}
 
-      {/* AI Correction Modal */}
+      {/* AI Correction Side Panel */}
       {showAICorrection && (
-        <div className="fixed inset-0 z-50 flex items-start justify-center pt-20 overflow-y-auto">
-          <div
-            className="fixed inset-0 bg-black/50 backdrop-blur-sm"
-            onClick={() => setShowAICorrection(false)}
-          />
+        <div className="fixed right-4 top-24 bottom-4 z-50 w-96 bg-white rounded-2xl shadow-2xl border border-zinc-200 overflow-hidden flex flex-col animate-fade-in">
+          {/* Panel Header */}
+          <div className="flex items-center justify-between px-4 py-3 bg-gradient-to-r from-blue-50 to-indigo-50 border-b border-zinc-200 flex-shrink-0">
+            <div className="flex items-center gap-2">
+              <RefreshCw className="w-4 h-4 text-blue-600" />
+              <span className="font-semibold text-zinc-900 text-sm">AI補正</span>
+            </div>
+            <button onClick={() => setShowAICorrection(false)} className="p-1 rounded hover:bg-white/50">
+              <X className="w-4 h-4 text-zinc-500" />
+            </button>
+          </div>
 
-          <div className="relative w-full max-w-2xl bg-white rounded-2xl shadow-xl mx-4 mb-20 overflow-hidden">
-            {/* Modal Header */}
-            <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-200 bg-gradient-to-r from-blue-50 to-indigo-50">
-              <div className="flex items-center gap-3">
-                <div className="p-2 bg-blue-100 rounded-lg">
-                  <RefreshCw className="w-5 h-5 text-blue-600" />
+          {/* Panel Content */}
+          <div className="flex-1 overflow-y-auto p-4">
+            {isAICorrecting ? (
+              <div className="flex flex-col items-center justify-center py-8">
+                <div className="relative">
+                  <div className="w-12 h-12 border-3 border-blue-200 border-t-blue-500 rounded-full animate-spin" />
+                  <RefreshCw className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-5 h-5 text-blue-500" />
                 </div>
-                <div>
-                  <h2 className="text-lg font-semibold text-zinc-900">AI補正</h2>
-                  <p className="text-sm text-zinc-500">構造を維持しつつ表現を改善</p>
-                </div>
+                <p className="mt-3 text-sm text-zinc-600">生成中...</p>
               </div>
-              <button
-                onClick={() => setShowAICorrection(false)}
-                className="p-2 rounded-lg hover:bg-white/50 transition-colors"
-              >
-                <X className="w-5 h-5 text-zinc-500" />
-              </button>
-            </div>
+            ) : aiCorrectionPatterns.length > 0 ? (
+              <div className="space-y-3">
+                {aiCorrectionPatterns.map((pattern, index) => {
+                  const colors = [
+                    { bg: "bg-blue-50", border: "border-blue-200" },
+                    { bg: "bg-purple-50", border: "border-purple-200" },
+                    { bg: "bg-emerald-50", border: "border-emerald-200" },
+                  ];
+                  const color = colors[index] || colors[0];
 
-            {/* Modal Content */}
-            <div className="p-6">
-              {isAICorrecting ? (
-                <div className="flex flex-col items-center justify-center py-12">
-                  <div className="relative">
-                    <div className="w-16 h-16 border-4 border-blue-200 border-t-blue-500 rounded-full animate-spin" />
-                    <RefreshCw className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-6 h-6 text-blue-500" />
-                  </div>
-                  <p className="mt-4 text-zinc-600 font-medium">3パターンを生成中...</p>
-                  <p className="text-sm text-zinc-400 mt-1">構造を維持しつつ表現を改善</p>
-                </div>
-              ) : aiCorrectionPatterns.length > 0 ? (
-                <div className="space-y-4">
-                  {aiCorrectionPatterns.map((pattern, index) => {
-                    const colors = [
-                      { bg: "bg-blue-50", border: "border-blue-200", icon: "text-blue-500" },
-                      { bg: "bg-purple-50", border: "border-purple-200", icon: "text-purple-500" },
-                      { bg: "bg-emerald-50", border: "border-emerald-200", icon: "text-emerald-500" },
-                    ];
-                    const color = colors[index] || colors[0];
-
-                    return (
-                      <button
-                        key={index}
-                        onClick={() => applyAICorrection(pattern.text)}
-                        className={`w-full p-4 rounded-xl border-2 ${color.border} ${color.bg} text-left transition-all hover:shadow-md group`}
-                      >
-                        <div className="flex items-start justify-between mb-2">
-                          <div className="flex items-center gap-2">
-                            <span className="font-semibold text-zinc-900">{pattern.type}</span>
-                            {pattern.warning && (
-                              <span className="text-xs text-amber-600 bg-amber-100 px-1.5 py-0.5 rounded">
-                                {pattern.warning}
-                              </span>
-                            )}
-                          </div>
-                          <CheckCircle2 className={`w-5 h-5 ${color.icon} opacity-0 group-hover:opacity-100 transition-opacity`} />
-                        </div>
-                        <p className="text-sm text-zinc-600 whitespace-pre-wrap line-clamp-4 leading-relaxed mb-2">
-                          {pattern.text}
-                        </p>
-                        <p className="text-xs text-zinc-500">{pattern.changes}</p>
-                      </button>
-                    );
-                  })}
-                </div>
-              ) : (
-                <div className="text-center py-12 text-zinc-500">
-                  <p>補正案を生成できませんでした</p>
-                  <button
-                    onClick={handleAICorrection}
-                    className="mt-4 text-blue-600 hover:underline"
-                  >
-                    再試行
-                  </button>
-                </div>
-              )}
-            </div>
+                  return (
+                    <button
+                      key={index}
+                      onClick={() => applyAICorrection(pattern.text)}
+                      className={`w-full p-3 rounded-xl border ${color.border} ${color.bg} text-left transition-all hover:shadow-md`}
+                    >
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="font-medium text-sm text-zinc-900">{pattern.type}</span>
+                        {pattern.warning && (
+                          <span className="text-[10px] text-amber-600 bg-amber-100 px-1.5 py-0.5 rounded">
+                            {pattern.warning}
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-xs text-zinc-600 whitespace-pre-wrap line-clamp-4 leading-relaxed mb-1">
+                        {pattern.text}
+                      </p>
+                      <p className="text-[10px] text-zinc-400">{pattern.changes}</p>
+                    </button>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="text-center py-8 text-zinc-500">
+                <p className="text-sm">生成できませんでした</p>
+                <button onClick={handleAICorrection} className="mt-2 text-blue-600 text-sm hover:underline">
+                  再試行
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}

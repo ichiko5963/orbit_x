@@ -582,12 +582,70 @@ export default function GeneratePage() {
       : allReferencePosts;
 
   // Get filtered reference posts for selected category
+  // Sティアが6件以上ある場合はランダムに6件選択
   const getFilteredReferencePosts = () => {
     if (postSource === "aiAuto") return []; // AIおまかせは別処理
     if (!selectedCategory) return [];
-    return activeReferencePosts
-      .filter(p => p.category === selectedCategory)
-      .slice(0, 6); // Top 6 from this category
+
+    const categoryPosts = activeReferencePosts.filter(p => p.category === selectedCategory);
+    const sTierPosts = categoryPosts.filter(p => p.tier === "S");
+    const aTierPosts = categoryPosts.filter(p => p.tier === "A");
+
+    // Sティアが6件以上ある場合はランダムに6件選択
+    if (sTierPosts.length >= 6) {
+      // Fisher-Yates shuffle
+      const shuffled = [...sTierPosts];
+      for (let i = shuffled.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+      }
+      return shuffled.slice(0, 6);
+    }
+
+    // Sティアが6件未満の場合はSティア全て + Aティアで6件になるまで
+    const result = [...sTierPosts];
+    const remainingSlots = 6 - result.length;
+    if (remainingSlots > 0 && aTierPosts.length > 0) {
+      // Aティアもランダムに選択
+      const shuffledA = [...aTierPosts];
+      for (let i = shuffledA.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [shuffledA[i], shuffledA[j]] = [shuffledA[j], shuffledA[i]];
+      }
+      result.push(...shuffledA.slice(0, remainingSlots));
+    }
+
+    return result;
+  };
+
+  // ランダムに6件選択するヘルパー関数（Sティア優先）
+  const selectRandomPosts = (posts: ReferencePostExtended[], count: number = 6): ReferencePostExtended[] => {
+    const sTierPosts = posts.filter(p => p.tier === "S");
+    const aTierPosts = posts.filter(p => p.tier === "A");
+
+    // Fisher-Yates shuffle helper
+    const shuffle = <T,>(arr: T[]): T[] => {
+      const result = [...arr];
+      for (let i = result.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [result[i], result[j]] = [result[j], result[i]];
+      }
+      return result;
+    };
+
+    // Sティアが6件以上ならランダムに6件
+    if (sTierPosts.length >= count) {
+      return shuffle(sTierPosts).slice(0, count);
+    }
+
+    // Sティア全て + Aティアからランダムに補充
+    const result = shuffle(sTierPosts);
+    const remaining = count - result.length;
+    if (remaining > 0 && aTierPosts.length > 0) {
+      result.push(...shuffle(aTierPosts).slice(0, remaining));
+    }
+
+    return result;
   };
 
   // Start smooth progress animation for a card (0 to ~95%)
@@ -790,19 +848,19 @@ export default function GeneratePage() {
         if (data.posts && data.posts.length > 0) {
           postsToUse = data.posts;
         } else {
-          // Fallback to top 6 by likes
-          postsToUse = allReferencePosts.slice(0, 6);
+          // Fallback: Sティア優先でランダムに6件選択
+          postsToUse = selectRandomPosts(allReferencePosts, 6);
         }
       } catch (err) {
         console.error("Auto select failed:", err);
-        postsToUse = allReferencePosts.slice(0, 6);
+        postsToUse = selectRandomPosts(allReferencePosts, 6);
       }
     } else {
       // カテゴリー選択モード
       postsToUse = getFilteredReferencePosts();
 
       if (postsToUse.length === 0) {
-        postsToUse = activeReferencePosts.slice(0, 6);
+        postsToUse = selectRandomPosts(activeReferencePosts, 6);
       }
     }
 

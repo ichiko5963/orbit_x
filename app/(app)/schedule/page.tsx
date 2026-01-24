@@ -18,6 +18,14 @@ import {
   GripVertical,
   Image as ImageIcon,
   MessageSquare,
+  Wand2,
+  ShieldCheck,
+  RefreshCw,
+  Search,
+  Sparkles,
+  Target,
+  AlertTriangle,
+  Check,
 } from "lucide-react";
 import Link from "next/link";
 import { useAuth } from "@/lib/auth-context";
@@ -83,6 +91,44 @@ export default function SchedulePage() {
   const [successMessage, setSuccessMessage] = useState("");
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // AI Enhancement state for editing
+  const [showAIEnhance, setShowAIEnhance] = useState(false);
+  const [aiEnhanceOptions, setAiEnhanceOptions] = useState<{id: string; text: string; label: string}[]>([]);
+  const [isEnhancing, setIsEnhancing] = useState(false);
+
+  // Fact Check state
+  const [showFactCheck, setShowFactCheck] = useState(false);
+  const [isFactChecking, setIsFactChecking] = useState(false);
+  const [factCheckResults, setFactCheckResults] = useState<{
+    wasModified: boolean;
+    correctedContent: string;
+    summary: { totalClaims: number; accurateClaims: number; inaccurateClaims: number; flowIssues: number };
+    details: {
+      factCheckResults: { claim: string; isAccurate: boolean; correction: string | null; confidence: string }[];
+      flowCheck: { hasIssues: boolean; issues: string[] };
+    };
+  } | null>(null);
+
+  // AI Correction state
+  const [showAICorrection, setShowAICorrection] = useState(false);
+  const [isAICorrecting, setIsAICorrecting] = useState(false);
+  const [aiCorrectionPatterns, setAiCorrectionPatterns] = useState<{
+    type: string;
+    text: string;
+    changes: string;
+    structureValid: boolean;
+    warning?: string;
+  }[]>([]);
+
+  // Image search state
+  const [showImageSearch, setShowImageSearch] = useState(false);
+  const [isSearchingImages, setIsSearchingImages] = useState(false);
+  const [imageSearchResults, setImageSearchResults] = useState<{url: string; title: string; source: string; selected?: boolean}[]>([]);
+  const [imageSearchWarning, setImageSearchWarning] = useState<string | null>(null);
+  const [imageSearchKeywords, setImageSearchKeywords] = useState<string[]>([]);
+  const [editImages, setEditImages] = useState<string[]>([]);
 
   // Get 7 days starting from weekStart
   const weekDays = useMemo(() => {
@@ -373,6 +419,7 @@ export default function SchedulePage() {
     setEditText(selectedPost.text);
     setEditDate(postDate.toISOString().split("T")[0]);
     setEditTime(postDate.toTimeString().slice(0, 5));
+    setEditImages(selectedPost.imageUrls || []);
     setIsEditing(true);
   };
 
@@ -386,17 +433,18 @@ export default function SchedulePage() {
       await updateScheduledPost(user.uid, selectedPost.id, {
         text: editText,
         scheduledAt: Timestamp.fromDate(newScheduledAt),
+        imageUrls: editImages,
       });
 
       setPosts((prev) =>
         prev.map((p) =>
           p.id === selectedPost.id
-            ? { ...p, text: editText, scheduledAt: newScheduledAt }
+            ? { ...p, text: editText, scheduledAt: newScheduledAt, imageUrls: editImages }
             : p
         )
       );
 
-      setSelectedPost({ ...selectedPost, text: editText, scheduledAt: newScheduledAt });
+      setSelectedPost({ ...selectedPost, text: editText, scheduledAt: newScheduledAt, imageUrls: editImages });
       setIsEditing(false);
       showToast("変更を保存しました");
     } catch (error) {
@@ -473,6 +521,209 @@ export default function SchedulePage() {
   const handleDuplicatePost = (post: ScheduledPost) => {
     const url = `/compose/editor?text=${encodeURIComponent(post.text)}`;
     window.location.href = url;
+  };
+
+  // AI Enhancement for edit mode
+  const handleAIEnhance = async () => {
+    if (!editText.trim()) return;
+
+    setIsEnhancing(true);
+    setShowAIEnhance(true);
+    setAiEnhanceOptions([]);
+
+    try {
+      const response = await fetch("/api/generate/enhance-options", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: editText }),
+      });
+
+      const data = await response.json();
+      if (data.options) {
+        setAiEnhanceOptions(data.options);
+      }
+    } catch (error) {
+      console.error("AI enhance failed:", error);
+    } finally {
+      setIsEnhancing(false);
+    }
+  };
+
+  // Apply AI enhancement
+  const applyEnhancement = (newText: string) => {
+    setEditText(newText);
+    setShowAIEnhance(false);
+  };
+
+  // Fact Check
+  const handleFactCheck = async () => {
+    if (!editText.trim()) return;
+
+    setIsFactChecking(true);
+    setShowFactCheck(true);
+    setFactCheckResults(null);
+
+    try {
+      const response = await fetch("/api/generate/fact-check", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content: editText }),
+      });
+
+      const data = await response.json();
+      if (data.success) {
+        setFactCheckResults(data);
+      }
+    } catch (error) {
+      console.error("Fact check failed:", error);
+    } finally {
+      setIsFactChecking(false);
+    }
+  };
+
+  // Apply fact check correction
+  const applyFactCheckCorrection = () => {
+    if (factCheckResults?.correctedContent) {
+      setEditText(factCheckResults.correctedContent);
+      setShowFactCheck(false);
+      setFactCheckResults(null);
+    }
+  };
+
+  // AI Correction
+  const handleAICorrection = async () => {
+    if (!editText.trim()) return;
+
+    setIsAICorrecting(true);
+    setShowAICorrection(true);
+    setAiCorrectionPatterns([]);
+
+    try {
+      const response = await fetch("/api/generate/ai-correct", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          currentText: editText,
+          originalContent: editText,
+          referenceText: editText,
+        }),
+      });
+
+      const data = await response.json();
+      if (data.success && data.patterns) {
+        setAiCorrectionPatterns(data.patterns);
+      }
+    } catch (error) {
+      console.error("AI correction failed:", error);
+    } finally {
+      setIsAICorrecting(false);
+    }
+  };
+
+  // Apply AI correction
+  const applyAICorrection = (newText: string) => {
+    setEditText(newText);
+    setShowAICorrection(false);
+    setAiCorrectionPatterns([]);
+  };
+
+  // Image search
+  const handleImageSearch = async () => {
+    if (!editText.trim()) return;
+
+    setShowImageSearch(true);
+    setIsSearchingImages(true);
+    setImageSearchResults([]);
+    setImageSearchWarning(null);
+    setImageSearchKeywords([]);
+
+    try {
+      const response = await fetch("/api/search-images", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content: editText }),
+      });
+
+      const data = await response.json();
+      if (data.images) {
+        setImageSearchResults(data.images.map((img: any) => ({ ...img, selected: false })));
+      }
+      if (data.keywords) {
+        setImageSearchKeywords(data.keywords);
+      }
+      if (data.message) {
+        setImageSearchWarning(data.message);
+      }
+    } catch (error) {
+      console.error("Image search failed:", error);
+    } finally {
+      setIsSearchingImages(false);
+    }
+  };
+
+  // Toggle image selection
+  const toggleImageSelection = (index: number) => {
+    setImageSearchResults(prev => prev.map((img, i) =>
+      i === index ? { ...img, selected: !img.selected } : img
+    ));
+  };
+
+  // Add selected images
+  const addSelectedImages = async () => {
+    const selectedImages = imageSearchResults.filter(img => img.selected);
+    const remainingSlots = 4 - editImages.length;
+    const imagesToAdd = selectedImages.slice(0, remainingSlots);
+
+    for (const img of imagesToAdd) {
+      try {
+        const response = await fetch("/api/proxy-image", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ url: img.url }),
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          if (data.base64) {
+            setEditImages(prev => [...prev, data.base64].slice(0, 4));
+          }
+        }
+      } catch (error) {
+        console.error("Failed to load image:", img.url, error);
+      }
+    }
+
+    setShowImageSearch(false);
+    setImageSearchResults([]);
+  };
+
+  // Handle image upload
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files) return;
+
+    if (editImages.length >= 4) {
+      alert("画像は最大4枚までです");
+      return;
+    }
+
+    Array.from(files).slice(0, 4 - editImages.length).forEach(file => {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const dataUrl = event.target?.result as string;
+        setEditImages(prev => [...prev, dataUrl].slice(0, 4));
+      };
+      reader.readAsDataURL(file);
+    });
+
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
+  };
+
+  // Remove image
+  const removeEditImage = (index: number) => {
+    setEditImages(prev => prev.filter((_, i) => i !== index));
   };
 
   if (isLoading) {
@@ -887,6 +1138,76 @@ export default function SchedulePage() {
                     />
                   </div>
 
+                  {/* AI Tools */}
+                  <div className="flex items-center gap-1 p-2 bg-zinc-50 rounded-lg border border-zinc-200">
+                    <button
+                      onClick={handleAIEnhance}
+                      disabled={!editText.trim() || isEnhancing}
+                      className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-amber-600 hover:bg-amber-50 transition-colors disabled:opacity-50 text-xs font-medium"
+                    >
+                      {isEnhancing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Wand2 className="w-3.5 h-3.5" />}
+                      AI強化
+                    </button>
+                    <button
+                      onClick={handleFactCheck}
+                      disabled={!editText.trim() || isFactChecking}
+                      className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-emerald-600 hover:bg-emerald-50 transition-colors disabled:opacity-50 text-xs font-medium"
+                    >
+                      {isFactChecking ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ShieldCheck className="w-3.5 h-3.5" />}
+                      チェック
+                    </button>
+                    <button
+                      onClick={handleAICorrection}
+                      disabled={!editText.trim() || isAICorrecting}
+                      className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-blue-600 hover:bg-blue-50 transition-colors disabled:opacity-50 text-xs font-medium"
+                    >
+                      {isAICorrecting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
+                      AI補正
+                    </button>
+                    <div className="w-px h-5 bg-zinc-300 mx-1" />
+                    <button
+                      onClick={() => fileInputRef.current?.click()}
+                      disabled={editImages.length >= 4}
+                      className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-zinc-600 hover:bg-zinc-100 transition-colors disabled:opacity-50 text-xs font-medium"
+                    >
+                      <ImageIcon className="w-3.5 h-3.5" />
+                      画像
+                    </button>
+                    <button
+                      onClick={handleImageSearch}
+                      disabled={!editText.trim() || editImages.length >= 4}
+                      className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-blue-600 hover:bg-blue-50 transition-colors disabled:opacity-50 text-xs font-medium"
+                    >
+                      <Sparkles className="w-3.5 h-3.5" />
+                      AI検索
+                    </button>
+                  </div>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/*"
+                    multiple
+                    onChange={handleImageUpload}
+                    className="hidden"
+                  />
+
+                  {/* Edit Images Preview */}
+                  {editImages.length > 0 && (
+                    <div className={`grid gap-2 ${editImages.length === 1 ? "grid-cols-1" : "grid-cols-2"}`}>
+                      {editImages.map((img, idx) => (
+                        <div key={idx} className="relative aspect-video rounded-lg overflow-hidden bg-zinc-100">
+                          <img src={img} alt="" className="w-full h-full object-cover" />
+                          <button
+                            onClick={() => removeEditImage(idx)}
+                            className="absolute top-1 right-1 p-1 bg-black/60 rounded-full text-white hover:bg-black/80"
+                          >
+                            <XIcon className="w-3 h-3" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
                   <div className="flex gap-3">
                     <button
                       onClick={() => setIsEditing(false)}
@@ -1128,6 +1449,259 @@ export default function SchedulePage() {
                 この時間に移動
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* AI Enhancement Side Panel */}
+      {showAIEnhance && (
+        <div className="fixed right-4 top-24 bottom-4 w-96 z-50 bg-white rounded-2xl shadow-2xl border border-zinc-200 overflow-hidden flex flex-col animate-fade-in">
+          <div className="flex items-center justify-between px-4 py-3 bg-gradient-to-r from-amber-50 to-orange-50 border-b border-zinc-200">
+            <div className="flex items-center gap-2">
+              <Wand2 className="w-4 h-4 text-amber-600" />
+              <span className="font-semibold text-zinc-900 text-sm">AI強化</span>
+            </div>
+            <button
+              onClick={() => setShowAIEnhance(false)}
+              className="p-1 rounded-lg hover:bg-black/10"
+            >
+              <XIcon className="w-4 h-4 text-zinc-500" />
+            </button>
+          </div>
+          <div className="flex-1 overflow-y-auto p-4">
+            {isEnhancing ? (
+              <div className="flex items-center justify-center py-8">
+                <Loader2 className="w-6 h-6 text-amber-500 animate-spin" />
+                <span className="ml-2 text-sm text-zinc-600">AI分析中...</span>
+              </div>
+            ) : aiEnhanceOptions.length > 0 ? (
+              <div className="space-y-3">
+                {aiEnhanceOptions.map((option) => (
+                  <button
+                    key={option.id}
+                    onClick={() => applyEnhancement(option.text)}
+                    className="w-full p-4 bg-zinc-50 rounded-xl text-left hover:bg-amber-50 hover:border-amber-200 border border-zinc-200 transition-colors group"
+                  >
+                    <div className="text-xs font-medium text-amber-600 mb-2">{option.label}</div>
+                    <p className="text-sm text-zinc-700 whitespace-pre-wrap leading-relaxed">{option.text}</p>
+                    <div className="mt-2 text-xs text-zinc-400 group-hover:text-amber-600">クリックで適用</div>
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <div className="text-sm text-zinc-500 text-center py-8">
+                候補がありません
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Fact Check Side Panel */}
+      {showFactCheck && (
+        <div className="fixed right-4 top-24 bottom-4 w-96 z-50 bg-white rounded-2xl shadow-2xl border border-zinc-200 overflow-hidden flex flex-col animate-fade-in">
+          <div className="flex items-center justify-between px-4 py-3 bg-gradient-to-r from-emerald-50 to-teal-50 border-b border-zinc-200">
+            <div className="flex items-center gap-2">
+              <ShieldCheck className="w-4 h-4 text-emerald-600" />
+              <span className="font-semibold text-zinc-900 text-sm">ファクトチェック</span>
+            </div>
+            <button
+              onClick={() => setShowFactCheck(false)}
+              className="p-1 rounded-lg hover:bg-black/10"
+            >
+              <XIcon className="w-4 h-4 text-zinc-500" />
+            </button>
+          </div>
+          <div className="flex-1 overflow-y-auto p-4">
+            {isFactChecking ? (
+              <div className="flex items-center justify-center py-8">
+                <Loader2 className="w-6 h-6 text-emerald-500 animate-spin" />
+                <span className="ml-2 text-sm text-zinc-600">チェック中...</span>
+              </div>
+            ) : factCheckResults ? (
+              <div className="space-y-4">
+                <div className="grid grid-cols-3 gap-2">
+                  <div className="p-2 bg-emerald-50 rounded-lg text-center">
+                    <div className="text-lg font-bold text-emerald-600">{factCheckResults.summary.accurateClaims}</div>
+                    <div className="text-xs text-zinc-500">正確</div>
+                  </div>
+                  <div className="p-2 bg-red-50 rounded-lg text-center">
+                    <div className="text-lg font-bold text-red-600">{factCheckResults.summary.inaccurateClaims}</div>
+                    <div className="text-xs text-zinc-500">要確認</div>
+                  </div>
+                  <div className="p-2 bg-amber-50 rounded-lg text-center">
+                    <div className="text-lg font-bold text-amber-600">{factCheckResults.summary.flowIssues}</div>
+                    <div className="text-xs text-zinc-500">文脈</div>
+                  </div>
+                </div>
+
+                {factCheckResults.details.factCheckResults.filter(r => !r.isAccurate).length > 0 && (
+                  <div className="space-y-2">
+                    <div className="text-xs font-medium text-zinc-500">指摘事項</div>
+                    {factCheckResults.details.factCheckResults.filter(r => !r.isAccurate).map((result, idx) => (
+                      <div key={idx} className="p-3 bg-red-50 rounded-lg">
+                        <div className="text-sm text-red-700 mb-1">{result.claim}</div>
+                        {result.correction && (
+                          <div className="text-xs text-emerald-600">→ {result.correction}</div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {factCheckResults.wasModified && (
+                  <button
+                    onClick={applyFactCheckCorrection}
+                    className="w-full py-3 bg-emerald-500 text-white font-medium rounded-xl hover:bg-emerald-600 flex items-center justify-center gap-2"
+                  >
+                    <Check className="w-4 h-4" />
+                    修正を適用
+                  </button>
+                )}
+              </div>
+            ) : (
+              <div className="text-sm text-zinc-500 text-center py-8">
+                結果がありません
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* AI Correction Side Panel */}
+      {showAICorrection && (
+        <div className="fixed right-4 top-24 bottom-4 w-96 z-50 bg-white rounded-2xl shadow-2xl border border-zinc-200 overflow-hidden flex flex-col animate-fade-in">
+          <div className="flex items-center justify-between px-4 py-3 bg-gradient-to-r from-blue-50 to-indigo-50 border-b border-zinc-200">
+            <div className="flex items-center gap-2">
+              <RefreshCw className="w-4 h-4 text-blue-600" />
+              <span className="font-semibold text-zinc-900 text-sm">AI補正</span>
+            </div>
+            <button
+              onClick={() => setShowAICorrection(false)}
+              className="p-1 rounded-lg hover:bg-black/10"
+            >
+              <XIcon className="w-4 h-4 text-zinc-500" />
+            </button>
+          </div>
+          <div className="flex-1 overflow-y-auto p-4">
+            {isAICorrecting ? (
+              <div className="flex items-center justify-center py-8">
+                <Loader2 className="w-6 h-6 text-blue-500 animate-spin" />
+                <span className="ml-2 text-sm text-zinc-600">分析中...</span>
+              </div>
+            ) : aiCorrectionPatterns.length > 0 ? (
+              <div className="space-y-3">
+                {aiCorrectionPatterns.map((pattern, idx) => (
+                  <button
+                    key={idx}
+                    onClick={() => applyAICorrection(pattern.text)}
+                    className="w-full p-4 bg-zinc-50 rounded-xl text-left hover:bg-blue-50 hover:border-blue-200 border border-zinc-200 transition-colors group"
+                  >
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-xs font-medium text-blue-600">{pattern.type}</span>
+                      {!pattern.structureValid && (
+                        <span className="flex items-center gap-1 text-xs text-amber-600">
+                          <AlertTriangle className="w-3 h-3" />
+                          構造変更
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-sm text-zinc-700 whitespace-pre-wrap leading-relaxed">{pattern.text}</p>
+                    <div className="mt-2 text-xs text-zinc-400">{pattern.changes}</div>
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <div className="text-sm text-zinc-500 text-center py-8">
+                候補がありません
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Image Search Side Panel */}
+      {showImageSearch && (
+        <div className="fixed right-4 top-24 bottom-4 w-96 z-50 bg-white rounded-2xl shadow-2xl border border-zinc-200 overflow-hidden flex flex-col animate-fade-in">
+          <div className="flex items-center justify-between px-4 py-3 bg-gradient-to-r from-violet-50 to-purple-50 border-b border-zinc-200">
+            <div className="flex items-center gap-2">
+              <Sparkles className="w-4 h-4 text-violet-600" />
+              <span className="font-semibold text-zinc-900 text-sm">AIで画像検索</span>
+              {imageSearchResults.length > 0 && (
+                <span className="text-xs text-zinc-500">({imageSearchResults.length}件)</span>
+              )}
+            </div>
+            <button
+              onClick={() => setShowImageSearch(false)}
+              className="p-1 rounded-lg hover:bg-black/10"
+            >
+              <XIcon className="w-4 h-4 text-zinc-500" />
+            </button>
+          </div>
+
+          {/* Keywords Display */}
+          {imageSearchKeywords.length > 0 && !isSearchingImages && (
+            <div className="px-3 py-2 bg-zinc-50 border-b border-zinc-200 flex-shrink-0">
+              <p className="text-xs text-zinc-500 mb-1">検索キーワード:</p>
+              <div className="flex flex-wrap gap-1">
+                {imageSearchKeywords.map((kw, i) => (
+                  <span key={i} className="px-2 py-0.5 bg-violet-100 text-violet-700 text-xs rounded-full">{kw}</span>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Warning Message */}
+          {imageSearchWarning && !isSearchingImages && (
+            <div className="px-3 py-2 bg-amber-50 border-b border-amber-200 flex-shrink-0">
+              <p className="text-xs text-amber-700">{imageSearchWarning}</p>
+            </div>
+          )}
+
+          <div className="flex-1 overflow-y-auto p-4">
+            {isSearchingImages ? (
+              <div className="flex flex-col items-center justify-center py-8">
+                <Loader2 className="w-6 h-6 text-violet-500 animate-spin mb-2" />
+                <span className="text-sm text-zinc-600">キーワード抽出・画像検索中...</span>
+              </div>
+            ) : imageSearchResults.length > 0 ? (
+              <div className="space-y-4">
+                <div className="grid grid-cols-2 gap-2">
+                  {imageSearchResults.map((img, idx) => (
+                    <button
+                      key={idx}
+                      onClick={() => toggleImageSelection(idx)}
+                      className={`relative rounded-lg overflow-hidden border-2 transition-colors bg-zinc-100 ${
+                        img.selected ? "border-violet-500" : "border-transparent hover:border-zinc-300"
+                      }`}
+                    >
+                      <img src={img.url} alt={img.title} className="w-full h-auto max-h-32 object-contain" onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
+                      {img.selected && (
+                        <div className="absolute top-1 right-1 w-5 h-5 bg-violet-500 rounded-full flex items-center justify-center">
+                          <Check className="w-3 h-3 text-white" />
+                        </div>
+                      )}
+                      <div className="absolute bottom-0 left-0 right-0 p-1 bg-gradient-to-t from-black/70 to-transparent">
+                        <p className="text-[10px] text-white truncate">{img.title}</p>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+                {imageSearchResults.some(img => img.selected) && (
+                  <button
+                    onClick={addSelectedImages}
+                    className="w-full py-3 bg-violet-500 text-white font-medium rounded-xl hover:bg-violet-600 flex items-center justify-center gap-2"
+                  >
+                    <ImageIcon className="w-4 h-4" />
+                    選択した画像を追加
+                  </button>
+                )}
+              </div>
+            ) : (
+              <div className="text-sm text-zinc-500 text-center py-8">
+                画像が見つかりませんでした
+              </div>
+            )}
           </div>
         </div>
       )}
