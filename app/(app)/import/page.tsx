@@ -11,6 +11,8 @@ import {
   Sparkles,
   ArrowRight,
   Info,
+  ExternalLink,
+  BookOpen,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 import { useImport } from "@/lib/import-context";
@@ -29,17 +31,24 @@ const steps: ProcessStep[] = [
   { name: "口調分析", description: "文体パターンを分析中" },
 ];
 
+// Tutorial article URL
+const TUTORIAL_URL = "https://note.com/preview/nf945ad44f76e?prev_access_key=d3a4707f4aabe2aa5762ec052dcf2c63";
+
 // Supported CSV formats
 const csvFormats = [
+  {
+    name: "全文形式",
+    description: "おすすめ",
+    columns: ["投稿日時", "投稿本文", "いいね数", "リツイート数"],
+    recommended: true,
+    hasTutorial: true,
+  },
   {
     name: "X Premium形式",
     description: "X Premiumのエクスポート",
     columns: ["日付", "ポスト本文", "ポストのリンク", "インプレッション数", "いいね", "エンゲージメント"],
-  },
-  {
-    name: "シンプル形式",
-    description: "基本的なCSV",
-    columns: ["投稿日時", "投稿本文", "いいね数", "リツイート数"],
+    recommended: false,
+    hasTutorial: false,
   },
 ];
 
@@ -372,6 +381,29 @@ export default function ImportPage() {
 
         {/* Sidebar Info */}
         <div className="lg:col-span-2 space-y-6">
+          {/* Tutorial Link Card */}
+          <a
+            href={TUTORIAL_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="block bg-gradient-to-r from-emerald-500 to-teal-500 p-5 rounded-2xl shadow-lg shadow-emerald-500/20 hover:shadow-xl hover:shadow-emerald-500/30 transition-all group"
+          >
+            <div className="flex items-start gap-4">
+              <div className="w-12 h-12 bg-white/20 rounded-xl flex items-center justify-center flex-shrink-0">
+                <BookOpen className="w-6 h-6 text-white" />
+              </div>
+              <div className="flex-1">
+                <p className="text-white font-bold text-base mb-1">
+                  投稿データの抽出方法がわからない方へ
+                </p>
+                <p className="text-white/80 text-sm">
+                  Xの投稿全文を確実にCSVで抽出する方法を解説しています（5分で完了）
+                </p>
+              </div>
+              <ExternalLink className="w-5 h-5 text-white/70 group-hover:text-white transition-colors flex-shrink-0 mt-1" />
+            </div>
+          </a>
+
           {/* Supported Formats */}
           <div className="bg-white p-6 rounded-2xl border border-zinc-200 shadow-sm">
             <div className="flex items-center gap-2 mb-4">
@@ -380,22 +412,49 @@ export default function ImportPage() {
             </div>
             <div className="space-y-4">
               {csvFormats.map((format, index) => (
-                <div key={format.name} className="space-y-2">
-                  <div className="flex items-center gap-2">
+                <div
+                  key={format.name}
+                  className={`space-y-2 p-3 rounded-xl ${
+                    format.recommended ? "bg-emerald-50 border border-emerald-200" : ""
+                  }`}
+                >
+                  <div className="flex items-center gap-2 flex-wrap">
                     <span className="text-sm font-medium text-zinc-900">{format.name}</span>
-                    <span className="text-xs text-zinc-400">{format.description}</span>
+                    {format.recommended && (
+                      <span className="px-2 py-0.5 text-xs font-bold bg-emerald-500 text-white rounded-full">
+                        おすすめ
+                      </span>
+                    )}
+                    {format.hasTutorial && (
+                      <a
+                        href={TUTORIAL_URL}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-xs text-emerald-600 hover:text-emerald-700 flex items-center gap-1"
+                      >
+                        解説記事あり
+                        <ExternalLink className="w-3 h-3" />
+                      </a>
+                    )}
+                    {!format.recommended && (
+                      <span className="text-xs text-zinc-400">{format.description}</span>
+                    )}
                   </div>
                   <div className="flex flex-wrap gap-1">
                     {format.columns.map((col) => (
                       <code
                         key={col}
-                        className="text-xs text-emerald-600 font-mono bg-zinc-50 px-2 py-1 rounded"
+                        className={`text-xs font-mono px-2 py-1 rounded ${
+                          format.recommended
+                            ? "text-emerald-700 bg-emerald-100"
+                            : "text-emerald-600 bg-zinc-50"
+                        }`}
                       >
                         {col}
                       </code>
                     ))}
                   </div>
-                  {index < csvFormats.length - 1 && (
+                  {index < csvFormats.length - 1 && !format.recommended && (
                     <div className="border-t border-zinc-100 mt-3" />
                   )}
                 </div>
