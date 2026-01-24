@@ -101,7 +101,7 @@ export default function GeneratePage() {
     reason: string;
     searchQueries: string[];
   } | null>(null);
-  const [autoEnrich, setAutoEnrich] = useState(true); // 自動補足ON/OFF
+  const [autoEnrich, setAutoEnrich] = useState(false); // 自動補足ON/OFF（デフォルトOFF）
 
   // Post purpose selection state
   const [purposes, setPurposes] = useState<{
@@ -1093,6 +1093,100 @@ export default function GeneratePage() {
         )}
       </div>
 
+      {/* Post Purpose Selection - Moved above reference source */}
+      {!hasGenerated && content.trim() && (
+        <div className="bg-white rounded-xl border border-zinc-200 shadow-sm mb-6 overflow-hidden">
+          <button
+            onClick={() => {
+              if (!showPurposeSelection) {
+                handleAnalyzePurposes();
+              } else {
+                setShowPurposeSelection(false);
+              }
+            }}
+            className="w-full flex items-center justify-between p-4 hover:bg-zinc-50 transition-colors"
+          >
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-lg bg-violet-50 flex items-center justify-center">
+                <Target className="w-5 h-5 text-violet-500" />
+              </div>
+              <div className="text-left">
+                <p className="font-medium text-zinc-900">投稿目的を選択</p>
+                <p className="text-sm text-zinc-500">
+                  {purposes.filter(p => p.selected).length > 0
+                    ? `${purposes.filter(p => p.selected).length}件選択中`
+                    : "AIが投稿の目的を分析して提案します（複数選択可）"}
+                </p>
+              </div>
+            </div>
+            {isLoadingPurposes ? (
+              <Loader2 className="w-5 h-5 text-violet-500 animate-spin" />
+            ) : (
+              <ChevronDown className={`w-5 h-5 text-zinc-400 transition-transform ${showPurposeSelection ? "rotate-180" : ""}`} />
+            )}
+          </button>
+
+          {showPurposeSelection && (
+            <div className="px-4 pb-4 border-t border-zinc-100">
+              {isLoadingPurposes ? (
+                <div className="py-6 text-center">
+                  <Loader2 className="w-6 h-6 text-violet-500 animate-spin mx-auto mb-2" />
+                  <p className="text-sm text-zinc-500">投稿目的を分析中...</p>
+                </div>
+              ) : purposes.length > 0 ? (
+                <div className="pt-4 space-y-2">
+                  {purposes.map((purpose) => (
+                    <button
+                      key={purpose.id}
+                      onClick={() => togglePurpose(purpose.id)}
+                      className={`w-full flex items-start gap-3 p-3 rounded-xl border-2 transition-all text-left ${
+                        purpose.selected
+                          ? "border-violet-500 bg-violet-50"
+                          : "border-zinc-200 hover:border-zinc-300"
+                      }`}
+                    >
+                      <div className={`w-5 h-5 rounded-md border-2 flex items-center justify-center flex-shrink-0 mt-0.5 ${
+                        purpose.selected
+                          ? "border-violet-500 bg-violet-500"
+                          : "border-zinc-300"
+                      }`}>
+                        {purpose.selected && (
+                          <CheckCircle2 className="w-3 h-3 text-white" />
+                        )}
+                      </div>
+                      <div className="flex-1">
+                        <p className="font-medium text-zinc-900">{purpose.label}</p>
+                        <p className="text-sm text-zinc-500">{purpose.description}</p>
+                        <div className="flex flex-wrap gap-1 mt-1.5">
+                          {purpose.searchKeywords.map((kw, i) => (
+                            <span key={i} className="px-1.5 py-0.5 bg-zinc-100 text-zinc-600 text-xs rounded">
+                              {kw}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    </button>
+                  ))}
+                  <p className="text-xs text-zinc-400 mt-2">
+                    選択した目的に基づいて情報を補足します
+                  </p>
+                </div>
+              ) : (
+                <div className="py-6 text-center text-zinc-500">
+                  <p className="text-sm">目的の候補を取得できませんでした</p>
+                  <button
+                    onClick={handleAnalyzePurposes}
+                    className="text-violet-600 text-sm mt-2 hover:underline"
+                  >
+                    再試行
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Category Selection (if not yet generated) */}
       {!hasGenerated && (
         <div className="bg-white rounded-xl border border-zinc-200 shadow-sm mb-6 p-6">
@@ -1184,27 +1278,27 @@ export default function GeneratePage() {
                   </Link>
                 </div>
               ) : (
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
-              {availableCategories.map(cat => (
-                <button
-                  key={cat.name}
-                  onClick={() => setSelectedCategory(cat.name)}
-                  className={`p-3 rounded-xl border-2 text-left transition-all ${
-                    selectedCategory === cat.name
-                      ? "border-emerald-500 bg-emerald-50"
-                      : "border-zinc-200 hover:border-zinc-300 bg-white"
-                  }`}
-                >
-                  <p className={`font-medium text-sm ${
-                    selectedCategory === cat.name ? "text-emerald-700" : "text-zinc-700"
-                  }`}>
-                    {cat.name}
-                  </p>
-                  <p className="text-xs text-zinc-400 mt-1">{cat.count}件の参考投稿</p>
-                </button>
-              ))}
-            </div>
-          )}
+                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+                  {availableCategories.map(cat => (
+                    <button
+                      key={cat.name}
+                      onClick={() => setSelectedCategory(cat.name)}
+                      className={`p-3 rounded-xl border-2 text-left transition-all ${
+                        selectedCategory === cat.name
+                          ? "border-emerald-500 bg-emerald-50"
+                          : "border-zinc-200 hover:border-zinc-300 bg-white"
+                      }`}
+                    >
+                      <p className={`font-medium text-sm ${
+                        selectedCategory === cat.name ? "text-emerald-700" : "text-zinc-700"
+                      }`}>
+                        {cat.name}
+                      </p>
+                      <p className="text-xs text-zinc-400 mt-1">{cat.count}件の参考投稿</p>
+                    </button>
+                  ))}
+                </div>
+              )}
 
               {/* Selected category preview */}
               {selectedCategory && (
@@ -1234,100 +1328,6 @@ export default function GeneratePage() {
                 </div>
               )}
             </>
-          )}
-        </div>
-      )}
-
-      {/* Post Purpose Selection */}
-      {!hasGenerated && content.trim() && (
-        <div className="bg-white rounded-xl border border-zinc-200 shadow-sm mb-6 overflow-hidden">
-          <button
-            onClick={() => {
-              if (!showPurposeSelection) {
-                handleAnalyzePurposes();
-              } else {
-                setShowPurposeSelection(false);
-              }
-            }}
-            className="w-full flex items-center justify-between p-4 hover:bg-zinc-50 transition-colors"
-          >
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-lg bg-violet-50 flex items-center justify-center">
-                <Target className="w-5 h-5 text-violet-500" />
-              </div>
-              <div className="text-left">
-                <p className="font-medium text-zinc-900">投稿目的を選択</p>
-                <p className="text-sm text-zinc-500">
-                  {purposes.filter(p => p.selected).length > 0
-                    ? `${purposes.filter(p => p.selected).length}件選択中`
-                    : "AIが投稿の目的を分析して提案します（複数選択可）"}
-                </p>
-              </div>
-            </div>
-            {isLoadingPurposes ? (
-              <Loader2 className="w-5 h-5 text-violet-500 animate-spin" />
-            ) : (
-              <ChevronDown className={`w-5 h-5 text-zinc-400 transition-transform ${showPurposeSelection ? "rotate-180" : ""}`} />
-            )}
-          </button>
-
-          {showPurposeSelection && (
-            <div className="px-4 pb-4 border-t border-zinc-100">
-              {isLoadingPurposes ? (
-                <div className="py-6 text-center">
-                  <Loader2 className="w-6 h-6 text-violet-500 animate-spin mx-auto mb-2" />
-                  <p className="text-sm text-zinc-500">投稿目的を分析中...</p>
-                </div>
-              ) : purposes.length > 0 ? (
-                <div className="pt-4 space-y-2">
-                  {purposes.map((purpose) => (
-                    <button
-                      key={purpose.id}
-                      onClick={() => togglePurpose(purpose.id)}
-                      className={`w-full flex items-start gap-3 p-3 rounded-xl border-2 transition-all text-left ${
-                        purpose.selected
-                          ? "border-violet-500 bg-violet-50"
-                          : "border-zinc-200 hover:border-zinc-300"
-                      }`}
-                    >
-                      <div className={`w-5 h-5 rounded-md border-2 flex items-center justify-center flex-shrink-0 mt-0.5 ${
-                        purpose.selected
-                          ? "border-violet-500 bg-violet-500"
-                          : "border-zinc-300"
-                      }`}>
-                        {purpose.selected && (
-                          <CheckCircle2 className="w-3 h-3 text-white" />
-                        )}
-                      </div>
-                      <div className="flex-1">
-                        <p className="font-medium text-zinc-900">{purpose.label}</p>
-                        <p className="text-sm text-zinc-500">{purpose.description}</p>
-                        <div className="flex flex-wrap gap-1 mt-1.5">
-                          {purpose.searchKeywords.map((kw, i) => (
-                            <span key={i} className="px-1.5 py-0.5 bg-zinc-100 text-zinc-600 text-xs rounded">
-                              {kw}
-                            </span>
-                          ))}
-                        </div>
-                      </div>
-                    </button>
-                  ))}
-                  <p className="text-xs text-zinc-400 mt-2">
-                    選択した目的に基づいて情報を補足します
-                  </p>
-                </div>
-              ) : (
-                <div className="py-6 text-center text-zinc-500">
-                  <p className="text-sm">目的の候補を取得できませんでした</p>
-                  <button
-                    onClick={handleAnalyzePurposes}
-                    className="text-violet-600 text-sm mt-2 hover:underline"
-                  >
-                    再試行
-                  </button>
-                </div>
-              )}
-            </div>
           )}
         </div>
       )}

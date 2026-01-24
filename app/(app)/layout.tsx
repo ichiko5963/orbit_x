@@ -225,8 +225,14 @@ function AppLayoutContent({ children }: { children: ReactNode }) {
         )}
       >
         {/* Logo */}
-        <div className="h-20 flex items-center px-5 border-b border-zinc-100 flex-shrink-0">
-          <Link href="/dashboard" className="flex items-center gap-3 overflow-hidden">
+        <div className={clsx(
+          "h-20 flex items-center border-b border-zinc-100 flex-shrink-0 transition-all duration-300",
+          collapsed ? "justify-center px-0" : "px-5"
+        )}>
+          <Link href="/dashboard" className={clsx(
+            "flex items-center overflow-hidden transition-all duration-300",
+            collapsed ? "justify-center" : "gap-3"
+          )}>
             <Image
               src="/logo.png"
               alt="OrbitX"
@@ -262,11 +268,11 @@ function AppLayoutContent({ children }: { children: ReactNode }) {
                     key={item.href}
                     href={item.href}
                     className={clsx(
-                      "group flex items-center gap-4 py-3.5 rounded-xl transition-all duration-200",
+                      "group flex items-center py-3.5 rounded-xl transition-all duration-200",
                       isActive
                         ? "bg-emerald-500 text-white shadow-lg shadow-emerald-500/25"
                         : "text-zinc-600 hover:text-zinc-900 hover:bg-zinc-100",
-                      collapsed ? "justify-center px-3" : "px-4"
+                      collapsed ? "justify-center px-0" : "px-4 gap-4"
                     )}
                     title={collapsed ? item.name : undefined}
                   >
@@ -304,11 +310,11 @@ function AppLayoutContent({ children }: { children: ReactNode }) {
                     key={item.href}
                     href={item.href}
                     className={clsx(
-                      "group flex items-center gap-4 py-3.5 rounded-xl transition-all duration-200",
+                      "group flex items-center py-3.5 rounded-xl transition-all duration-200",
                       isActive
                         ? "bg-emerald-500 text-white shadow-lg shadow-emerald-500/25"
                         : "text-zinc-600 hover:text-zinc-900 hover:bg-zinc-100",
-                      collapsed ? "justify-center px-3" : "px-4"
+                      collapsed ? "justify-center px-0" : "px-4 gap-4"
                     )}
                     title={collapsed ? item.name : undefined}
                   >
@@ -334,8 +340,8 @@ function AppLayoutContent({ children }: { children: ReactNode }) {
         {/* User Profile */}
         <div className="p-4 border-t border-zinc-100 overflow-hidden">
           <div className={clsx(
-            "flex items-center gap-3 p-3 rounded-xl transition-all duration-300",
-            collapsed ? "justify-center bg-transparent" : "bg-zinc-50"
+            "flex items-center p-3 rounded-xl transition-all duration-300",
+            collapsed ? "justify-center bg-transparent" : "bg-zinc-50 gap-3"
           )}>
             {/* Avatar - always visible */}
             <div className="flex-shrink-0">
