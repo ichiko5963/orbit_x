@@ -33,6 +33,8 @@ import {
 import { AuthProvider, useAuth } from "@/lib/auth-context";
 import { ImportProvider, useImport } from "@/lib/import-context";
 import { XProfileProvider, useXProfile } from "@/lib/x-profile-context";
+import { ResearchProvider } from "@/lib/research-context";
+import { ResearchProgressWidget } from "@/components/research-progress-widget";
 
 // Custom X logo component
 const XLogo = ({ className }: { className?: string }) => (
@@ -554,6 +556,9 @@ function AppLayoutContent({ children }: { children: ReactNode }) {
 
         {/* Background Import Indicator */}
         <BackgroundImportIndicator />
+
+        {/* Research Progress Widget (他のページに移動しても表示) */}
+        <ResearchProgressWidget />
       </div>
     </div>
   );
@@ -564,7 +569,9 @@ export default function AppLayout({ children }: { children: ReactNode }) {
     <AuthProvider>
       <ImportProvider>
         <XProfileProvider>
-          <AppLayoutContent>{children}</AppLayoutContent>
+          <ResearchProvider>
+            <AppLayoutContent>{children}</AppLayoutContent>
+          </ResearchProvider>
         </XProfileProvider>
       </ImportProvider>
     </AuthProvider>
