@@ -26,6 +26,7 @@ import {
   Bookmark,
   Loader2,
   Sparkles,
+  Target,
 } from "lucide-react";
 import { useXProfile } from "@/lib/x-profile-context";
 import { useAuth } from "@/lib/auth-context";
@@ -39,6 +40,7 @@ interface SettingSection {
 const sections: SettingSection[] = [
   { id: "profile", title: "プロフィール", icon: User },
   { id: "xauth", title: "X連携", icon: Twitter },
+  { id: "goal", title: "目標設定", icon: Target },
   { id: "patterns", title: "投稿パターン", icon: FileText },
   { id: "notifications", title: "通知", icon: Bell },
   { id: "api", title: "外部コンテンツAPI", icon: Key },
@@ -62,8 +64,33 @@ export default function SettingsPage() {
     fetchTime: "06:00",
     timezone: "Asia/Tokyo",
   });
+  const [goalSettings, setGoalSettings] = useState({
+    dailyTarget: 3,
+    weeklyTarget: 15,
+    showOnDashboard: true,
+  });
   const [isSaving, setIsSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+
+  // Load goal settings from localStorage
+  useEffect(() => {
+    const savedGoal = localStorage.getItem("orbitx_goal_settings");
+    if (savedGoal) {
+      try {
+        setGoalSettings(JSON.parse(savedGoal));
+      } catch (e) {
+        console.error("Failed to parse goal settings:", e);
+      }
+    }
+  }, []);
+
+  // Save goal settings to localStorage when changed
+  const handleSaveGoalSettings = (newSettings: typeof goalSettings) => {
+    setGoalSettings(newSettings);
+    localStorage.setItem("orbitx_goal_settings", JSON.stringify(newSettings));
+    setSaved(true);
+    setTimeout(() => setSaved(false), 2000);
+  };
 
   // X OAuth state
   const [xAuthConnecting, setXAuthConnecting] = useState(false);
@@ -467,6 +494,116 @@ export default function SettingsPage() {
                       OAuth 2.0 PKCEフローを使用した安全な認証を行います。
                       パスワードは保存されません。APIキーの入力は不要です。
                     </p>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Goal Settings Section */}
+            {activeSection === "goal" && (
+              <div className="space-y-6">
+                <div>
+                  <h3 className="text-lg font-semibold text-zinc-900 mb-1">
+                    目標設定
+                  </h3>
+                  <p className="text-sm text-zinc-500">
+                    投稿目標を設定して、毎日の運用をモチベートします
+                  </p>
+                </div>
+
+                <div className="space-y-4">
+                  {/* Daily Target */}
+                  <div className="p-4 bg-zinc-50 rounded-xl">
+                    <label className="block text-sm font-medium text-zinc-900 mb-2">
+                      1日の目標投稿数
+                    </label>
+                    <div className="flex items-center gap-4">
+                      <input
+                        type="number"
+                        min="1"
+                        max="20"
+                        value={goalSettings.dailyTarget}
+                        onChange={(e) =>
+                          handleSaveGoalSettings({
+                            ...goalSettings,
+                            dailyTarget: parseInt(e.target.value) || 1,
+                          })
+                        }
+                        className="w-24 h-11 px-4 bg-white border border-zinc-200 rounded-xl text-zinc-900 text-center text-lg font-semibold focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-colors"
+                      />
+                      <span className="text-zinc-600">投稿 / 日</span>
+                    </div>
+                    <p className="text-xs text-zinc-500 mt-2">
+                      毎日投稿する目標数を設定します
+                    </p>
+                  </div>
+
+                  {/* Weekly Target */}
+                  <div className="p-4 bg-zinc-50 rounded-xl">
+                    <label className="block text-sm font-medium text-zinc-900 mb-2">
+                      週間の目標投稿数
+                    </label>
+                    <div className="flex items-center gap-4">
+                      <input
+                        type="number"
+                        min="1"
+                        max="100"
+                        value={goalSettings.weeklyTarget}
+                        onChange={(e) =>
+                          handleSaveGoalSettings({
+                            ...goalSettings,
+                            weeklyTarget: parseInt(e.target.value) || 1,
+                          })
+                        }
+                        className="w-24 h-11 px-4 bg-white border border-zinc-200 rounded-xl text-zinc-900 text-center text-lg font-semibold focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-colors"
+                      />
+                      <span className="text-zinc-600">投稿 / 週</span>
+                    </div>
+                    <p className="text-xs text-zinc-500 mt-2">
+                      1週間で投稿する目標数を設定します
+                    </p>
+                  </div>
+
+                  {/* Show on Dashboard Toggle */}
+                  <div className="flex items-center justify-between p-4 bg-zinc-50 rounded-xl">
+                    <div>
+                      <p className="font-medium text-zinc-900">ダッシュボードに表示</p>
+                      <p className="text-sm text-zinc-500">
+                        ダッシュボードに目標達成状況を表示します
+                      </p>
+                    </div>
+                    <button
+                      onClick={() =>
+                        handleSaveGoalSettings({
+                          ...goalSettings,
+                          showOnDashboard: !goalSettings.showOnDashboard,
+                        })
+                      }
+                      className={`relative w-12 h-7 rounded-full transition-colors ${
+                        goalSettings.showOnDashboard ? "bg-emerald-500" : "bg-zinc-300"
+                      }`}
+                    >
+                      <div
+                        className={`absolute top-1 w-5 h-5 rounded-full bg-white transition-transform ${
+                          goalSettings.showOnDashboard ? "translate-x-6" : "translate-x-1"
+                        }`}
+                      />
+                    </button>
+                  </div>
+
+                  {/* Info */}
+                  <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-xl">
+                    <div className="flex items-start gap-3">
+                      <Target className="w-5 h-5 text-emerald-500 mt-0.5" />
+                      <div>
+                        <p className="text-sm font-medium text-emerald-900">目標達成のコツ</p>
+                        <ul className="text-sm text-emerald-700 mt-1 space-y-1">
+                          <li>• 予約投稿を活用して、計画的に投稿</li>
+                          <li>• AI生成で複数の投稿案を作成しておく</li>
+                          <li>• 外部コンテンツから投稿ネタを収集</li>
+                        </ul>
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>

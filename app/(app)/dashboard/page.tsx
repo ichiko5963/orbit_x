@@ -22,6 +22,8 @@ import {
   ExternalLink,
   Video,
   CheckCircle2,
+  Target,
+  Settings,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 import { getPosts, getScheduledPosts, getContextPosts, getAIGenerationHistory, cleanupExpiredAIHistories, AIGenerationHistory } from "@/lib/firebase";
@@ -72,6 +74,21 @@ function formatDate(dateStr: string) {
   });
 }
 
+function isToday(dateStr: string) {
+  const date = new Date(dateStr);
+  const today = new Date();
+  return date.toDateString() === today.toDateString();
+}
+
+function isThisWeek(dateStr: string) {
+  const date = new Date(dateStr);
+  const today = new Date();
+  const startOfWeek = new Date(today);
+  startOfWeek.setDate(today.getDate() - today.getDay()); // Sunday as start
+  startOfWeek.setHours(0, 0, 0, 0);
+  return date >= startOfWeek;
+}
+
 const quickActions = [
   {
     title: "CSVインポート",
@@ -110,6 +127,23 @@ export default function Dashboard() {
   const [isLoadingHistory, setIsLoadingHistory] = useState(true);
   const [aiHistory, setAiHistory] = useState<AIGenerationHistory[]>([]);
   const [isLoadingAiHistory, setIsLoadingAiHistory] = useState(true);
+  const [goalSettings, setGoalSettings] = useState({
+    dailyTarget: 3,
+    weeklyTarget: 15,
+    showOnDashboard: true,
+  });
+
+  // Load goal settings from localStorage
+  useEffect(() => {
+    const savedGoal = localStorage.getItem("orbitx_goal_settings");
+    if (savedGoal) {
+      try {
+        setGoalSettings(JSON.parse(savedGoal));
+      } catch (e) {
+        console.error("Failed to parse goal settings:", e);
+      }
+    }
+  }, []);
 
   useEffect(() => {
     const loadDashboardData = async () => {
@@ -294,6 +328,80 @@ export default function Dashboard() {
               <p className="text-xl font-bold text-zinc-900">{stats.contextPostsCount}</p>
             </div>
           </div>
+
+          {/* Goal Progress */}
+          {goalSettings.showOnDashboard && (
+            <div className="bg-white rounded-2xl border border-zinc-200 shadow-sm p-4">
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2">
+                  <Target className="w-5 h-5 text-emerald-600" />
+                  <span className="text-sm font-semibold text-zinc-900">目標達成</span>
+                </div>
+                <Link
+                  href="/settings?section=goal"
+                  className="p-1.5 rounded-lg text-zinc-400 hover:text-zinc-600 hover:bg-zinc-100 transition-colors"
+                >
+                  <Settings className="w-4 h-4" />
+                </Link>
+              </div>
+
+              {/* Daily Progress */}
+              {(() => {
+                const todayCount = postedHistory.filter(h => isToday(h.postedAt)).length;
+                const dailyProgress = Math.min((todayCount / goalSettings.dailyTarget) * 100, 100);
+                return (
+                  <div className="mb-4">
+                    <div className="flex items-center justify-between text-sm mb-1.5">
+                      <span className="text-zinc-600">今日</span>
+                      <span className="font-semibold text-zinc-900">
+                        {todayCount} / {goalSettings.dailyTarget}
+                      </span>
+                    </div>
+                    <div className="h-2.5 bg-zinc-100 rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-gradient-to-r from-emerald-400 to-emerald-500 rounded-full transition-all duration-500"
+                        style={{ width: `${dailyProgress}%` }}
+                      />
+                    </div>
+                    {dailyProgress >= 100 && (
+                      <div className="flex items-center gap-1 mt-1.5 text-xs text-emerald-600">
+                        <CheckCircle2 className="w-3.5 h-3.5" />
+                        目標達成!
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+
+              {/* Weekly Progress */}
+              {(() => {
+                const weekCount = postedHistory.filter(h => isThisWeek(h.postedAt)).length;
+                const weeklyProgress = Math.min((weekCount / goalSettings.weeklyTarget) * 100, 100);
+                return (
+                  <div>
+                    <div className="flex items-center justify-between text-sm mb-1.5">
+                      <span className="text-zinc-600">今週</span>
+                      <span className="font-semibold text-zinc-900">
+                        {weekCount} / {goalSettings.weeklyTarget}
+                      </span>
+                    </div>
+                    <div className="h-2.5 bg-zinc-100 rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-gradient-to-r from-blue-400 to-blue-500 rounded-full transition-all duration-500"
+                        style={{ width: `${weeklyProgress}%` }}
+                      />
+                    </div>
+                    {weeklyProgress >= 100 && (
+                      <div className="flex items-center gap-1 mt-1.5 text-xs text-blue-600">
+                        <CheckCircle2 className="w-3.5 h-3.5" />
+                        週間目標達成!
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+            </div>
+          )}
 
           {/* Quick Actions */}
           <div className="space-y-3">

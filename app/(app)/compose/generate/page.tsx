@@ -121,6 +121,10 @@ export default function GeneratePage() {
     total: number;
   }>({ isGenerating: false, completed: 0, total: 0 });
 
+  // Individual card progress (0-100) for smooth animation
+  const [cardProgressMap, setCardProgressMap] = useState<Record<number, number>>({});
+  const progressIntervalsRef = useRef<Record<number, NodeJS.Timeout>>({});
+
   // AI generation history state
   const [generationHistory, setGenerationHistory] = useState<AIGenerationHistory[]>([]);
   const [showHistory, setShowHistory] = useState(false);
@@ -349,6 +353,43 @@ export default function GeneratePage() {
       .slice(0, 6); // Top 6 from this category
   };
 
+  // Start smooth progress animation for a card (0 to ~95%)
+  const startCardProgress = (cardId: number) => {
+    // Reset progress to 0
+    setCardProgressMap(prev => ({ ...prev, [cardId]: 0 }));
+
+    // Animate progress smoothly from 0 to 95% over ~10 seconds
+    let progress = 0;
+    const interval = setInterval(() => {
+      progress += Math.random() * 3 + 1; // Random increment between 1-4%
+      if (progress >= 95) {
+        progress = 95;
+        clearInterval(interval);
+      }
+      setCardProgressMap(prev => ({ ...prev, [cardId]: Math.min(Math.round(progress), 95) }));
+    }, 200); // Update every 200ms
+
+    progressIntervalsRef.current[cardId] = interval;
+  };
+
+  // Complete card progress (jump to 100%)
+  const completeCardProgress = (cardId: number) => {
+    // Clear any running interval
+    if (progressIntervalsRef.current[cardId]) {
+      clearInterval(progressIntervalsRef.current[cardId]);
+      delete progressIntervalsRef.current[cardId];
+    }
+    // Set to 100%
+    setCardProgressMap(prev => ({ ...prev, [cardId]: 100 }));
+  };
+
+  // Clear all progress intervals on unmount
+  useEffect(() => {
+    return () => {
+      Object.values(progressIntervalsRef.current).forEach(interval => clearInterval(interval));
+    };
+  }, []);
+
   // Helper function for rate-limit-aware API call with retry
   const generateWithRetry = async (body: any, maxRetries = 3): Promise<{ text: string; error?: string }> => {
     for (let attempt = 0; attempt < maxRetries; attempt++) {
@@ -457,6 +498,8 @@ export default function GeneratePage() {
 
     setCards(initialCards);
     setGenerationProgress({ isGenerating: true, completed: 0, total: 6 });
+    // Reset all card progress
+    setCardProgressMap({});
 
     // Generate cards sequentially to avoid rate limits
     // Process in batches of 2 with delay between batches
@@ -470,6 +513,9 @@ export default function GeneratePage() {
       const batchEnd = Math.min(batchStart + batchSize, initialCards.length);
       const batchCards = initialCards.slice(batchStart, batchEnd);
 
+      // Start progress animation for cards in this batch
+      batchCards.forEach(card => startCardProgress(card.id));
+
       // Process batch in parallel
       const batchPromises = batchCards.map(async (card) => {
         const body = {
@@ -480,6 +526,9 @@ export default function GeneratePage() {
         };
 
         const result = await generateWithRetry(body);
+
+        // Complete progress animation for this card
+        completeCardProgress(card.id);
 
         // Append URL to generated text if provided
         let generatedText = result.text;
@@ -595,10 +644,11 @@ export default function GeneratePage() {
 
     const card = cards[cardIndex];
 
-    // Set loading
+    // Set loading and start progress animation
     setCards(prev => prev.map(c =>
       c.id === cardId ? { ...c, isLoading: true, error: undefined } : c
     ));
+    startCardProgress(cardId);
 
     try {
       const body: any = {
@@ -620,6 +670,9 @@ export default function GeneratePage() {
         throw new Error(data.error || "生成に失敗しました");
       }
 
+      // Complete progress animation
+      completeCardProgress(cardId);
+
       // Append URL to generated text if provided
       let generatedText = data.text;
       if (referenceUrls.length > 0) {
@@ -630,6 +683,9 @@ export default function GeneratePage() {
         c.id === cardId ? { ...c, text: generatedText, isLoading: false } : c
       ));
     } catch (err) {
+      // Complete progress animation even on error
+      completeCardProgress(cardId);
+
       const message = err instanceof Error ? err.message : "エラー";
       setCards(prev => prev.map(c =>
         c.id === cardId ? { ...c, error: message, isLoading: false } : c
@@ -1093,16 +1149,9 @@ export default function GeneratePage() {
       {hasGenerated && (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
           {cards.map((card) => {
-            // Calculate individual card progress
-            // Cards are generated in batches of 2
-            // Card progress: waiting = 0%, in batch = 50%, completed = 100%
-            const batchSize = 2;
-            const cardBatchStart = Math.floor((card.id - 1) / batchSize) * batchSize;
-            const isInCurrentBatch = generationProgress.isGenerating &&
-              generationProgress.completed >= cardBatchStart &&
-              generationProgress.completed < cardBatchStart + batchSize;
+            // Use smooth progress from cardProgressMap
             const isCompleted = !card.isLoading && card.text && !card.error;
-            const cardProgress = isCompleted ? 100 : (isInCurrentBatch ? 50 : 0);
+            const cardProgress = isCompleted ? 100 : (cardProgressMap[card.id] || 0);
 
             return (
               <div
@@ -1121,29 +1170,27 @@ export default function GeneratePage() {
                           cy="18"
                           r="15"
                           fill="none"
-                          stroke={card.isLoading ? "#e4e4e7" : "#10b981"}
+                          stroke="#e4e4e7"
                           strokeWidth="3"
                         />
-                        {/* Progress circle */}
-                        {card.isLoading && (
-                          <circle
-                            cx="18"
-                            cy="18"
-                            r="15"
-                            fill="none"
-                            stroke="#10b981"
-                            strokeWidth="3"
-                            strokeDasharray={`${cardProgress * 0.94} 94`}
-                            strokeLinecap="round"
-                            className="transition-all duration-500"
-                          />
-                        )}
+                        {/* Progress circle - always show, full when complete */}
+                        <circle
+                          cx="18"
+                          cy="18"
+                          r="15"
+                          fill="none"
+                          stroke="#10b981"
+                          strokeWidth="3"
+                          strokeDasharray={`${cardProgress * 0.94} 94`}
+                          strokeLinecap="round"
+                          className="transition-all duration-300 ease-out"
+                        />
                       </svg>
                       {/* Number in center */}
-                      <span className={`absolute inset-0 flex items-center justify-center text-sm font-bold ${
-                        isCompleted ? "text-white" : card.isLoading ? "text-zinc-600" : "text-white"
+                      <span className={`absolute inset-0 flex items-center justify-center text-sm font-bold transition-all duration-300 ${
+                        cardProgress === 100 ? "text-white" : "text-zinc-600"
                       }`} style={{
-                        backgroundColor: isCompleted ? "#10b981" : card.isLoading ? "transparent" : "#10b981",
+                        backgroundColor: cardProgress === 100 ? "#10b981" : "transparent",
                         borderRadius: "50%",
                         margin: "3px",
                       }}>
@@ -1197,15 +1244,15 @@ export default function GeneratePage() {
                             strokeWidth="6"
                             strokeDasharray={`${cardProgress * 2.2} 220`}
                             strokeLinecap="round"
-                            className="transition-all duration-500"
+                            className="transition-all duration-300 ease-out"
                           />
                         </svg>
                         <div className="absolute inset-0 flex items-center justify-center">
-                          <span className="text-lg font-bold text-emerald-600">{cardProgress}%</span>
+                          <span className="text-lg font-bold text-emerald-600 transition-all duration-300">{cardProgress}%</span>
                         </div>
                       </div>
                       <span className="text-sm text-zinc-500">
-                        {cardProgress === 0 ? "待機中..." : "生成中..."}
+                        {cardProgress === 0 ? "待機中..." : cardProgress < 100 ? "生成中..." : "完了!"}
                       </span>
                     </div>
                   ) : card.error ? (
