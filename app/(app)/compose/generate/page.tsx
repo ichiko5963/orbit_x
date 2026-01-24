@@ -8,7 +8,6 @@ import {
   Sparkles,
   CheckCircle2,
   Loader2,
-  Copy,
   ExternalLink,
   Calendar,
   RotateCcw,
@@ -29,6 +28,7 @@ import {
   Search,
   Info,
   Target,
+  ShieldCheck,
 } from "lucide-react";
 import { Timestamp } from "firebase/firestore";
 import Image from "next/image";
@@ -135,8 +135,19 @@ export default function GeneratePage() {
 
   // 6 cards state
   const [cards, setCards] = useState<GeneratedCard[]>([]);
-  const [copiedId, setCopiedId] = useState<number | null>(null);
   const [schedulingId, setSchedulingId] = useState<number | null>(null);
+
+  // Fact checking state
+  const [factCheckingId, setFactCheckingId] = useState<number | null>(null);
+  const [factCheckResults, setFactCheckResults] = useState<Record<number, {
+    wasModified: boolean;
+    summary: {
+      totalClaims: number;
+      accurateClaims: number;
+      inaccurateClaims: number;
+      flowIssues: number;
+    };
+  }>>({});
 
   // Generation progress state
   const [generationProgress, setGenerationProgress] = useState<{
@@ -823,10 +834,44 @@ export default function GeneratePage() {
     }
   };
 
-  const handleCopy = (cardId: number, text: string) => {
-    navigator.clipboard.writeText(text);
-    setCopiedId(cardId);
-    setTimeout(() => setCopiedId(null), 2000);
+  // Fact check: thoroughly verify facts and fix if needed
+  const handleFactCheck = async (cardId: number) => {
+    const card = cards.find(c => c.id === cardId);
+    if (!card || !card.text) return;
+
+    setFactCheckingId(cardId);
+    try {
+      const response = await fetch("/api/generate/fact-check", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content: card.text }),
+      });
+
+      if (!response.ok) throw new Error("ファクトチェックに失敗しました");
+
+      const result = await response.json();
+
+      // Update the card text if it was modified
+      if (result.wasModified && result.correctedContent) {
+        setCards(prev => prev.map(c =>
+          c.id === cardId ? { ...c, text: result.correctedContent } : c
+        ));
+      }
+
+      // Store the fact check result
+      setFactCheckResults(prev => ({
+        ...prev,
+        [cardId]: {
+          wasModified: result.wasModified,
+          summary: result.summary,
+        },
+      }));
+    } catch (error) {
+      console.error("Fact check error:", error);
+      alert("ファクトチェック中にエラーが発生しました");
+    } finally {
+      setFactCheckingId(null);
+    }
   };
 
   const handlePost = (text: string) => {
@@ -1626,18 +1671,30 @@ export default function GeneratePage() {
                       AI強化
                     </button>
                     <button
-                      onClick={() => handleCopy(card.id, card.text)}
-                      className="flex-1 flex items-center justify-center gap-1.5 py-3 text-sm font-medium text-zinc-600 hover:bg-zinc-50 transition-colors border-r border-zinc-100"
+                      onClick={() => handleFactCheck(card.id)}
+                      disabled={factCheckingId === card.id}
+                      className={`flex-1 flex items-center justify-center gap-1.5 py-3 text-sm font-medium transition-colors border-r border-zinc-100 disabled:opacity-50 ${
+                        factCheckResults[card.id]
+                          ? factCheckResults[card.id].wasModified
+                            ? "text-blue-600 bg-blue-50"
+                            : "text-emerald-600 bg-emerald-50"
+                          : "text-blue-600 hover:bg-blue-50"
+                      }`}
                     >
-                      {copiedId === card.id ? (
+                      {factCheckingId === card.id ? (
                         <>
-                          <CheckCircle2 className="w-4 h-4 text-emerald-500" />
-                          <span className="text-emerald-600">コピー済</span>
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                          検証中...
+                        </>
+                      ) : factCheckResults[card.id] ? (
+                        <>
+                          <CheckCircle2 className="w-4 h-4" />
+                          {factCheckResults[card.id].wasModified ? "修正済" : "検証OK"}
                         </>
                       ) : (
                         <>
-                          <Copy className="w-4 h-4" />
-                          コピー
+                          <ShieldCheck className="w-4 h-4" />
+                          ファクトチェック
                         </>
                       )}
                     </button>
