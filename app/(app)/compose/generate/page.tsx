@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import {
   ArrowLeft,
@@ -86,6 +86,7 @@ type PostSource = "myPosts" | "othersPosts" | "aiAuto";
 
 export default function GeneratePage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { user } = useAuth();
   const { profile: xProfile, isConnected: xConnected } = useXProfile();
 
@@ -237,6 +238,38 @@ export default function GeneratePage() {
         // Then load current histories
         const histories = await getAIGenerationHistory(user.uid);
         setGenerationHistory(histories);
+
+        // Check if we need to auto-restore a specific history from URL
+        const historyId = searchParams.get("historyId");
+        if (historyId) {
+          const targetHistory = histories.find(h => h.id === historyId);
+          if (targetHistory) {
+            // Restore this history
+            setContent(targetHistory.content);
+            setPostSource(targetHistory.referenceSource);
+            if (targetHistory.category) {
+              setSelectedCategory(targetHistory.category);
+            }
+            if (targetHistory.urls) {
+              setReferenceUrls(targetHistory.urls);
+            }
+            // Set cards from history
+            const restoredCards: GeneratedCard[] = targetHistory.generatedTexts.map((text, i) => ({
+              id: i + 1,
+              text,
+              referencePost: {
+                id: `history_${i}`,
+                text: "",
+                likes: 0,
+                tier: "A" as const,
+                category: targetHistory.category || "",
+                source: targetHistory.referenceSource === "aiAuto" ? "myPosts" : targetHistory.referenceSource,
+              },
+              isLoading: false,
+            }));
+            setCards(restoredCards);
+          }
+        }
       } catch (err) {
         console.error("Failed to load history:", err);
       } finally {
@@ -244,7 +277,7 @@ export default function GeneratePage() {
       }
     };
     loadHistory();
-  }, [user]);
+  }, [user, searchParams]);
 
   // Load reference posts from BOTH sources
   useEffect(() => {
