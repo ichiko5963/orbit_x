@@ -142,7 +142,7 @@ ${combinedResults}
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { content, forceEnrich = false } = body;
+    const { content, forceEnrich = false, purposeKeywords = [] } = body;
 
     if (!content) {
       return NextResponse.json(
@@ -154,7 +154,7 @@ export async function POST(request: NextRequest) {
     // Step 1: Analyze if enrichment is needed
     const analysis = await analyzeContentDepth(content);
 
-    if (!analysis.needsEnrichment && !forceEnrich) {
+    if (!analysis.needsEnrichment && !forceEnrich && purposeKeywords.length === 0) {
       return NextResponse.json({
         success: true,
         enriched: false,
@@ -165,8 +165,13 @@ export async function POST(request: NextRequest) {
     }
 
     // Step 2: Search for supplementary information
-    console.log("[EnrichContent] Searching for:", analysis.searchQueries);
-    const searchPromises = analysis.searchQueries.slice(0, 3).map(searchWeb);
+    // Use purposeKeywords if provided, otherwise use analyzed queries
+    const queriesToSearch = purposeKeywords.length > 0
+      ? [...purposeKeywords, ...analysis.searchQueries.slice(0, 1)]
+      : analysis.searchQueries;
+
+    console.log("[EnrichContent] Searching for:", queriesToSearch);
+    const searchPromises = queriesToSearch.slice(0, 3).map(searchWeb);
     const searchResults = await Promise.all(searchPromises);
 
     // Step 3: Enrich the content

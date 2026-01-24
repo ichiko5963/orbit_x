@@ -21,7 +21,10 @@ import {
   Trash2,
   Link as LinkIcon,
   ExternalLink,
+  Send,
+  Clock,
 } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
 import { getPosts, clearPosts } from "@/lib/firebase";
 
@@ -89,6 +92,7 @@ function formatDate(dateString: string): string {
 }
 
 export default function PostsPage() {
+  const router = useRouter();
   const { user } = useAuth();
   const [posts, setPosts] = useState<Post[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -142,9 +146,17 @@ export default function PostsPage() {
     setTimeout(() => setCopiedId(null), 2000);
   };
 
-  const handleAddToContext = async (post: Post) => {
-    // TODO: Add to context posts
-    alert("コンテキスト投稿に追加しました");
+  // Repost to X
+  const handleRepost = (post: Post) => {
+    const tweetUrl = `https://twitter.com/intent/tweet?text=${encodeURIComponent(post.text)}`;
+    window.open(tweetUrl, "_blank");
+  };
+
+  // Schedule post
+  const handleSchedule = (post: Post) => {
+    // Store the post text in sessionStorage and navigate to schedule page
+    sessionStorage.setItem("schedule_post_text", post.text);
+    router.push("/schedule?action=new");
   };
 
   // Reset all posts
@@ -529,7 +541,7 @@ export default function PostsPage() {
 
                 {/* Actions */}
                 <div className="p-6">
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-3 gap-3">
                     <button
                       onClick={() => handleCopy(selectedPost.text, selectedPost.id)}
                       className="flex items-center justify-center gap-2 px-4 py-3 bg-zinc-100 text-zinc-700 font-medium rounded-xl hover:bg-zinc-200 transition-colors"
@@ -547,11 +559,18 @@ export default function PostsPage() {
                       )}
                     </button>
                     <button
-                      onClick={() => handleAddToContext(selectedPost)}
-                      className="flex items-center justify-center gap-2 px-4 py-3 bg-emerald-500 text-white font-medium rounded-xl hover:bg-emerald-600 transition-colors shadow-lg shadow-emerald-500/25"
+                      onClick={() => handleRepost(selectedPost)}
+                      className="flex items-center justify-center gap-2 px-4 py-3 bg-zinc-900 text-white font-medium rounded-xl hover:bg-zinc-800 transition-colors"
                     >
-                      <Plus className="w-5 h-5" />
-                      コンテキストに追加
+                      <Send className="w-5 h-5" />
+                      再投稿
+                    </button>
+                    <button
+                      onClick={() => handleSchedule(selectedPost)}
+                      className="flex items-center justify-center gap-2 px-4 py-3 bg-blue-500 text-white font-medium rounded-xl hover:bg-blue-600 transition-colors"
+                    >
+                      <Clock className="w-5 h-5" />
+                      予約
                     </button>
                   </div>
                   <div className="grid grid-cols-2 gap-3 mt-3">

@@ -28,6 +28,7 @@ import {
   History,
   Search,
   Info,
+  Target,
 } from "lucide-react";
 import { Timestamp } from "firebase/firestore";
 import Image from "next/image";
@@ -100,6 +101,17 @@ export default function GeneratePage() {
     searchQueries: string[];
   } | null>(null);
   const [autoEnrich, setAutoEnrich] = useState(true); // 自動補足ON/OFF
+
+  // Post purpose selection state
+  const [purposes, setPurposes] = useState<{
+    id: string;
+    label: string;
+    description: string;
+    searchKeywords: string[];
+    selected?: boolean;
+  }[]>([]);
+  const [isLoadingPurposes, setIsLoadingPurposes] = useState(false);
+  const [showPurposeSelection, setShowPurposeSelection] = useState(false);
 
   // URL input state
   const [referenceUrls, setReferenceUrls] = useState<string[]>([]);
@@ -440,12 +452,50 @@ export default function GeneratePage() {
     return { text: "", error: "リトライ回数を超えました" };
   };
 
+  // Analyze post purposes
+  const handleAnalyzePurposes = async () => {
+    if (!content.trim()) return;
+
+    setIsLoadingPurposes(true);
+    setShowPurposeSelection(true);
+    setPurposes([]);
+
+    try {
+      const response = await fetch("/api/generate/analyze-purpose", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content }),
+      });
+
+      const data = await response.json();
+
+      if (data.success && data.purposes) {
+        setPurposes(data.purposes.map((p: any) => ({ ...p, selected: false })));
+      }
+    } catch (error) {
+      console.error("Purpose analysis failed:", error);
+    } finally {
+      setIsLoadingPurposes(false);
+    }
+  };
+
+  // Toggle purpose selection
+  const togglePurpose = (id: string) => {
+    setPurposes(prev => prev.map(p =>
+      p.id === id ? { ...p, selected: !p.selected } : p
+    ));
+  };
+
   // Generate all 6 cards using top 6 posts from selected category or AI auto
   const handleGenerateAll = async () => {
     if (!content.trim()) return;
 
     // AIおまかせモードではカテゴリー不要
     if (postSource !== "aiAuto" && !selectedCategory) return;
+
+    // Get selected purposes for enrichment
+    const selectedPurposes = purposes.filter(p => p.selected);
+    const purposeKeywords = selectedPurposes.flatMap(p => p.searchKeywords);
 
     // コンテンツ補強: 情報が薄い場合はネット検索で補足
     let contentToUse = content;
@@ -458,7 +508,10 @@ export default function GeneratePage() {
         const enrichResponse = await fetch("/api/generate/enrich-content", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ content }),
+          body: JSON.stringify({
+            content,
+            purposeKeywords: purposeKeywords.length > 0 ? purposeKeywords : undefined,
+          }),
         });
 
         const enrichData = await enrichResponse.json();
@@ -1148,6 +1201,100 @@ export default function GeneratePage() {
                 </div>
               )}
             </>
+          )}
+        </div>
+      )}
+
+      {/* Post Purpose Selection */}
+      {!hasGenerated && content.trim() && (
+        <div className="bg-white rounded-xl border border-zinc-200 shadow-sm mb-6 overflow-hidden">
+          <button
+            onClick={() => {
+              if (!showPurposeSelection) {
+                handleAnalyzePurposes();
+              } else {
+                setShowPurposeSelection(false);
+              }
+            }}
+            className="w-full flex items-center justify-between p-4 hover:bg-zinc-50 transition-colors"
+          >
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-lg bg-violet-50 flex items-center justify-center">
+                <Target className="w-5 h-5 text-violet-500" />
+              </div>
+              <div className="text-left">
+                <p className="font-medium text-zinc-900">投稿目的を選択</p>
+                <p className="text-sm text-zinc-500">
+                  {purposes.filter(p => p.selected).length > 0
+                    ? `${purposes.filter(p => p.selected).length}件選択中`
+                    : "AIが投稿の目的を分析して提案します（複数選択可）"}
+                </p>
+              </div>
+            </div>
+            {isLoadingPurposes ? (
+              <Loader2 className="w-5 h-5 text-violet-500 animate-spin" />
+            ) : (
+              <ChevronDown className={`w-5 h-5 text-zinc-400 transition-transform ${showPurposeSelection ? "rotate-180" : ""}`} />
+            )}
+          </button>
+
+          {showPurposeSelection && (
+            <div className="px-4 pb-4 border-t border-zinc-100">
+              {isLoadingPurposes ? (
+                <div className="py-6 text-center">
+                  <Loader2 className="w-6 h-6 text-violet-500 animate-spin mx-auto mb-2" />
+                  <p className="text-sm text-zinc-500">投稿目的を分析中...</p>
+                </div>
+              ) : purposes.length > 0 ? (
+                <div className="pt-4 space-y-2">
+                  {purposes.map((purpose) => (
+                    <button
+                      key={purpose.id}
+                      onClick={() => togglePurpose(purpose.id)}
+                      className={`w-full flex items-start gap-3 p-3 rounded-xl border-2 transition-all text-left ${
+                        purpose.selected
+                          ? "border-violet-500 bg-violet-50"
+                          : "border-zinc-200 hover:border-zinc-300"
+                      }`}
+                    >
+                      <div className={`w-5 h-5 rounded-md border-2 flex items-center justify-center flex-shrink-0 mt-0.5 ${
+                        purpose.selected
+                          ? "border-violet-500 bg-violet-500"
+                          : "border-zinc-300"
+                      }`}>
+                        {purpose.selected && (
+                          <CheckCircle2 className="w-3 h-3 text-white" />
+                        )}
+                      </div>
+                      <div className="flex-1">
+                        <p className="font-medium text-zinc-900">{purpose.label}</p>
+                        <p className="text-sm text-zinc-500">{purpose.description}</p>
+                        <div className="flex flex-wrap gap-1 mt-1.5">
+                          {purpose.searchKeywords.map((kw, i) => (
+                            <span key={i} className="px-1.5 py-0.5 bg-zinc-100 text-zinc-600 text-xs rounded">
+                              {kw}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    </button>
+                  ))}
+                  <p className="text-xs text-zinc-400 mt-2">
+                    選択した目的に基づいて情報を補足します
+                  </p>
+                </div>
+              ) : (
+                <div className="py-6 text-center text-zinc-500">
+                  <p className="text-sm">目的の候補を取得できませんでした</p>
+                  <button
+                    onClick={handleAnalyzePurposes}
+                    className="text-violet-600 text-sm mt-2 hover:underline"
+                  >
+                    再試行
+                  </button>
+                </div>
+              )}
+            </div>
           )}
         </div>
       )}
