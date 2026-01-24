@@ -144,12 +144,20 @@ function BackgroundImportIndicator() {
 }
 
 function AppLayoutContent({ children }: { children: ReactNode }) {
-  const [collapsed, setCollapsed] = useState(false);
+  const [isHovered, setIsHovered] = useState(false);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const profileMenuRef = useRef<HTMLDivElement>(null);
+  const sidebarRef = useRef<HTMLElement>(null);
   const pathname = usePathname();
   const { user, loading, signIn, signOut } = useAuth();
   const { profile: xProfile, isConnected: xConnected } = useXProfile();
+
+  // Sidebar is collapsed by default, expands on hover
+  const collapsed = !isHovered;
+
+  // Handle sidebar hover
+  const handleMouseEnter = () => setIsHovered(true);
+  const handleMouseLeave = () => setIsHovered(false);
 
   // Close profile menu when clicking outside
   useEffect(() => {
@@ -205,15 +213,18 @@ function AppLayoutContent({ children }: { children: ReactNode }) {
 
   return (
     <div className="min-h-screen bg-[#fafafa]">
-      {/* Sidebar */}
+      {/* Sidebar - hover to expand */}
       <aside
+        ref={sidebarRef}
+        onMouseEnter={handleMouseEnter}
+        onMouseLeave={handleMouseLeave}
         className={clsx(
-          "fixed top-0 left-0 z-40 h-screen bg-white border-r border-zinc-200 transition-all duration-300 ease-out flex flex-col",
-          collapsed ? "w-20" : "w-72"
+          "fixed top-0 left-0 z-40 h-screen bg-white border-r border-zinc-200 transition-all duration-200 ease-out flex flex-col",
+          collapsed ? "w-20" : "w-72 shadow-2xl shadow-zinc-900/10"
         )}
       >
         {/* Logo */}
-        <div className="h-20 flex items-center justify-between px-5 border-b border-zinc-100 flex-shrink-0">
+        <div className="h-20 flex items-center px-5 border-b border-zinc-100 flex-shrink-0">
           <Link href="/dashboard" className="flex items-center gap-3 overflow-hidden">
             <Image
               src="/logo.png"
@@ -228,19 +239,6 @@ function AppLayoutContent({ children }: { children: ReactNode }) {
               </span>
             )}
           </Link>
-          <button
-            onClick={() => setCollapsed(!collapsed)}
-            className={clsx(
-              "p-2.5 rounded-xl text-zinc-400 hover:text-zinc-600 hover:bg-zinc-100 transition-colors",
-              collapsed && "absolute right-3"
-            )}
-          >
-            {collapsed ? (
-              <ChevronRight className="w-5 h-5" />
-            ) : (
-              <ChevronLeft className="w-5 h-5" />
-            )}
-          </button>
         </div>
 
         {/* Navigation */}
@@ -391,10 +389,10 @@ function AppLayoutContent({ children }: { children: ReactNode }) {
         </div>
       </aside>
 
-      {/* Main Content */}
+      {/* Main Content - Fixed margin, sidebar overlays when expanded */}
       <div
-        className="transition-all duration-300 ease-out min-h-screen"
-        style={{ marginLeft: collapsed ? "80px" : "288px" }}
+        className="min-h-screen"
+        style={{ marginLeft: "80px" }}
       >
         {/* Top Header */}
         <header className="sticky top-0 z-30 h-20 bg-white/80 backdrop-blur-xl border-b border-zinc-100 flex items-center justify-between px-10">
