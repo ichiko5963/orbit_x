@@ -4,7 +4,7 @@ import { enhancePost } from "@/lib/openai";
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { currentText, originalContent, referenceText, userStyle } = body;
+    const { currentText, originalContent, referenceText, userStyle, researchData } = body;
 
     if (!currentText || !originalContent) {
       return NextResponse.json(
@@ -18,6 +18,7 @@ export async function POST(request: NextRequest) {
       originalContent,
       referenceText: referenceText || currentText,
       userStyle,
+      researchData, // 5000字のリサーチ情報
     });
 
     return NextResponse.json({

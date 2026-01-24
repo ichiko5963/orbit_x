@@ -69,7 +69,8 @@ ${content}`,
 // Step 2: Research each claim thoroughly
 async function researchClaim(
   claim: string,
-  searchQuery: string
+  searchQuery: string,
+  researchData?: string
 ): Promise<{
   claim: string;
   isAccurate: boolean;
@@ -77,6 +78,11 @@ async function researchClaim(
   sources: string[];
   confidence: "high" | "medium" | "low";
 }> {
+  // リサーチデータがある場合は、それを参考情報として含める
+  const researchContext = researchData
+    ? `\n\n【参考情報（事前にリサーチした情報）】\n${researchData.slice(0, 2000)}${researchData.length > 2000 ? "（続きあり...）" : ""}\n\n※ 上記の参考情報がある場合は、これを信頼できる情報源として活用してください。`
+    : "";
+
   const response = await openai.chat.completions.create({
     model: "gpt-4o",
     messages: [
@@ -97,6 +103,7 @@ async function researchClaim(
 - 公式発表・プレスリリース
 - 学術論文・調査レポート
 - 信頼できる技術メディア
+- 提供された参考情報（リサーチデータ）
 
 JSON形式で回答：
 {
@@ -113,7 +120,7 @@ JSON形式で回答：
 ${claim}
 
 【検索クエリ】
-${searchQuery}
+${searchQuery}${researchContext}
 
 この主張の正確性を徹底的に検証してください。`,
       },
@@ -206,7 +213,8 @@ async function rewriteWithCorrections(
     hasIssues: boolean;
     issues: string[];
     suggestions: string[];
-  }
+  },
+  researchData?: string
 ): Promise<string> {
   const corrections = factCheckResults
     .filter((r) => !r.isAccurate && r.correction)
@@ -234,6 +242,11 @@ async function rewriteWithCorrections(
         content: `あなたは投稿の校正専門家です。
 ファクトチェック結果と流れのチェック結果を踏まえて、投稿を修正してください。
 
+【重要】
+- 修正した投稿文のみを出力してください
+- 「修正後の投稿」「以下が修正版です」などの前置きは絶対に付けないでください
+- 投稿文そのものだけを返してください
+
 【修正ルール】
 1. 不正確な事実は正確な情報に置き換える
 2. 元の投稿のトーン・スタイルを維持
@@ -256,6 +269,7 @@ ${corrections ? `【ファクトチェックによる修正点】\n${corrections
 ${flowIssues ? `【流れの問題点】\n${flowIssues}` : ""}
 
 ${flowSuggestions ? `【改善提案】\n${flowSuggestions}` : ""}
+${researchData ? `\n【参考情報（信頼できる情報源から収集）】\n${researchData.slice(0, 2000)}${researchData.length > 2000 ? "（続きあり...）" : ""}\n\n※ 修正時は上記の参考情報を活用して、正確な情報に置き換えてください。` : ""}
 
 上記を踏まえて、投稿を修正してください。修正が必要ない場合は元の投稿をそのまま返してください。`,
       },
@@ -270,7 +284,7 @@ ${flowSuggestions ? `【改善提案】\n${flowSuggestions}` : ""}
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { content } = body;
+    const { content, researchData } = body;
 
     if (!content) {
       return NextResponse.json(
@@ -279,13 +293,13 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    console.log("[FactCheck] Starting fact check...");
+    console.log("[FactCheck] Starting fact check...", researchData ? `(with ${researchData.length} chars research)` : "");
 
     // Step 1: Extract claims
     const { claims, hasFactualClaims } = await extractClaims(content);
     console.log("[FactCheck] Claims extracted:", claims.length);
 
-    // Step 2: Research each claim
+    // Step 2: Research each claim (with research data for reference)
     let factCheckResults: {
       claim: string;
       isAccurate: boolean;
@@ -296,7 +310,7 @@ export async function POST(request: NextRequest) {
 
     if (hasFactualClaims && claims.length > 0) {
       const researchPromises = claims.slice(0, 5).map((c) =>
-        researchClaim(c.claim, c.searchQuery)
+        researchClaim(c.claim, c.searchQuery, researchData)
       );
       factCheckResults = await Promise.all(researchPromises);
       console.log("[FactCheck] Research complete");
@@ -310,13 +324,14 @@ export async function POST(request: NextRequest) {
     const hasFactErrors = factCheckResults.some((r) => !r.isAccurate);
     const needsCorrection = hasFactErrors || flowCheck.hasIssues;
 
-    // Step 4: Rewrite if needed
+    // Step 4: Rewrite if needed (with research data for better corrections)
     let correctedContent = content;
     if (needsCorrection) {
       correctedContent = await rewriteWithCorrections(
         content,
         factCheckResults,
-        flowCheck
+        flowCheck,
+        researchData
       );
       console.log("[FactCheck] Content corrected");
     }

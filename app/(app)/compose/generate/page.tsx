@@ -27,8 +27,9 @@ import {
   History,
   Search,
   Info,
-  Target,
   ShieldCheck,
+  BookOpen,
+  Target,
 } from "lucide-react";
 import { Timestamp } from "firebase/firestore";
 import Image from "next/image";
@@ -96,23 +97,13 @@ export default function GeneratePage() {
 
   // Content enrichment state
   const [isEnrichingContent, setIsEnrichingContent] = useState(false);
-  const [enrichedContent, setEnrichedContent] = useState<string | null>(null);
-  const [enrichmentInfo, setEnrichmentInfo] = useState<{
-    reason: string;
-    searchQueries: string[];
-  } | null>(null);
+  const [enrichmentProgress, setEnrichmentProgress] = useState(0);
   const [autoEnrich, setAutoEnrich] = useState(false); // 自動補足ON/OFF（デフォルトOFF）
 
-  // Post purpose selection state
-  const [purposes, setPurposes] = useState<{
-    id: string;
-    label: string;
-    description: string;
-    searchKeywords: string[];
-    selected?: boolean;
-  }[]>([]);
-  const [isLoadingPurposes, setIsLoadingPurposes] = useState(false);
-  const [showPurposeSelection, setShowPurposeSelection] = useState(false);
+  // Deep research state (5000字程度の包括的な情報)
+  const [deepResearch, setDeepResearch] = useState<string | null>(null);
+  const [researchQueries, setResearchQueries] = useState<string[]>([]);
+  const [showResearchToggle, setShowResearchToggle] = useState<Record<number, boolean>>({});
 
   // URL input state
   const [referenceUrls, setReferenceUrls] = useState<string[]>([]);
@@ -148,6 +139,24 @@ export default function GeneratePage() {
       flowIssues: number;
     };
   }>>({});
+
+  // Research toggle for cards (to show/hide 5000 char research)
+  const [showCardResearch, setShowCardResearch] = useState<Record<number, boolean>>({});
+
+  // Search query state (検索クエリ選択)
+  interface SearchQuery {
+    id: string;
+    query: string;
+    category: string;
+    description: string;
+    selected: boolean;
+  }
+  const [searchQueries, setSearchQueries] = useState<SearchQuery[]>([]);
+  const [isLoadingQueries, setIsLoadingQueries] = useState(false);
+  const [queriesGenerated, setQueriesGenerated] = useState(false);
+  const [isResearching, setIsResearching] = useState(false);
+  const [researchComplete, setResearchComplete] = useState(false);
+  const [showFullResearch, setShowFullResearch] = useState(false);
 
   // Generation progress state
   const [generationProgress, setGenerationProgress] = useState<{
@@ -220,6 +229,63 @@ export default function GeneratePage() {
     }
     if (content) {
       setPreviousContent(content);
+    }
+  }, [content, previousContent]);
+
+  // Generate search queries when autoEnrich is turned ON
+  useEffect(() => {
+    const generateSearchQueries = async () => {
+      if (!autoEnrich || !content.trim() || queriesGenerated) return;
+
+      setIsLoadingQueries(true);
+      setSearchQueries([]);
+      setDeepResearch(null);
+      setResearchComplete(false);
+
+      try {
+        const response = await fetch("/api/generate/search-queries", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            content,
+            today: new Date().toISOString().split("T")[0], // 2026-01-25形式
+          }),
+        });
+
+        const data = await response.json();
+
+        if (data.success && data.queries) {
+          setSearchQueries(data.queries.map((q: any, i: number) => ({
+            ...q,
+            id: `query_${i}`,
+            selected: false,
+          })));
+          setQueriesGenerated(true);
+        }
+      } catch (error) {
+        console.error("Search query generation failed:", error);
+      } finally {
+        setIsLoadingQueries(false);
+      }
+    };
+
+    generateSearchQueries();
+  }, [autoEnrich, content, queriesGenerated]);
+
+  // Reset queries when autoEnrich is turned OFF or content changes significantly
+  useEffect(() => {
+    if (!autoEnrich) {
+      setSearchQueries([]);
+      setQueriesGenerated(false);
+      setDeepResearch(null);
+      setResearchComplete(false);
+    }
+  }, [autoEnrich]);
+
+  useEffect(() => {
+    if (previousContent && content && Math.abs(content.length - previousContent.length) > 50) {
+      setQueriesGenerated(false);
+      setResearchComplete(false);
     }
   }, [content, previousContent]);
 
@@ -457,6 +523,56 @@ export default function GeneratePage() {
     };
   }, []);
 
+  // Toggle search query selection
+  const toggleSearchQuery = (id: string) => {
+    setSearchQueries(prev => prev.map(q =>
+      q.id === id ? { ...q, selected: !q.selected } : q
+    ));
+  };
+
+  // Start Deep Research with selected queries
+  const handleStartResearch = async () => {
+    const selectedQueries = searchQueries.filter(q => q.selected);
+    if (selectedQueries.length === 0) return;
+
+    setIsResearching(true);
+    setEnrichmentProgress(0);
+    setDeepResearch(null);
+
+    try {
+      // Progress simulation
+      const progressInterval = setInterval(() => {
+        setEnrichmentProgress(prev => Math.min(prev + 2, 90));
+      }, 300);
+
+      const response = await fetch("/api/generate/deep-research", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          content,
+          queries: selectedQueries.map(q => q.query),
+          today: new Date().toISOString().split("T")[0], // 2026-01-25形式
+        }),
+      });
+
+      clearInterval(progressInterval);
+      setEnrichmentProgress(100);
+
+      const data = await response.json();
+
+      if (data.success && data.research) {
+        setDeepResearch(data.research);
+        setResearchQueries(data.queries || selectedQueries.map(q => q.query));
+        setResearchComplete(true);
+        console.log("[Research] Complete:", data.research.length, "chars");
+      }
+    } catch (error) {
+      console.error("Deep research failed:", error);
+    } finally {
+      setIsResearching(false);
+    }
+  };
+
   // Helper function for rate-limit-aware API call with retry
   const generateWithRetry = async (body: any, maxRetries = 3): Promise<{ text: string; error?: string }> => {
     for (let attempt = 0; attempt < maxRetries; attempt++) {
@@ -496,39 +612,6 @@ export default function GeneratePage() {
     return { text: "", error: "リトライ回数を超えました" };
   };
 
-  // Analyze post purposes
-  const handleAnalyzePurposes = async () => {
-    if (!content.trim()) return;
-
-    setIsLoadingPurposes(true);
-    setShowPurposeSelection(true);
-    setPurposes([]);
-
-    try {
-      const response = await fetch("/api/generate/analyze-purpose", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ content }),
-      });
-
-      const data = await response.json();
-
-      if (data.success && data.purposes) {
-        setPurposes(data.purposes.map((p: any) => ({ ...p, selected: false })));
-      }
-    } catch (error) {
-      console.error("Purpose analysis failed:", error);
-    } finally {
-      setIsLoadingPurposes(false);
-    }
-  };
-
-  // Toggle purpose selection
-  const togglePurpose = (id: string) => {
-    setPurposes(prev => prev.map(p =>
-      p.id === id ? { ...p, selected: !p.selected } : p
-    ));
-  };
 
   // Generate all 6 cards using top 6 posts from selected category or AI auto
   const handleGenerateAll = async () => {
@@ -537,43 +620,44 @@ export default function GeneratePage() {
     // AIおまかせモードではカテゴリー不要
     if (postSource !== "aiAuto" && !selectedCategory) return;
 
-    // Get selected purposes for enrichment
-    const selectedPurposes = purposes.filter(p => p.selected);
-    const purposeKeywords = selectedPurposes.flatMap(p => p.searchKeywords);
+    // 情報自動補足ONの場合、Deep Researchが完了していることを確認
+    if (autoEnrich && !researchComplete) {
+      alert("情報リサーチを先に完了させてください");
+      return;
+    }
 
-    // コンテンツ補強: 情報が薄い場合はネット検索で補足
-    let contentToUse = content;
-    if (autoEnrich) {
-      setIsEnrichingContent(true);
-      setEnrichedContent(null);
-      setEnrichmentInfo(null);
+    // 既に完了しているDeep Researchデータを使用
+    const researchData = autoEnrich ? deepResearch : null;
 
-      try {
-        const enrichResponse = await fetch("/api/generate/enrich-content", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            content,
-            purposeKeywords: purposeKeywords.length > 0 ? purposeKeywords : undefined,
-          }),
-        });
+    // 選択された検索クエリを取得（情報自動補足ONの場合）
+    const selectedQueries = autoEnrich ? searchQueries.filter(q => q.selected) : [];
+    const queryCount = selectedQueries.length;
 
-        const enrichData = await enrichResponse.json();
-
-        if (enrichData.success && enrichData.enriched) {
-          contentToUse = enrichData.enrichedContent;
-          setEnrichedContent(enrichData.enrichedContent);
-          setEnrichmentInfo({
-            reason: enrichData.reason,
-            searchQueries: enrichData.searchQueries || [],
-          });
-          console.log("[Generate] Content enriched:", enrichData.reason);
+    // 検索クエリ数に応じて6パターンの分配を決定
+    // 1個 → 6パターン全て
+    // 2個 → 3パターンずつ
+    // 3個 → 2パターンずつ
+    // 4個以上 → できるだけ均等に
+    let queryDistribution: string[] = [];
+    if (queryCount > 0) {
+      if (queryCount === 1) {
+        queryDistribution = Array(6).fill(selectedQueries[0].query);
+      } else if (queryCount === 2) {
+        queryDistribution = [
+          selectedQueries[0].query, selectedQueries[0].query, selectedQueries[0].query,
+          selectedQueries[1].query, selectedQueries[1].query, selectedQueries[1].query,
+        ];
+      } else if (queryCount === 3) {
+        queryDistribution = [
+          selectedQueries[0].query, selectedQueries[0].query,
+          selectedQueries[1].query, selectedQueries[1].query,
+          selectedQueries[2].query, selectedQueries[2].query,
+        ];
+      } else {
+        // 4個以上は順番に割り当て
+        for (let i = 0; i < 6; i++) {
+          queryDistribution.push(selectedQueries[i % queryCount].query);
         }
-      } catch (err) {
-        console.error("Content enrichment failed:", err);
-        // 補強失敗してもそのまま続行
-      } finally {
-        setIsEnrichingContent(false);
       }
     }
 
@@ -659,11 +743,17 @@ export default function GeneratePage() {
 
       // Process batch in parallel
       const batchPromises = batchCards.map(async (card) => {
+        // 検索クエリの軸を取得（情報自動補足ONの場合）
+        const cardIndex = initialCards.findIndex(c => c.id === card.id);
+        const queryAxis = queryDistribution.length > 0 ? queryDistribution[cardIndex] : undefined;
+
         const body = {
           mode: "reference",
-          content: contentToUse, // 補強されたコンテンツを使用
+          content, // 元のコンテンツ
           referenceText: card.referencePost.text,
           userStyle: userStyle || undefined,
+          researchData: researchData || undefined, // 5000字のリサーチ情報
+          queryAxis: queryAxis || undefined, // このカードの検索クエリ軸
         };
 
         const result = await generateWithRetry(body);
@@ -757,6 +847,7 @@ export default function GeneratePage() {
           originalContent: content,
           referenceText: card.referencePost.text,
           userStyle: userStyleAnalysis,
+          researchData: deepResearch || undefined, // 5000字のリサーチ情報
         }),
       });
 
@@ -844,7 +935,10 @@ export default function GeneratePage() {
       const response = await fetch("/api/generate/fact-check", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ content: card.text }),
+        body: JSON.stringify({
+          content: card.text,
+          researchData: deepResearch || undefined, // 5000字のリサーチ情報
+        }),
       });
 
       if (!response.ok) throw new Error("ファクトチェックに失敗しました");
@@ -1138,100 +1232,6 @@ export default function GeneratePage() {
         )}
       </div>
 
-      {/* Post Purpose Selection - Moved above reference source */}
-      {!hasGenerated && content.trim() && (
-        <div className="bg-white rounded-xl border border-zinc-200 shadow-sm mb-6 overflow-hidden">
-          <button
-            onClick={() => {
-              if (!showPurposeSelection) {
-                handleAnalyzePurposes();
-              } else {
-                setShowPurposeSelection(false);
-              }
-            }}
-            className="w-full flex items-center justify-between p-4 hover:bg-zinc-50 transition-colors"
-          >
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-lg bg-violet-50 flex items-center justify-center">
-                <Target className="w-5 h-5 text-violet-500" />
-              </div>
-              <div className="text-left">
-                <p className="font-medium text-zinc-900">投稿目的を選択</p>
-                <p className="text-sm text-zinc-500">
-                  {purposes.filter(p => p.selected).length > 0
-                    ? `${purposes.filter(p => p.selected).length}件選択中`
-                    : "AIが投稿の目的を分析して提案します（複数選択可）"}
-                </p>
-              </div>
-            </div>
-            {isLoadingPurposes ? (
-              <Loader2 className="w-5 h-5 text-violet-500 animate-spin" />
-            ) : (
-              <ChevronDown className={`w-5 h-5 text-zinc-400 transition-transform ${showPurposeSelection ? "rotate-180" : ""}`} />
-            )}
-          </button>
-
-          {showPurposeSelection && (
-            <div className="px-4 pb-4 border-t border-zinc-100">
-              {isLoadingPurposes ? (
-                <div className="py-6 text-center">
-                  <Loader2 className="w-6 h-6 text-violet-500 animate-spin mx-auto mb-2" />
-                  <p className="text-sm text-zinc-500">投稿目的を分析中...</p>
-                </div>
-              ) : purposes.length > 0 ? (
-                <div className="pt-4 space-y-2">
-                  {purposes.map((purpose) => (
-                    <button
-                      key={purpose.id}
-                      onClick={() => togglePurpose(purpose.id)}
-                      className={`w-full flex items-start gap-3 p-3 rounded-xl border-2 transition-all text-left ${
-                        purpose.selected
-                          ? "border-violet-500 bg-violet-50"
-                          : "border-zinc-200 hover:border-zinc-300"
-                      }`}
-                    >
-                      <div className={`w-5 h-5 rounded-md border-2 flex items-center justify-center flex-shrink-0 mt-0.5 ${
-                        purpose.selected
-                          ? "border-violet-500 bg-violet-500"
-                          : "border-zinc-300"
-                      }`}>
-                        {purpose.selected && (
-                          <CheckCircle2 className="w-3 h-3 text-white" />
-                        )}
-                      </div>
-                      <div className="flex-1">
-                        <p className="font-medium text-zinc-900">{purpose.label}</p>
-                        <p className="text-sm text-zinc-500">{purpose.description}</p>
-                        <div className="flex flex-wrap gap-1 mt-1.5">
-                          {purpose.searchKeywords.map((kw, i) => (
-                            <span key={i} className="px-1.5 py-0.5 bg-zinc-100 text-zinc-600 text-xs rounded">
-                              {kw}
-                            </span>
-                          ))}
-                        </div>
-                      </div>
-                    </button>
-                  ))}
-                  <p className="text-xs text-zinc-400 mt-2">
-                    選択した目的に基づいて情報を補足します
-                  </p>
-                </div>
-              ) : (
-                <div className="py-6 text-center text-zinc-500">
-                  <p className="text-sm">目的の候補を取得できませんでした</p>
-                  <button
-                    onClick={handleAnalyzePurposes}
-                    className="text-violet-600 text-sm mt-2 hover:underline"
-                  >
-                    再試行
-                  </button>
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-      )}
-
       {/* Category Selection (if not yet generated) */}
       {!hasGenerated && (
         <div className="bg-white rounded-xl border border-zinc-200 shadow-sm mb-6 p-6">
@@ -1377,18 +1377,23 @@ export default function GeneratePage() {
         </div>
       )}
 
-      {/* Auto-enrich toggle */}
+      {/* Auto-enrich toggle and search query selection */}
       {!hasGenerated && (
-        <div className="bg-white rounded-xl border border-zinc-200 shadow-sm mb-6 p-4">
-          <div className="flex items-center justify-between">
+        <div className="bg-white rounded-xl border border-zinc-200 shadow-sm mb-6 overflow-hidden">
+          {/* Toggle Header */}
+          <div className="flex items-center justify-between p-4 border-b border-zinc-100">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-lg bg-blue-50 flex items-center justify-center">
-                <Search className="w-5 h-5 text-blue-500" />
+              <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${
+                autoEnrich ? "bg-blue-100" : "bg-blue-50"
+              }`}>
+                <Search className={`w-5 h-5 ${autoEnrich ? "text-blue-600" : "text-blue-500"}`} />
               </div>
               <div>
                 <p className="font-medium text-zinc-900">情報自動補足</p>
                 <p className="text-sm text-zinc-500">
-                  内容が薄い場合、AIが自動でリサーチして情報を補足します
+                  {autoEnrich
+                    ? "最新情報をリサーチして投稿に反映します"
+                    : "ONにするとAIが最新情報をリサーチします"}
                 </p>
               </div>
             </div>
@@ -1405,45 +1410,154 @@ export default function GeneratePage() {
               />
             </button>
           </div>
-        </div>
-      )}
 
-      {/* Enrichment Status (shown during/after enrichment) */}
-      {isEnrichingContent && (
-        <div className="bg-blue-50 rounded-xl border border-blue-200 shadow-sm mb-6 p-4">
-          <div className="flex items-center gap-3">
-            <Loader2 className="w-5 h-5 text-blue-500 animate-spin" />
-            <div>
-              <p className="font-medium text-blue-900">情報をリサーチ中...</p>
-              <p className="text-sm text-blue-600">
-                投稿内容を分析し、補足情報を検索しています
-              </p>
-            </div>
-          </div>
-        </div>
-      )}
+          {/* Search Query Selection (shown when autoEnrich is ON) */}
+          {autoEnrich && (
+            <div className="p-4">
+              {/* Loading queries */}
+              {isLoadingQueries && (
+                <div className="flex items-center justify-center py-6">
+                  <div className="flex items-center gap-2 text-blue-600">
+                    <Loader2 className="w-5 h-5 animate-spin" />
+                    <span className="text-sm">検索クエリを生成中...</span>
+                  </div>
+                </div>
+              )}
 
-      {enrichmentInfo && enrichedContent && !isEnrichingContent && (
-        <div className="bg-blue-50 rounded-xl border border-blue-200 shadow-sm mb-6 p-4">
-          <div className="flex items-start gap-3">
-            <Info className="w-5 h-5 text-blue-500 flex-shrink-0 mt-0.5" />
-            <div className="flex-1">
-              <p className="font-medium text-blue-900">情報を補足しました</p>
-              <p className="text-sm text-blue-600 mb-2">{enrichmentInfo.reason}</p>
-              {enrichmentInfo.searchQueries.length > 0 && (
-                <div className="flex flex-wrap gap-1.5">
-                  {enrichmentInfo.searchQueries.map((query, i) => (
-                    <span
-                      key={i}
-                      className="px-2 py-0.5 bg-blue-100 text-blue-700 text-xs rounded-full"
+              {/* Query Options */}
+              {searchQueries.length > 0 && !isResearching && !researchComplete && (
+                <div>
+                  <p className="text-sm font-medium text-zinc-700 mb-3">
+                    検索クエリを選択（複数選択可、選択した軸で投稿を生成）
+                  </p>
+                  <div className="space-y-2 max-h-80 overflow-y-auto">
+                    {searchQueries.map((query) => (
+                      <button
+                        key={query.id}
+                        onClick={() => toggleSearchQuery(query.id)}
+                        className={`w-full flex items-start gap-3 p-3 rounded-lg border-2 transition-all text-left ${
+                          query.selected
+                            ? "border-blue-500 bg-blue-50"
+                            : "border-zinc-200 hover:border-zinc-300"
+                        }`}
+                      >
+                        <div className={`w-5 h-5 rounded-md border-2 flex items-center justify-center flex-shrink-0 mt-0.5 ${
+                          query.selected
+                            ? "border-blue-500 bg-blue-500"
+                            : "border-zinc-300"
+                        }`}>
+                          {query.selected && (
+                            <CheckCircle2 className="w-3 h-3 text-white" />
+                          )}
+                        </div>
+                        <div className="flex-1">
+                          <p className="font-medium text-zinc-900 text-sm">{query.query}</p>
+                          <div className="flex items-center gap-2 mt-1">
+                            <span className="px-1.5 py-0.5 bg-zinc-100 text-zinc-600 text-xs rounded">
+                              {query.category}
+                            </span>
+                            {query.description && (
+                              <span className="text-xs text-zinc-500">{query.description}</span>
+                            )}
+                          </div>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* Start Research Button */}
+                  <div className="mt-4 pt-4 border-t border-zinc-100">
+                    <div className="flex items-center justify-between">
+                      <p className="text-sm text-zinc-500">
+                        {searchQueries.filter(q => q.selected).length > 0
+                          ? `${searchQueries.filter(q => q.selected).length}件選択中`
+                          : "リサーチする軸を選択してください"}
+                      </p>
+                      <button
+                        onClick={handleStartResearch}
+                        disabled={searchQueries.filter(q => q.selected).length === 0}
+                        className="flex items-center gap-2 px-4 py-2 bg-blue-500 text-white text-sm font-medium rounded-lg hover:bg-blue-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        <Search className="w-4 h-4" />
+                        リサーチ開始
+                      </button>
+                    </div>
+                    <p className="text-xs text-zinc-400 mt-2">
+                      1個選択 → 6パターン全てその軸 / 2個 → 3パターンずつ / 3個 → 2パターンずつ
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {/* Researching Status */}
+              {isResearching && (
+                <div className="py-4">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-2">
+                      <Loader2 className="w-5 h-5 text-blue-600 animate-spin" />
+                      <span className="font-medium text-blue-900">Deep Research 実行中...</span>
+                    </div>
+                    <span className="text-lg font-bold text-blue-600">{enrichmentProgress}%</span>
+                  </div>
+                  <div className="relative h-2 bg-blue-100 rounded-full overflow-hidden">
+                    <div
+                      className="absolute inset-y-0 left-0 bg-gradient-to-r from-blue-500 to-indigo-500 rounded-full transition-all duration-300"
+                      style={{ width: `${enrichmentProgress}%` }}
+                    />
+                  </div>
+                  <p className="text-xs text-blue-500 mt-2">
+                    直近2週間以内の最新情報を5000字程度収集中...
+                  </p>
+                </div>
+              )}
+
+              {/* Research Complete - Show Results */}
+              {researchComplete && deepResearch && (
+                <div>
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-2">
+                      <CheckCircle2 className="w-5 h-5 text-emerald-500" />
+                      <span className="font-medium text-emerald-900">
+                        リサーチ完了（{deepResearch.length.toLocaleString()}文字）
+                      </span>
+                    </div>
+                    <button
+                      onClick={() => setShowFullResearch(!showFullResearch)}
+                      className="text-sm text-blue-600 hover:underline flex items-center gap-1"
                     >
-                      {query}
-                    </span>
-                  ))}
+                      {showFullResearch ? "閉じる" : "リサーチ内容を確認"}
+                      <ChevronDown className={`w-4 h-4 transition-transform ${showFullResearch ? "rotate-180" : ""}`} />
+                    </button>
+                  </div>
+
+                  {/* Selected Queries */}
+                  <div className="flex flex-wrap gap-1.5 mb-3">
+                    {searchQueries.filter(q => q.selected).map((query) => (
+                      <span
+                        key={query.id}
+                        className="px-2 py-0.5 bg-blue-100 text-blue-700 text-xs rounded-full"
+                      >
+                        {query.query}
+                      </span>
+                    ))}
+                  </div>
+
+                  {/* Full Research Content */}
+                  {showFullResearch && (
+                    <div className="mt-3 p-4 bg-zinc-50 rounded-lg border border-zinc-200 max-h-96 overflow-y-auto">
+                      <p className="text-sm text-zinc-700 whitespace-pre-wrap leading-relaxed">
+                        {deepResearch}
+                      </p>
+                    </div>
+                  )}
+
+                  <p className="text-xs text-emerald-600 mt-2">
+                    このリサーチ情報を元に6パターンの投稿を生成します
+                  </p>
                 </div>
               )}
             </div>
-          </div>
+          )}
         </div>
       )}
 
@@ -1452,14 +1566,20 @@ export default function GeneratePage() {
         <div className="flex justify-center mb-8">
           <button
             onClick={handleGenerateAll}
-            disabled={!content.trim() || (postSource !== "aiAuto" && !selectedCategory) || isLoadingPosts || isEnrichingContent}
+            disabled={
+              !content.trim() ||
+              (postSource !== "aiAuto" && !selectedCategory) ||
+              isLoadingPosts ||
+              isResearching ||
+              (autoEnrich && !researchComplete) // 情報自動補足ONの場合はリサーチ完了必須
+            }
             className={`flex items-center gap-3 px-8 py-4 text-white text-lg font-semibold rounded-xl disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-lg ${
               postSource === "aiAuto"
                 ? "bg-gradient-to-r from-violet-500 to-purple-500 hover:from-violet-600 hover:to-purple-600 shadow-violet-500/25"
                 : "bg-emerald-500 hover:bg-emerald-600 shadow-emerald-500/25"
             }`}
           >
-            {isEnrichingContent ? (
+            {isResearching ? (
               <>
                 <Loader2 className="w-6 h-6 animate-spin" />
                 情報をリサーチ中...
@@ -1724,6 +1844,33 @@ export default function GeneratePage() {
                       <ExternalLink className="w-4 h-4" />
                       投稿
                     </button>
+                  </div>
+                )}
+
+                {/* Research Info Toggle */}
+                {!card.isLoading && card.text && deepResearch && (
+                  <div className="border-t border-zinc-100">
+                    <button
+                      onClick={() => setShowCardResearch(prev => ({ ...prev, [card.id]: !prev[card.id] }))}
+                      className="w-full flex items-center justify-between px-4 py-2 text-xs text-zinc-500 hover:text-zinc-700 hover:bg-zinc-50 transition-colors"
+                    >
+                      <span className="flex items-center gap-1.5">
+                        <BookOpen className="w-3.5 h-3.5" />
+                        リサーチ情報を表示
+                      </span>
+                      <ChevronDown className={`w-3.5 h-3.5 transition-transform ${showCardResearch[card.id] ? "rotate-180" : ""}`} />
+                    </button>
+                    {showCardResearch[card.id] && (
+                      <div className="px-4 pb-3 max-h-60 overflow-y-auto">
+                        <div className="p-3 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg border border-blue-100">
+                          <p className="text-xs text-blue-600 font-medium mb-2">参考にしたリサーチ情報（{deepResearch.length.toLocaleString()}文字）</p>
+                          <p className="text-xs text-zinc-600 whitespace-pre-wrap leading-relaxed line-clamp-[12]">
+                            {deepResearch.slice(0, 2000)}
+                            {deepResearch.length > 2000 && "..."}
+                          </p>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
 

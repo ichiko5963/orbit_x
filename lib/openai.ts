@@ -460,6 +460,8 @@ interface GenerateWithReferenceOptions {
   category?: string;
   tone?: string;
   userStyle?: string;
+  researchData?: string; // 5000字程度の包括的なリサーチ情報
+  queryAxis?: string; // 検索クエリの軸（情報自動補足時に使用）
 }
 
 /**
@@ -530,7 +532,7 @@ JSON形式で回答：
 export async function generateWithReference(
   options: GenerateWithReferenceOptions
 ): Promise<string> {
-  const { content, referenceText } = options;
+  const { content, referenceText, researchData, queryAxis } = options;
 
   // Step 1: Extract key elements from input content (most important!)
   const extractPrompt = `以下の内容から、投稿に必ず含めるべき「キー要素」を全て抽出してください。
@@ -568,8 +570,65 @@ ${content}
     structureInfo = {};
   }
 
-  // Step 3: Generate with EXACT structure matching + ALL elements included
-  const prompt = `【最重要】投稿内容の要素を全て含めつつ、参考投稿の構造を完コピする。
+  // Step 3: Generate - different prompts based on whether research data is available
+  let prompt: string;
+
+  if (researchData) {
+    // リサーチデータがある場合: 情報を活用して価値のある投稿を作成
+    // queryAxisが指定されている場合は、その軸に沿った情報を重視
+    const axisInstruction = queryAxis
+      ? `\n★★★ 【この投稿の軸】★★★\n「${queryAxis}」に関連する情報をリサーチから選んで使用すること！\nこの軸に沿った具体的な情報を投稿の中心に据える。\n`
+      : "";
+
+    prompt = `【ミッション】リサーチ情報から最適な内容を選び、参考投稿の構造を【絶対に守りつつ】、一貫性のある有益な投稿を作成する。
+
+━━━━━━━━━━━━━━━━━━━━
+■ 投稿のテーマ
+━━━━━━━━━━━━━━━━━━━━
+${content}
+${axisInstruction}
+★ 抽出したキー要素：
+${keyElements}
+
+━━━━━━━━━━━━━━━━━━━━
+■ 参考投稿（この構造を【絶対に守る】）
+━━━━━━━━━━━━━━━━━━━━
+${referenceText}
+
+【参考投稿の構造 - 完全にコピーすること】
+- 行数: ${structureInfo.lineCount || "不明"}行 → 同じ行数にする
+- 絵文字: ${structureInfo.hasEmoji ? `あり（${structureInfo.emojiPositions}）→ 同じ位置に` : "なし → 入れない"}
+- 箇条書き: ${structureInfo.hasBullets ? `${structureInfo.bulletStyle}を${structureInfo.bulletCount}個使用 → 同じ数を同じ位置に` : "なし → 追加しない"}
+- 書き出し: ${structureInfo.openingPattern || "不明"} → 同じパターンで始める
+- 終わり方: ${structureInfo.closingPattern || "不明"} → 同じパターンで終わる
+
+━━━━━━━━━━━━━━━━━━━━
+■ リサーチ情報（5000字の包括的な情報）
+━━━━━━━━━━━━━━━━━━━━
+${researchData.slice(0, 4000)}${researchData.length > 4000 ? "...（続きあり）" : ""}
+
+━━━━━━━━━━━━━━━━━━━━
+■ 【最重要】作成のポイント
+━━━━━━━━━━━━━━━━━━━━
+1. 【構造は絶対】参考投稿の構造（行数、改行位置、箇条書き）を完全にコピー
+2. 【情報の選択】リサーチ情報から${queryAxis ? `「${queryAxis}」に関連する` : ""}具体的な情報を2-3個選ぶ
+3. 【具体性】リサーチから具体的な数字・事実・データを使う
+4. 【一貫性】投稿全体で1つのメッセージを伝える
+5. 【価値提供】読者が「知らなかった」「役立つ」と思える情報を入れる
+
+━━━━━━━━━━━━━━━━━━━━
+■ 禁止事項
+━━━━━━━━━━━━━━━━━━━━
+- 参考投稿と異なる構造
+- 薄っぺらい情報の羅列
+- AIっぽい表現（〜ですね、素晴らしい、ぜひ）
+- URL/リンク（https://〜）は絶対に入れない
+- 絵文字: ${structureInfo.hasEmoji ? "参考投稿と同じ位置にのみ使用" : "絶対に入れない"}
+
+投稿本文のみを出力。`;
+  } else {
+    // リサーチデータがない場合: 従来通りの構造重視
+    prompt = `【最重要】投稿内容の要素を全て含めつつ、参考投稿の構造を完コピする。
 
 ━━━━━━━━━━━━━━━━━━━━
 ■ 投稿内容（これが主役！全ての要素を含める）
@@ -625,13 +684,33 @@ ${referenceText}
 - 【URL/リンク禁止】参考投稿にURLがあっても絶対に入れない。https://t.co/〜 のようなリンクは一切含めない。URLは後でユーザーが追加する。
 
 投稿本文のみを出力。完結した投稿として。URLは含めない。`;
+  }
 
-  const response = await openai.chat.completions.create({
-    model: "gpt-4o",
-    messages: [
-      {
-        role: "system",
-        content: `あなたは「投稿生成マシン」です。
+  // System message depends on whether research data is available
+  const systemMessage = researchData
+    ? `あなたは「情報価値最大化の投稿生成マシン」です。
+
+【最重要ミッション】
+1. リサーチ情報から【最も価値のある情報】を選んで投稿に組み込む
+2. 投稿全体で【一貫したメッセージ】を伝える
+3. 参考投稿の構造は【参考程度】に。内容の一貫性を優先
+4. 【URL禁止】絶対にURLを含めない
+
+【情報活用のポイント】
+- リサーチから「これは知らなかった」と思える情報を選ぶ
+- 具体的な数字・データ・事実を使う
+- 情報を詰め込みすぎない。2-3個の重要ポイントに絞る
+- 「〜によると」「公式では」など出典を自然に入れる
+
+【一貫性のポイント】
+- 1つの投稿で1つのメッセージ
+- 話題が飛ばない
+- 導入→展開→結論が自然につながる
+- 薄っぺらい情報の羅列にしない
+
+★ 価値のある投稿を作る！
+★ URLは絶対に入れない！`
+    : `あなたは「投稿生成マシン」です。
 
 【最重要ミッション】
 1. 【完結した投稿】を作る - 途中で切れない、尻切れトンボにしない
@@ -645,23 +724,15 @@ ${referenceText}
 - 参考投稿と同じくらいの文字数で完結させる
 - URLは絶対に含めない（https://t.co/〜 等は入れない）
 
-【例】
-参考投稿：「〇〇って知ってた？
-
-実は△△なんだよね。
-
-これ知ってるだけで全然違う。」
-
-投稿内容：「GPT-4oが無料開放された」
-↓
-生成：「GPT-4oが無料開放って知ってた？
-
-OpenAIが全ユーザーに開放したんだよね。
-
-これ使えるだけで作業効率全然違う。」
-
 ★ 最後まで書く！途中で終わらない！
-★ URLは絶対に入れない！`,
+★ URLは絶対に入れない！`;
+
+  const response = await openai.chat.completions.create({
+    model: "gpt-4o",
+    messages: [
+      {
+        role: "system",
+        content: systemMessage,
       },
       {
         role: "user",
@@ -898,6 +969,7 @@ interface EnhancePostOptions {
   originalContent: string;
   referenceText: string;
   userStyle?: any; // UserStyleAnalysis
+  researchData?: string; // 5000字程度のリサーチ情報
 }
 
 /**
@@ -907,7 +979,7 @@ interface EnhancePostOptions {
  * KEY PRINCIPLE: Preserve 70%+ of original text, maintain structure (line count, breaks, bullets)
  */
 export async function enhancePost(options: EnhancePostOptions): Promise<string> {
-  const { currentText, originalContent, referenceText, userStyle } = options;
+  const { currentText, originalContent, referenceText, userStyle, researchData } = options;
 
   // Analyze current structure
   const lineCount = currentText.split("\n").length;
@@ -997,7 +1069,15 @@ ${(analysis.awkwardParts || []).map((p: string) => `・${p}`).join("\n") || "（
 ■ 元の内容（情報ソース）
 ━━━━━━━━━━━━━━━━━━━━
 ${originalContent}
-${styleInstructions}
+${researchData ? `
+━━━━━━━━━━━━━━━━━━━━
+■ リサーチ情報（信頼できる情報源から収集）
+━━━━━━━━━━━━━━━━━━━━
+${researchData.slice(0, 3000)}
+${researchData.length > 3000 ? "（続きあり...）" : ""}
+
+★ リサーチ情報から具体的な数字・データを活用して投稿の説得力を高める
+` : ""}${styleInstructions}
 
 ━━━━━━━━━━━━━━━━━━━━
 ■ リファインのルール【重要】

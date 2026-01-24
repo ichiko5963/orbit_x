@@ -4,7 +4,7 @@ import { generatePost, imitatePost, generateWithReference } from "@/lib/openai";
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { mode, template, templateId, topic, content, category, tone, emojiSet, referenceText, userStyle } = body;
+    const { mode, template, templateId, topic, content, category, tone, emojiSet, referenceText, userStyle, researchData, queryAxis } = body;
 
     // Reference mode - uses reference post structure + user's content + optional user style
     if (mode === "reference" && referenceText) {
@@ -22,6 +22,8 @@ export async function POST(request: NextRequest) {
         category,
         tone,
         userStyle, // Pass user's learned style
+        researchData, // 5000字程度のリサーチ情報
+        queryAxis, // 検索クエリの軸（情報自動補足時に使用）
       });
 
       return NextResponse.json({
