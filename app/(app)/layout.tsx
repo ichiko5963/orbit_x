@@ -213,15 +213,15 @@ function AppLayoutContent({ children }: { children: ReactNode }) {
 
   return (
     <div className="min-h-screen bg-[#fafafa]">
-      {/* Sidebar - hover to expand */}
+      {/* Sidebar - hover to expand (overlays content) */}
       <aside
         ref={sidebarRef}
         onMouseEnter={handleMouseEnter}
         onMouseLeave={handleMouseLeave}
         className={clsx(
           "fixed top-0 left-0 z-40 h-screen bg-white border-r border-zinc-200 flex flex-col",
-          "transition-[width] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]",
-          collapsed ? "w-20" : "w-72"
+          "transition-[width,box-shadow] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]",
+          collapsed ? "w-20" : "w-72 shadow-2xl shadow-black/10"
         )}
       >
         {/* Logo */}
@@ -390,10 +390,10 @@ function AppLayoutContent({ children }: { children: ReactNode }) {
         </div>
       </aside>
 
-      {/* Main Content - Adjusts with sidebar */}
+      {/* Main Content - Fixed margin, sidebar overlays when expanded */}
       <div
-        className="min-h-screen transition-[margin-left] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]"
-        style={{ marginLeft: collapsed ? "80px" : "288px" }}
+        className="min-h-screen"
+        style={{ marginLeft: "80px" }}
       >
         {/* Top Header */}
         <header className="sticky top-0 z-30 h-20 bg-white/80 backdrop-blur-xl border-b border-zinc-100 flex items-center justify-between px-10">
