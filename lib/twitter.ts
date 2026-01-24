@@ -81,14 +81,80 @@ class TwitterClient {
     return `OAuth ${headerParts}`;
   }
 
-  // Post a tweet with optional quote_tweet_id
-  async postTweet(text: string, options?: { quoteTweetId?: string }): Promise<TweetResponse> {
+  // Upload media (image) to Twitter
+  async uploadMedia(imageData: Buffer | string, mimeType: string = "image/jpeg"): Promise<string> {
+    const url = "https://upload.twitter.com/1.1/media/upload.json";
+
+    // Convert to base64 if Buffer
+    const base64Data = Buffer.isBuffer(imageData)
+      ? imageData.toString("base64")
+      : imageData;
+
+    // For media upload, we need to include params in signature
+    const params = { media_data: base64Data };
+    const authHeader = this.generateOAuthHeader("POST", url, params);
+
+    const formBody = new URLSearchParams();
+    formBody.append("media_data", base64Data);
+
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        Authorization: authHeader,
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: formBody.toString(),
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      console.error("Twitter media upload error:", data);
+      throw new Error(data.errors?.[0]?.message || "Failed to upload media");
+    }
+
+    return data.media_id_string;
+  }
+
+  // Upload media from URL
+  async uploadMediaFromUrl(imageUrl: string): Promise<string | null> {
+    try {
+      const response = await fetch(imageUrl);
+      if (!response.ok) {
+        console.error("Failed to fetch image:", imageUrl);
+        return null;
+      }
+
+      const buffer = Buffer.from(await response.arrayBuffer());
+      const contentType = response.headers.get("content-type") || "image/jpeg";
+
+      return await this.uploadMedia(buffer, contentType);
+    } catch (error) {
+      console.error("Error uploading media from URL:", error);
+      return null;
+    }
+  }
+
+  // Post a tweet with optional media and quote_tweet_id
+  async postTweet(text: string, options?: {
+    quoteTweetId?: string;
+    mediaIds?: string[];
+  }): Promise<TweetResponse> {
     const url = "https://api.twitter.com/2/tweets";
     const authHeader = this.generateOAuthHeader("POST", url);
 
-    const payload: { text: string; quote_tweet_id?: string } = { text };
+    const payload: {
+      text: string;
+      quote_tweet_id?: string;
+      media?: { media_ids: string[] };
+    } = { text };
+
     if (options?.quoteTweetId) {
       payload.quote_tweet_id = options.quoteTweetId;
+    }
+
+    if (options?.mediaIds && options.mediaIds.length > 0) {
+      payload.media = { media_ids: options.mediaIds };
     }
 
     const response = await fetch(url, {
@@ -105,6 +171,45 @@ class TwitterClient {
     if (!response.ok) {
       console.error("Twitter API error:", data);
       throw new Error(data.detail || data.title || "Failed to post tweet");
+    }
+
+    return data as TweetResponse;
+  }
+
+  // Post a tweet with reply
+  async postReply(text: string, replyToTweetId: string, options?: {
+    mediaIds?: string[];
+  }): Promise<TweetResponse> {
+    const url = "https://api.twitter.com/2/tweets";
+    const authHeader = this.generateOAuthHeader("POST", url);
+
+    const payload: {
+      text: string;
+      reply: { in_reply_to_tweet_id: string };
+      media?: { media_ids: string[] };
+    } = {
+      text,
+      reply: { in_reply_to_tweet_id: replyToTweetId },
+    };
+
+    if (options?.mediaIds && options.mediaIds.length > 0) {
+      payload.media = { media_ids: options.mediaIds };
+    }
+
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        Authorization: authHeader,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(payload),
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      console.error("Twitter API error:", data);
+      throw new Error(data.detail || data.title || "Failed to post reply");
     }
 
     return data as TweetResponse;

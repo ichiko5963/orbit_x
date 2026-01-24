@@ -424,6 +424,7 @@ export default function SchedulePage() {
           userId: user.uid,
           text: post.text,
           threadPosts: post.threadPosts,
+          imageUrls: post.imageUrls,
           quoteTweetId: post.quoteTweetUrl ? extractTweetId(post.quoteTweetUrl) : undefined,
         }),
       });

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { initAdmin, getAdminFirestore } from "@/lib/firebase-admin";
 import { Timestamp } from "firebase-admin/firestore";
 import { refreshAccessToken } from "@/lib/x-oauth";
+import { createTwitterClient } from "@/lib/twitter";
 
 // Initialize Firebase Admin
 initAdmin();
@@ -52,35 +53,31 @@ async function postTweet(
 }
 
 /**
- * Upload media to X API (OAuth 1.0a is required for media upload)
- * For now, we'll skip media upload and just post text
- * TODO: Implement media upload with OAuth 1.0a chunked upload
+ * Upload images using OAuth 1.0a and return media IDs
  */
-async function uploadMedia(
-  accessToken: string,
-  imageUrl: string
-): Promise<string | null> {
-  try {
-    // Fetch the image
-    const imageResponse = await fetch(imageUrl);
-    if (!imageResponse.ok) {
-      console.error("[Cron] Failed to fetch image:", imageUrl);
-      return null;
-    }
-
-    const imageBuffer = await imageResponse.arrayBuffer();
-    const base64Image = Buffer.from(imageBuffer).toString("base64");
-    const contentType = imageResponse.headers.get("content-type") || "image/jpeg";
-
-    // X API v1.1 media upload (requires OAuth 1.0a)
-    // For OAuth 2.0, we need to use a different approach or skip media
-    // This is a simplified version that may not work with OAuth 2.0
-    console.log("[Cron] Media upload not yet implemented for OAuth 2.0");
-    return null;
-  } catch (error) {
-    console.error("[Cron] Media upload error:", error);
-    return null;
+async function uploadImages(imageUrls: string[]): Promise<string[]> {
+  const client = createTwitterClient();
+  if (!client) {
+    console.warn("[Cron] Twitter client not available for media upload (OAuth 1.0a credentials missing)");
+    return [];
   }
+
+  const mediaIds: string[] = [];
+
+  for (const imageUrl of imageUrls) {
+    try {
+      console.log(`[Cron] Uploading image: ${imageUrl.slice(0, 50)}...`);
+      const mediaId = await client.uploadMediaFromUrl(imageUrl);
+      if (mediaId) {
+        mediaIds.push(mediaId);
+        console.log(`[Cron] Image uploaded, media_id: ${mediaId}`);
+      }
+    } catch (error) {
+      console.error(`[Cron] Failed to upload image:`, error);
+    }
+  }
+
+  return mediaIds;
 }
 
 /**
@@ -223,9 +220,18 @@ export async function GET(request: NextRequest) {
         try {
           console.log(`[Cron] Posting for user ${userId}: "${post.text.slice(0, 50)}..."`);
 
+          // Upload images if any (using OAuth 1.0a)
+          let mediaIds: string[] = [];
+          if (post.imageUrls && Array.isArray(post.imageUrls) && post.imageUrls.length > 0) {
+            console.log(`[Cron] Uploading ${post.imageUrls.length} images...`);
+            mediaIds = await uploadImages(post.imageUrls);
+            console.log(`[Cron] Uploaded ${mediaIds.length} images`);
+          }
+
           // Post the main tweet
           const mainResult = await postTweet(accessToken, post.text, {
             quoteTweetId: post.quoteTweetId,
+            mediaIds: mediaIds.length > 0 ? mediaIds : undefined,
           });
 
           console.log(`[Cron] Main tweet posted: ${mainResult.id}`);
