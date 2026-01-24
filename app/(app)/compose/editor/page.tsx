@@ -26,6 +26,8 @@ import {
   Target,
   TrendingUp,
   AlertCircle,
+  Search,
+  Check,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 import { useXProfile } from "@/lib/x-profile-context";
@@ -120,6 +122,12 @@ export default function PostEditorPage() {
 
   // Preview mode
   const [showPreview, setShowPreview] = useState(false);
+
+  // Image search state
+  const [showImageSearch, setShowImageSearch] = useState(false);
+  const [isSearchingImages, setIsSearchingImages] = useState(false);
+  const [imageSearchResults, setImageSearchResults] = useState<{url: string; title: string; source: string; selected?: boolean}[]>([]);
+  const [imageSearchError, setImageSearchError] = useState<string | null>(null);
 
   // Actions
   const [copied, setCopied] = useState(false);
@@ -283,6 +291,42 @@ export default function PostEditorPage() {
     }
   };
 
+  // Image paste handler for textareas
+  const handleTextareaPaste = (postId: number, e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+
+    const imageFiles: File[] = [];
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      if (item.type.startsWith("image/")) {
+        const file = item.getAsFile();
+        if (file) imageFiles.push(file);
+      }
+    }
+
+    if (imageFiles.length > 0) {
+      e.preventDefault();
+      const post = threadPosts.find(p => p.id === postId);
+      const currentImages = post?.images || [];
+      const remainingSlots = 4 - currentImages.length;
+      const filesToProcess = imageFiles.slice(0, remainingSlots);
+
+      filesToProcess.forEach((file) => {
+        const reader = new FileReader();
+        reader.onload = (event) => {
+          const result = event.target?.result as string;
+          setThreadPosts(prev => prev.map(p =>
+            p.id === postId
+              ? { ...p, images: [...p.images, result].slice(0, 4) }
+              : p
+          ));
+        };
+        reader.readAsDataURL(file);
+      });
+    }
+  };
+
   // Remove image
   const removeImage = (postId: number, imageIndex: number) => {
     setThreadPosts(prev => prev.map(p =>
@@ -290,6 +334,80 @@ export default function PostEditorPage() {
         ? { ...p, images: p.images.filter((_, i) => i !== imageIndex) }
         : p
     ));
+  };
+
+  // AI Image Search
+  const handleImageSearch = async () => {
+    if (!activePost.text.trim()) {
+      setImageSearchError("投稿内容を入力してください");
+      return;
+    }
+
+    setShowImageSearch(true);
+    setIsSearchingImages(true);
+    setImageSearchError(null);
+    setImageSearchResults([]);
+
+    try {
+      const response = await fetch("/api/search-images", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content: activePost.text }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || "画像検索に失敗しました");
+      }
+
+      setImageSearchResults(data.images || []);
+    } catch (error) {
+      console.error("Image search failed:", error);
+      setImageSearchError(error instanceof Error ? error.message : "画像検索に失敗しました");
+    } finally {
+      setIsSearchingImages(false);
+    }
+  };
+
+  // Toggle image selection
+  const toggleImageSelection = (index: number) => {
+    setImageSearchResults(prev => prev.map((img, i) =>
+      i === index ? { ...img, selected: !img.selected } : img
+    ));
+  };
+
+  // Add selected images to active post
+  const addSelectedImages = async () => {
+    const selectedImages = imageSearchResults.filter(img => img.selected);
+    const remainingSlots = 4 - activePost.images.length;
+    const imagesToAdd = selectedImages.slice(0, remainingSlots);
+
+    for (const img of imagesToAdd) {
+      try {
+        const response = await fetch("/api/proxy-image", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ url: img.url }),
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          if (data.base64) {
+            setThreadPosts(prev => prev.map(p =>
+              p.id === activePostId
+                ? { ...p, images: [...p.images, data.base64].slice(0, 4) }
+                : p
+            ));
+          }
+        }
+      } catch (error) {
+        console.error("Failed to load image:", img.url, error);
+      }
+    }
+
+    setShowImageSearch(false);
+    setImageSearchResults([]);
   };
 
   // Add new quote tweet
@@ -561,7 +679,8 @@ export default function PostEditorPage() {
                     updatePostText(post.id, e.target.value);
                     autoResizeTextarea(e.target);
                   }}
-                  placeholder={index === 0 ? "いまどうしてる？" : "スレッドを続ける..."}
+                  onPaste={(e) => handleTextareaPaste(post.id, e)}
+                  placeholder={index === 0 ? "いまどうしてる？（画像も貼り付け可能）" : "スレッドを続ける...（画像も貼り付け可能）"}
                   className="w-full min-h-[150px] text-base text-zinc-900 placeholder:text-zinc-400 resize-none focus:outline-none leading-relaxed overflow-hidden"
                   style={{ lineHeight: "1.8" }}
                 />
@@ -726,6 +845,14 @@ export default function PostEditorPage() {
                 title="画像を追加"
               >
                 <ImageIcon className="w-5 h-5" />
+              </button>
+              <button
+                onClick={handleImageSearch}
+                disabled={!activePost.text.trim() || activePost.images.length >= 4}
+                className="p-2.5 rounded-lg text-blue-500 hover:text-blue-700 hover:bg-blue-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                title="画像を検索"
+              >
+                <Search className="w-5 h-5" />
               </button>
               <button
                 onClick={() => setShowQuoteModal(true)}
@@ -1240,6 +1367,122 @@ export default function PostEditorPage() {
                   予約する
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Image Search Modal */}
+      {showImageSearch && (
+        <div className="fixed inset-0 z-50 flex items-start justify-center pt-20 overflow-y-auto">
+          <div
+            className="fixed inset-0 bg-black/50 backdrop-blur-sm"
+            onClick={() => setShowImageSearch(false)}
+          />
+
+          <div className="relative w-full max-w-2xl bg-white rounded-2xl shadow-xl mx-4 mb-20 overflow-hidden">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-200 bg-gradient-to-r from-blue-50 to-sky-50">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-blue-100 rounded-lg">
+                  <Search className="w-5 h-5 text-blue-600" />
+                </div>
+                <div>
+                  <h2 className="text-lg font-semibold text-zinc-900">投稿に使う画像を検索</h2>
+                  <p className="text-sm text-zinc-500">AIが投稿内容に合う画像を提案します</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowImageSearch(false)}
+                className="p-2 rounded-lg hover:bg-white/50 transition-colors"
+              >
+                <X className="w-5 h-5 text-zinc-500" />
+              </button>
+            </div>
+
+            {/* Modal Content */}
+            <div className="p-6">
+              {isSearchingImages ? (
+                <div className="flex flex-col items-center justify-center py-12">
+                  <Loader2 className="w-10 h-10 text-blue-500 animate-spin mb-4" />
+                  <p className="text-zinc-600 font-medium">関連画像を検索中...</p>
+                  <p className="text-sm text-zinc-400 mt-1">公式ロゴや関連画像を探しています</p>
+                </div>
+              ) : imageSearchError ? (
+                <div className="text-center py-12">
+                  <p className="text-red-500 mb-4">{imageSearchError}</p>
+                  <button
+                    onClick={handleImageSearch}
+                    className="text-blue-600 hover:underline"
+                  >
+                    再試行
+                  </button>
+                </div>
+              ) : imageSearchResults.length > 0 ? (
+                <>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 max-h-96 overflow-y-auto">
+                    {imageSearchResults.map((img, index) => (
+                      <button
+                        key={index}
+                        onClick={() => toggleImageSelection(index)}
+                        className={`relative aspect-square rounded-xl overflow-hidden border-2 transition-all ${
+                          img.selected
+                            ? "border-blue-500 ring-2 ring-blue-500/30"
+                            : "border-zinc-200 hover:border-zinc-300"
+                        }`}
+                      >
+                        <img
+                          src={img.url}
+                          alt={img.title}
+                          className="w-full h-full object-cover"
+                          onError={(e) => {
+                            (e.target as HTMLImageElement).style.display = "none";
+                          }}
+                        />
+                        {img.selected && (
+                          <div className="absolute inset-0 bg-blue-500/20 flex items-center justify-center">
+                            <div className="w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center">
+                              <Check className="w-5 h-5 text-white" />
+                            </div>
+                          </div>
+                        )}
+                        <div className="absolute bottom-0 left-0 right-0 p-1.5 bg-gradient-to-t from-black/70 to-transparent">
+                          <p className="text-xs text-white truncate">{img.title}</p>
+                          <p className="text-xs text-white/70 truncate">{img.source}</p>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* Selection info and add button */}
+                  <div className="flex items-center justify-between mt-4 pt-4 border-t border-zinc-200">
+                    <p className="text-sm text-zinc-500">
+                      {imageSearchResults.filter(img => img.selected).length > 0
+                        ? `${imageSearchResults.filter(img => img.selected).length}枚選択中 (最大${4 - activePost.images.length}枚追加可能)`
+                        : "画像をクリックして選択"}
+                    </p>
+                    <button
+                      onClick={addSelectedImages}
+                      disabled={imageSearchResults.filter(img => img.selected).length === 0}
+                      className="flex items-center gap-2 px-4 py-2 bg-blue-500 text-white font-medium rounded-xl hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    >
+                      <Plus className="w-4 h-4" />
+                      選択した画像を追加
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <div className="text-center py-12 text-zinc-500">
+                  <Search className="w-12 h-12 mx-auto mb-4 text-zinc-300" />
+                  <p>画像が見つかりませんでした</p>
+                  <button
+                    onClick={handleImageSearch}
+                    className="mt-4 text-blue-600 hover:underline"
+                  >
+                    再検索
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         </div>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import {
   Sparkles,
@@ -19,6 +19,7 @@ import {
   ScheduleModal,
   PostPreview,
 } from "@/app/components/compose";
+import { useImagePaste } from "@/app/components/compose/ImageUploadGrid";
 
 export default function ComposePage() {
   const router = useRouter();
@@ -32,6 +33,23 @@ export default function ComposePage() {
   // Schedule modal
   const [showScheduleModal, setShowScheduleModal] = useState(false);
   const [isScheduling, setIsScheduling] = useState(false);
+
+  // Image paste handler - update images state when pasting
+  const handleImagesChange = useCallback((newImages: string[]) => {
+    setImages(newImages);
+  }, []);
+
+  // Use image paste hook
+  const handleImagePaste = useImagePaste(images, handleImagesChange, 4);
+
+  // Handle paste in textarea - check for images first
+  const handleTextareaPaste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    // If paste contains images, handle them and prevent default
+    if (handleImagePaste(e)) {
+      e.preventDefault();
+    }
+    // Otherwise let the default paste behavior handle text
+  };
 
   // No character limit for X Premium
   const charCount = content.length;
@@ -110,7 +128,8 @@ export default function ComposePage() {
                     <textarea
                       value={content}
                       onChange={(e) => setContent(e.target.value)}
-                      placeholder="投稿したい内容をペースト、または入力してください..."
+                      onPaste={handleTextareaPaste}
+                      placeholder="投稿したい内容をペースト、または入力してください（画像も貼り付け可能）..."
                       className="w-full h-32 p-4 text-base text-zinc-900 placeholder:text-zinc-400 bg-zinc-50 border border-zinc-200 rounded-xl resize-none focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent leading-relaxed"
                     />
                   </div>
@@ -150,7 +169,12 @@ export default function ComposePage() {
 
             {/* Image Upload */}
             <div className="px-6 pb-6">
-              <ImageUploadGrid images={images} onImagesChange={setImages} maxImages={4} />
+              <ImageUploadGrid
+                images={images}
+                onImagesChange={handleImagesChange}
+                maxImages={4}
+                postContent={content}
+              />
             </div>
 
             {/* Footer Actions */}
