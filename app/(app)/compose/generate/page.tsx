@@ -152,6 +152,8 @@ export default function GeneratePage() {
     category: string;
     description: string;
     selected: boolean;
+    source?: string; // 情報源（検索結果から）
+    keywords?: string[]; // 関連キーワード
   }
   const [searchQueries, setSearchQueries] = useState<SearchQuery[]>([]);
   const [isLoadingQueries, setIsLoadingQueries] = useState(false);
@@ -161,6 +163,9 @@ export default function GeneratePage() {
   const [showFullResearch, setShowFullResearch] = useState(false);
   const [searchSummary, setSearchSummary] = useState<string>(""); // 検索結果の要約
   const [searchedAt, setSearchedAt] = useState<string>(""); // 検索日時
+  const [searchProgress, setSearchProgress] = useState(0); // 検索進捗（0-100）
+  const [searchProgressMessage, setSearchProgressMessage] = useState(""); // 検索進捗メッセージ
+  const [searchResultsPreview, setSearchResultsPreview] = useState<string>(""); // 検索結果プレビュー
 
   // Generation progress state
   const [generationProgress, setGenerationProgress] = useState<{
@@ -283,6 +288,28 @@ export default function GeneratePage() {
       setSearchQueries([]);
       setDeepResearch(null);
       setResearchComplete(false);
+      setSearchProgress(0);
+      setSearchProgressMessage("検索を開始しています...");
+      setSearchResultsPreview("");
+
+      // プログレスシミュレーション
+      const progressSteps = [
+        { progress: 10, message: "投稿内容を分析中..." },
+        { progress: 25, message: "検索キーワードを抽出中..." },
+        { progress: 40, message: "Web検索を実行中（1/3）..." },
+        { progress: 55, message: "Web検索を実行中（2/3）..." },
+        { progress: 70, message: "Web検索を実行中（3/3）..." },
+        { progress: 85, message: "検索結果を分析中..." },
+        { progress: 92, message: "リサーチテーマを生成中..." },
+      ];
+      let stepIndex = 0;
+      const progressInterval = setInterval(() => {
+        if (stepIndex < progressSteps.length) {
+          setSearchProgress(progressSteps[stepIndex].progress);
+          setSearchProgressMessage(progressSteps[stepIndex].message);
+          stepIndex++;
+        }
+      }, 2500); // 2.5秒ごとに進捗更新
 
       try {
         const response = await fetch("/api/generate/search-queries", {
@@ -290,31 +317,42 @@ export default function GeneratePage() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             content,
-            postCategory: selectedCategory || undefined, // カテゴリーをAPIに渡す
-            postSource, // ソースモードも渡す
-            today: new Date().toISOString().split("T")[0], // 2026-01-25形式
+            postCategory: selectedCategory || undefined,
+            postSource,
+            today: new Date().toISOString().split("T")[0],
           }),
         });
 
+        clearInterval(progressInterval);
         const data = await response.json();
 
         if (data.success && data.queries) {
+          setSearchProgress(100);
+          setSearchProgressMessage("検索完了！");
           setSearchQueries(data.queries.map((q: any, i: number) => ({
             ...q,
             id: q.id || `query_${i}`,
             selected: false,
           })));
           setQueriesGenerated(true);
-          // 検索結果の要約を保存
           if (data.searchSummary) {
             setSearchSummary(data.searchSummary);
           }
           if (data.searchedAt) {
             setSearchedAt(data.searchedAt);
           }
+          if (data.searchResultsPreview) {
+            setSearchResultsPreview(data.searchResultsPreview);
+          }
+        } else {
+          setSearchProgress(0);
+          setSearchProgressMessage(data.error || "検索に失敗しました");
         }
       } catch (error) {
+        clearInterval(progressInterval);
         console.error("Search query generation failed:", error);
+        setSearchProgress(0);
+        setSearchProgressMessage("検索中にエラーが発生しました");
       } finally {
         setIsLoadingQueries(false);
       }
@@ -1550,19 +1588,47 @@ export default function GeneratePage() {
           {/* Search Query Selection (shown when autoEnrich is ON) */}
           {autoEnrich && (
             <div className="p-4">
-              {/* Loading - AI検索中 */}
+              {/* Loading - AI検索中（プログレスバー付き） */}
               {isLoadingQueries && (
                 <div className="py-6">
-                  <div className="flex flex-col items-center gap-3">
-                    <div className="relative w-12 h-12">
-                      <div className="absolute inset-0 border-3 border-blue-200 rounded-full"></div>
-                      <div className="absolute inset-0 border-3 border-blue-500 rounded-full border-t-transparent animate-spin"></div>
+                  <div className="flex flex-col gap-4">
+                    {/* 進捗ヘッダー */}
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <Loader2 className="w-5 h-5 text-blue-600 animate-spin" />
+                        <span className="font-medium text-blue-900">AIで最新情報を検索中</span>
+                      </div>
+                      <span className="text-xl font-bold text-blue-600">{searchProgress}%</span>
                     </div>
+
+                    {/* プログレスバー */}
+                    <div className="relative h-3 bg-blue-100 rounded-full overflow-hidden">
+                      <div
+                        className="absolute inset-y-0 left-0 bg-gradient-to-r from-blue-500 via-indigo-500 to-purple-500 rounded-full transition-all duration-500 ease-out"
+                        style={{ width: `${searchProgress}%` }}
+                      />
+                      {/* 光るエフェクト */}
+                      <div
+                        className="absolute inset-y-0 w-20 bg-gradient-to-r from-transparent via-white/30 to-transparent animate-pulse"
+                        style={{ left: `${Math.max(0, searchProgress - 10)}%` }}
+                      />
+                    </div>
+
+                    {/* 進捗メッセージ */}
                     <div className="text-center">
-                      <p className="font-medium text-blue-900">AIで最新情報を検索中...</p>
-                      <p className="text-xs text-blue-600 mt-1">
-                        投稿内容とカテゴリを分析して、直近2週間の関連情報を徹底検索しています
+                      <p className="text-sm text-blue-700 font-medium">{searchProgressMessage}</p>
+                      <p className="text-xs text-zinc-500 mt-1">
+                        直近2週間の最新情報を徹底的に検索しています
                       </p>
+                    </div>
+
+                    {/* ステップ表示 */}
+                    <div className="flex justify-between text-xs text-zinc-400 px-2">
+                      <span className={searchProgress >= 10 ? "text-blue-600" : ""}>分析</span>
+                      <span className={searchProgress >= 25 ? "text-blue-600" : ""}>キーワード抽出</span>
+                      <span className={searchProgress >= 40 ? "text-blue-600" : ""}>Web検索</span>
+                      <span className={searchProgress >= 85 ? "text-blue-600" : ""}>結果分析</span>
+                      <span className={searchProgress >= 92 ? "text-blue-600" : ""}>テーマ生成</span>
                     </div>
                   </div>
                 </div>
@@ -1571,35 +1637,41 @@ export default function GeneratePage() {
               {/* Query Options with Search Summary */}
               {searchQueries.length > 0 && !isResearching && !researchComplete && (
                 <div>
-                  {/* Search Summary */}
-                  {searchSummary && (
-                    <div className="mb-4 p-3 bg-gradient-to-r from-emerald-50 to-blue-50 rounded-lg border border-emerald-200">
-                      <div className="flex items-start gap-2">
-                        <CheckCircle2 className="w-4 h-4 text-emerald-600 flex-shrink-0 mt-0.5" />
-                        <div>
-                          <p className="text-xs font-semibold text-emerald-800 mb-1">
-                            AI検索完了{searchedAt ? `（${searchedAt}時点）` : ""}
-                          </p>
-                          <p className="text-xs text-emerald-700 leading-relaxed">
+                  {/* Search Results Summary */}
+                  <div className="mb-4 p-4 bg-gradient-to-r from-emerald-50 via-blue-50 to-indigo-50 rounded-xl border border-emerald-200">
+                    <div className="flex items-start gap-3">
+                      <div className="w-10 h-10 rounded-lg bg-emerald-100 flex items-center justify-center flex-shrink-0">
+                        <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+                      </div>
+                      <div className="flex-1">
+                        <p className="font-semibold text-emerald-800 mb-1">
+                          Web検索完了{searchedAt ? `（${searchedAt}時点）` : ""}
+                        </p>
+                        {searchSummary && (
+                          <p className="text-sm text-emerald-700 leading-relaxed mb-2">
                             {searchSummary}
                           </p>
-                        </div>
+                        )}
+                        <p className="text-xs text-emerald-600">
+                          直近2週間で見つかった{searchQueries.length}件の具体的な情報
+                        </p>
                       </div>
                     </div>
-                  )}
+                  </div>
 
-                  <p className="text-sm font-medium text-zinc-700 mb-3">
-                    リサーチテーマを選択（複数選択可）
+                  <p className="text-sm font-semibold text-zinc-800 mb-3 flex items-center gap-2">
+                    <Target className="w-4 h-4 text-blue-600" />
+                    検索で見つかった情報（複数選択可）
                   </p>
-                  <div className="space-y-2 max-h-80 overflow-y-auto">
+                  <div className="space-y-2 max-h-96 overflow-y-auto">
                     {searchQueries.map((query) => (
                       <button
                         key={query.id}
                         onClick={() => toggleSearchQuery(query.id)}
                         className={`w-full flex items-start gap-3 p-3 rounded-lg border-2 transition-all text-left ${
                           query.selected
-                            ? "border-blue-500 bg-blue-50"
-                            : "border-zinc-200 hover:border-zinc-300"
+                            ? "border-blue-500 bg-blue-50 shadow-sm"
+                            : "border-zinc-200 hover:border-zinc-300 hover:bg-zinc-50"
                         }`}
                       >
                         <div className={`w-5 h-5 rounded-md border-2 flex items-center justify-center flex-shrink-0 mt-0.5 ${
@@ -1612,21 +1684,36 @@ export default function GeneratePage() {
                           )}
                         </div>
                         <div className="flex-1">
-                          <p className="font-medium text-zinc-900 text-sm">{query.query}</p>
-                          <div className="flex items-center gap-2 mt-1 flex-wrap">
-                            <span className={`px-1.5 py-0.5 text-xs rounded ${
+                          <p className="font-medium text-zinc-900 text-sm leading-snug">{query.query}</p>
+                          <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+                            <span className={`px-2 py-0.5 text-xs rounded-full font-medium ${
                               query.category === "注目情報"
-                                ? "bg-amber-100 text-amber-700"
+                                ? "bg-amber-100 text-amber-800"
                                 : query.category === "関連情報"
-                                  ? "bg-blue-100 text-blue-700"
-                                  : "bg-zinc-100 text-zinc-600"
+                                  ? "bg-blue-100 text-blue-800"
+                                  : "bg-zinc-100 text-zinc-700"
                             }`}>
                               {query.category}
                             </span>
-                            {query.description && (
-                              <span className="text-xs text-zinc-500">{query.description}</span>
+                            {query.source && (
+                              <span className="text-xs text-zinc-500 flex items-center gap-1">
+                                <LinkIcon className="w-3 h-3" />
+                                {query.source}
+                              </span>
                             )}
                           </div>
+                          {query.description && (
+                            <p className="text-xs text-zinc-500 mt-1.5 leading-relaxed">{query.description}</p>
+                          )}
+                          {query.keywords && query.keywords.length > 0 && (
+                            <div className="flex flex-wrap gap-1 mt-2">
+                              {query.keywords.slice(0, 4).map((kw, i) => (
+                                <span key={i} className="px-1.5 py-0.5 bg-zinc-100 text-zinc-600 text-xs rounded">
+                                  {kw}
+                                </span>
+                              ))}
+                            </div>
+                          )}
                         </div>
                       </button>
                     ))}
