@@ -25,12 +25,23 @@ import {
   Link as LinkIcon,
   Plus,
   Trash2,
+  History,
 } from "lucide-react";
 import { Timestamp } from "firebase/firestore";
 import Image from "next/image";
 import { useAuth } from "@/lib/auth-context";
 import { useXProfile } from "@/lib/x-profile-context";
-import { getContextPosts, getPosts, saveScheduledPost, getUserStyleAnalysis } from "@/lib/firebase";
+import {
+  getContextPosts,
+  getPosts,
+  saveScheduledPost,
+  getUserStyleAnalysis,
+  saveAIGenerationHistory,
+  getAIGenerationHistory,
+  deleteAIGenerationHistory,
+  cleanupExpiredAIHistories,
+  AIGenerationHistory,
+} from "@/lib/firebase";
 
 // Practical X post categories (must match database)
 const CATEGORIES = [
@@ -111,6 +122,11 @@ export default function GeneratePage() {
     total: number;
   }>({ isGenerating: false, completed: 0, total: 0 });
 
+  // AI generation history state
+  const [generationHistory, setGenerationHistory] = useState<AIGenerationHistory[]>([]);
+  const [showHistory, setShowHistory] = useState(false);
+  const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+
   // Schedule modal state
   const [showScheduleModal, setShowScheduleModal] = useState(false);
   const [scheduleCardId, setScheduleCardId] = useState<number | null>(null);
@@ -177,6 +193,26 @@ export default function GeneratePage() {
       scheduleTextareaRef.current.style.height = `${scheduleTextareaRef.current.scrollHeight}px`;
     }
   }, [scheduleText]);
+
+  // Load AI generation history
+  useEffect(() => {
+    const loadHistory = async () => {
+      if (!user) return;
+      setIsLoadingHistory(true);
+      try {
+        // Cleanup expired histories first
+        await cleanupExpiredAIHistories(user.uid);
+        // Then load current histories
+        const histories = await getAIGenerationHistory(user.uid);
+        setGenerationHistory(histories);
+      } catch (err) {
+        console.error("Failed to load history:", err);
+      } finally {
+        setIsLoadingHistory(false);
+      }
+    };
+    loadHistory();
+  }, [user]);
 
   // Load reference posts from BOTH sources
   useEffect(() => {
@@ -422,6 +458,9 @@ export default function GeneratePage() {
     const batchSize = 2;
     const delayBetweenBatches = 3000; // 3 seconds between batches
 
+    // Collect all generated texts for history
+    const allGeneratedTexts: string[] = [];
+
     for (let batchStart = 0; batchStart < initialCards.length; batchStart += batchSize) {
       const batchEnd = Math.min(batchStart + batchSize, initialCards.length);
       const batchCards = initialCards.slice(batchStart, batchEnd);
@@ -447,6 +486,13 @@ export default function GeneratePage() {
       });
 
       const batchResults = await Promise.all(batchPromises);
+
+      // Collect generated texts for history
+      batchResults.forEach(r => {
+        if (r.text) {
+          allGeneratedTexts.push(r.text);
+        }
+      });
 
       // Update cards and progress for this batch
       setCards(prev => prev.map(card => {
@@ -474,6 +520,24 @@ export default function GeneratePage() {
     }
 
     setGenerationProgress(prev => ({ ...prev, isGenerating: false }));
+
+    // Save generation history
+    if (user && allGeneratedTexts.length > 0) {
+      try {
+        await saveAIGenerationHistory(user.uid, {
+          content,
+          generatedTexts: allGeneratedTexts,
+          referenceSource: postSource,
+          category: postSource !== "aiAuto" ? selectedCategory : undefined,
+          urls: referenceUrls.length > 0 ? referenceUrls : undefined,
+        });
+        // Reload history
+        const histories = await getAIGenerationHistory(user.uid);
+        setGenerationHistory(histories);
+      } catch (err) {
+        console.error("Failed to save history:", err);
+      }
+    }
   };
 
   // AI強化: 要素漏れなしでバズる投稿に強化
@@ -638,17 +702,140 @@ export default function GeneratePage() {
           </div>
         </div>
 
-        {hasGenerated && (
-          <button
-            onClick={handleGenerateAll}
-            disabled={isAnyLoading || !content.trim()}
-            className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-emerald-600 bg-emerald-50 rounded-lg hover:bg-emerald-100 disabled:opacity-50 transition-colors"
-          >
-            <RotateCcw className="w-4 h-4" />
-            全て再生成
-          </button>
-        )}
+        <div className="flex items-center gap-2">
+          {generationHistory.length > 0 && (
+            <button
+              onClick={() => setShowHistory(!showHistory)}
+              className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
+                showHistory
+                  ? "bg-violet-100 text-violet-700"
+                  : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200"
+              }`}
+            >
+              <History className="w-4 h-4" />
+              履歴
+              <span className="bg-violet-500 text-white text-xs px-1.5 py-0.5 rounded-full">
+                {generationHistory.length}
+              </span>
+            </button>
+          )}
+
+          {hasGenerated && (
+            <button
+              onClick={handleGenerateAll}
+              disabled={isAnyLoading || !content.trim()}
+              className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-emerald-600 bg-emerald-50 rounded-lg hover:bg-emerald-100 disabled:opacity-50 transition-colors"
+            >
+              <RotateCcw className="w-4 h-4" />
+              全て再生成
+            </button>
+          )}
+        </div>
       </div>
+
+      {/* Generation History Panel */}
+      {showHistory && generationHistory.length > 0 && (
+        <div className="bg-white rounded-xl border border-zinc-200 shadow-sm mb-6 overflow-hidden">
+          <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-100 bg-violet-50">
+            <div className="flex items-center gap-2">
+              <History className="w-5 h-5 text-violet-600" />
+              <h3 className="font-semibold text-violet-900">AI生成履歴</h3>
+              <span className="text-xs text-violet-500">（1週間保存）</span>
+            </div>
+            <button
+              onClick={() => setShowHistory(false)}
+              className="p-1 rounded hover:bg-violet-100"
+            >
+              <XIcon className="w-4 h-4 text-violet-500" />
+            </button>
+          </div>
+          <div className="divide-y divide-zinc-100 max-h-96 overflow-y-auto">
+            {generationHistory.map((history) => (
+              <div
+                key={history.id}
+                className="p-4 hover:bg-zinc-50 cursor-pointer transition-colors"
+                onClick={() => {
+                  // Restore this history
+                  setContent(history.content);
+                  setPostSource(history.referenceSource);
+                  if (history.category) {
+                    setSelectedCategory(history.category);
+                  }
+                  if (history.urls) {
+                    setReferenceUrls(history.urls);
+                  }
+                  // Set cards from history
+                  const restoredCards: GeneratedCard[] = history.generatedTexts.map((text, i) => ({
+                    id: i + 1,
+                    text,
+                    referencePost: {
+                      id: `history_${i}`,
+                      text: "",
+                      likes: 0,
+                      tier: "A" as const,
+                      category: history.category || "",
+                      source: history.referenceSource,
+                    },
+                    isLoading: false,
+                  }));
+                  setCards(restoredCards);
+                  setShowHistory(false);
+                }}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-zinc-900 line-clamp-2 mb-1">
+                      {history.content}
+                    </p>
+                    <div className="flex items-center gap-2 text-xs text-zinc-500">
+                      <span className={`px-1.5 py-0.5 rounded ${
+                        history.referenceSource === "aiAuto"
+                          ? "bg-violet-100 text-violet-600"
+                          : history.referenceSource === "myPosts"
+                            ? "bg-blue-100 text-blue-600"
+                            : "bg-emerald-100 text-emerald-600"
+                      }`}>
+                        {history.referenceSource === "aiAuto"
+                          ? "AIおまかせ"
+                          : history.referenceSource === "myPosts"
+                            ? "過去投稿"
+                            : "他者バズ"}
+                      </span>
+                      {history.category && (
+                        <span className="text-zinc-400">{history.category}</span>
+                      )}
+                      <span className="text-zinc-400">
+                        {history.generatedTexts.length}パターン
+                      </span>
+                      <span className="text-zinc-400">
+                        {new Date(history.createdAt!).toLocaleDateString("ja-JP", {
+                          month: "short",
+                          day: "numeric",
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        })}
+                      </span>
+                    </div>
+                  </div>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (user && history.id) {
+                        deleteAIGenerationHistory(user.uid, history.id).then(() => {
+                          setGenerationHistory(prev => prev.filter(h => h.id !== history.id));
+                        });
+                      }
+                    }}
+                    className="p-1.5 rounded text-zinc-400 hover:text-red-500 hover:bg-red-50 transition-colors"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Content & Link Input */}
       <div className="bg-white rounded-xl border border-zinc-200 shadow-sm mb-6">
@@ -1042,7 +1229,7 @@ export default function GeneratePage() {
                           </div>
                         </div>
                       )}
-                      <p className="text-sm text-zinc-700 whitespace-pre-wrap leading-relaxed line-clamp-[8]">
+                      <p className="text-sm text-zinc-700 whitespace-pre-wrap leading-relaxed">
                         {card.text}
                       </p>
                     </div>

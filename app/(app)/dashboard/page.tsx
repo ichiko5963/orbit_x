@@ -24,7 +24,7 @@ import {
   CheckCircle2,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
-import { getPosts, getScheduledPosts, getContextPosts } from "@/lib/firebase";
+import { getPosts, getScheduledPosts, getContextPosts, getAIGenerationHistory, cleanupExpiredAIHistories, AIGenerationHistory } from "@/lib/firebase";
 
 interface DashboardStats {
   totalPosts: number;
@@ -108,6 +108,8 @@ export default function Dashboard() {
   });
   const [postedHistory, setPostedHistory] = useState<PostedHistory[]>([]);
   const [isLoadingHistory, setIsLoadingHistory] = useState(true);
+  const [aiHistory, setAiHistory] = useState<AIGenerationHistory[]>([]);
+  const [isLoadingAiHistory, setIsLoadingAiHistory] = useState(true);
 
   useEffect(() => {
     const loadDashboardData = async () => {
@@ -177,6 +179,27 @@ export default function Dashboard() {
     };
 
     loadHistory();
+  }, [user]);
+
+  // Load AI generation history
+  useEffect(() => {
+    const loadAiHistory = async () => {
+      if (!user) return;
+
+      try {
+        // Cleanup expired histories first
+        await cleanupExpiredAIHistories(user.uid);
+        // Then load current histories
+        const histories = await getAIGenerationHistory(user.uid);
+        setAiHistory(histories.slice(0, 5)); // Show only recent 5
+      } catch (err) {
+        console.error("Load AI history error:", err);
+      } finally {
+        setIsLoadingAiHistory(false);
+      }
+    };
+
+    loadAiHistory();
   }, [user]);
 
   if (isLoading) {
@@ -304,6 +327,59 @@ export default function Dashboard() {
               </Link>
             ))}
           </div>
+
+          {/* AI Generation History */}
+          {aiHistory.length > 0 && (
+            <div className="bg-white rounded-2xl border border-zinc-200 shadow-sm overflow-hidden">
+              <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-100 bg-violet-50">
+                <div className="flex items-center gap-2">
+                  <Sparkles className="w-4 h-4 text-violet-600" />
+                  <span className="text-sm font-semibold text-violet-800">AI生成履歴</span>
+                </div>
+                <Link
+                  href="/compose/generate"
+                  className="text-xs text-violet-600 hover:text-violet-700"
+                >
+                  すべて見る
+                </Link>
+              </div>
+              <div className="divide-y divide-zinc-100">
+                {aiHistory.map((history) => (
+                  <Link
+                    key={history.id}
+                    href="/compose/generate"
+                    className="block p-3 hover:bg-zinc-50 transition-colors"
+                  >
+                    <p className="text-sm text-zinc-700 line-clamp-2 mb-1">
+                      {history.content}
+                    </p>
+                    <div className="flex items-center gap-2 text-xs text-zinc-400">
+                      <span className={`px-1.5 py-0.5 rounded ${
+                        history.referenceSource === "aiAuto"
+                          ? "bg-violet-100 text-violet-600"
+                          : history.referenceSource === "myPosts"
+                            ? "bg-blue-100 text-blue-600"
+                            : "bg-emerald-100 text-emerald-600"
+                      }`}>
+                        {history.referenceSource === "aiAuto"
+                          ? "AIおまかせ"
+                          : history.referenceSource === "myPosts"
+                            ? "過去投稿"
+                            : "他者バズ"}
+                      </span>
+                      <span>{history.generatedTexts.length}パターン</span>
+                      <span>
+                        {new Date(history.createdAt!).toLocaleDateString("ja-JP", {
+                          month: "short",
+                          day: "numeric",
+                        })}
+                      </span>
+                    </div>
+                  </Link>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Right Column: Posted History */}

@@ -181,6 +181,13 @@ export default function ExternalPage() {
   const [copiedId, setCopiedId] = useState<number | null>(null);
   const [schedulingId, setSchedulingId] = useState<number | null>(null);
 
+  // Generation progress state
+  const [generationProgress, setGenerationProgress] = useState<{
+    isGenerating: boolean;
+    completed: number;
+    total: number;
+  }>({ isGenerating: false, completed: 0, total: 0 });
+
   // Load patterns from Firebase
   useEffect(() => {
     const loadPatterns = async () => {
@@ -240,6 +247,43 @@ export default function ExternalPage() {
     );
   };
 
+  // Helper function for rate-limit-aware API call with retry
+  const generateWithRetry = async (body: any, maxRetries = 3): Promise<{ text: string; threadPost: string; error?: string }> => {
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+      try {
+        const response = await fetch("/api/generate-article-post", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+
+        const data = await response.json();
+
+        // Handle rate limit error
+        if (response.status === 429) {
+          const waitMatch = data.error?.match(/(\d+\.?\d*)\s*s/);
+          const waitTime = waitMatch ? parseFloat(waitMatch[1]) * 1000 : 20000;
+          console.log(`Rate limited, waiting ${waitTime}ms before retry...`);
+          await new Promise(resolve => setTimeout(resolve, waitTime + 1000));
+          continue;
+        }
+
+        if (!response.ok) {
+          throw new Error(data.error || "生成に失敗しました");
+        }
+
+        return { text: data.text, threadPost: data.threadPost || "" };
+      } catch (err) {
+        if (attempt === maxRetries - 1) {
+          const message = err instanceof Error ? err.message : "エラー";
+          return { text: "", threadPost: "", error: message };
+        }
+        await new Promise(resolve => setTimeout(resolve, 2000));
+      }
+    }
+    return { text: "", threadPost: "", error: "リトライ回数を超えました" };
+  };
+
   // Generate patterns for the article (use patterns from Firebase)
   const handleGenerateFromArticle = async (article: Article) => {
     setSelectedArticle(article);
@@ -256,54 +300,67 @@ export default function ExternalPage() {
       isLoading: true,
     }));
     setGeneratedPatterns(initialPatterns);
+    setGenerationProgress({ isGenerating: true, completed: 0, total: patternsToUse.length });
 
-    // Generate all in parallel
-    const promises = patternsToUse.map(async (pattern, index) => {
-      try {
-        const response = await fetch("/api/generate-article-post", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            patternId: index + 1,
-            patternTemplate: pattern.template,
-            article: {
-              title: article.title,
-              description: article.description,
-              url: article.url,
-              source: article.source,
-              author: article.author,
-              tags: article.tags,
-            },
-          }),
-        });
+    // Generate in batches to avoid rate limits
+    const batchSize = 2;
+    const delayBetweenBatches = 3000;
 
-        const data = await response.json();
+    for (let batchStart = 0; batchStart < patternsToUse.length; batchStart += batchSize) {
+      const batchEnd = Math.min(batchStart + batchSize, patternsToUse.length);
+      const batchPatterns = patternsToUse.slice(batchStart, batchEnd);
 
-        if (!response.ok) {
-          throw new Error(data.error || "生成に失敗しました");
-        }
-
-        return { id: index + 1, text: data.text, threadPost: data.threadPost || "", error: undefined };
-      } catch (err) {
-        const message = err instanceof Error ? err.message : "エラー";
-        return { id: index + 1, text: "", threadPost: "", error: message };
-      }
-    });
-
-    const results = await Promise.all(promises);
-
-    setGeneratedPatterns((prev) =>
-      prev.map((p) => {
-        const result = results.find((r) => r.id === p.id);
-        return {
-          ...p,
-          text: result?.text || "",
-          threadPost: result?.threadPost || "",
-          error: result?.error,
-          isLoading: false,
+      // Process batch in parallel
+      const batchPromises = batchPatterns.map(async (pattern, batchIndex) => {
+        const index = batchStart + batchIndex;
+        const body = {
+          patternId: index + 1,
+          patternTemplate: pattern.template,
+          article: {
+            title: article.title,
+            description: article.description,
+            url: article.url,
+            source: article.source,
+            author: article.author,
+            tags: article.tags,
+          },
         };
-      })
-    );
+
+        const result = await generateWithRetry(body);
+        return { id: index + 1, text: result.text, threadPost: result.threadPost, error: result.error };
+      });
+
+      const batchResults = await Promise.all(batchPromises);
+
+      // Update patterns for this batch
+      setGeneratedPatterns((prev) =>
+        prev.map((p) => {
+          const result = batchResults.find((r) => r.id === p.id);
+          if (result) {
+            return {
+              ...p,
+              text: result.text,
+              threadPost: result.threadPost,
+              error: result.error,
+              isLoading: false,
+            };
+          }
+          return p;
+        })
+      );
+
+      setGenerationProgress(prev => ({
+        ...prev,
+        completed: batchEnd,
+      }));
+
+      // Wait between batches
+      if (batchEnd < patternsToUse.length) {
+        await new Promise(resolve => setTimeout(resolve, delayBetweenBatches));
+      }
+    }
+
+    setGenerationProgress(prev => ({ ...prev, isGenerating: false }));
   };
 
   // Regenerate single pattern
@@ -731,9 +788,30 @@ export default function ExternalPage() {
 
             {/* Pattern Cards */}
             <div className="p-6">
+              {/* Generation Progress Bar */}
+              {generationProgress.isGenerating && (
+                <div className="bg-zinc-50 rounded-xl border border-zinc-200 p-4 mb-4">
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-2">
+                      <Loader2 className="w-5 h-5 animate-spin text-emerald-500" />
+                      <span className="font-medium text-zinc-900">生成中...</span>
+                    </div>
+                    <span className="text-sm font-medium text-emerald-600">
+                      {generationProgress.completed}/{generationProgress.total}
+                    </span>
+                  </div>
+                  <div className="w-full bg-zinc-200 rounded-full h-2.5 overflow-hidden">
+                    <div
+                      className="h-full bg-gradient-to-r from-emerald-400 to-emerald-500 rounded-full transition-all duration-500 ease-out"
+                      style={{ width: `${(generationProgress.completed / generationProgress.total) * 100}%` }}
+                    />
+                  </div>
+                </div>
+              )}
+
               <div className="flex items-center justify-between mb-4">
                 <p className="text-sm text-zinc-500">
-                  {articlePatterns.length}パターンで生成中
+                  {articlePatterns.length}パターンで生成
                 </p>
                 <Link
                   href="/settings/patterns"

@@ -751,6 +751,114 @@ export const deleteQuoteTweet = async (userId: string, qtId: string) => {
 };
 
 // ==========================================
+// AI Generation History (AI生成履歴)
+// ==========================================
+
+export interface AIGenerationHistory {
+  id?: string;
+  content: string; // 入力した内容
+  generatedTexts: string[]; // 生成された6パターン
+  referenceSource: "myPosts" | "othersPosts" | "aiAuto"; // 参考ソース
+  category?: string; // カテゴリー（aiAutoの場合はnull）
+  urls?: string[]; // 入れ込んだURL
+  createdAt?: any;
+  expiresAt?: any; // 1週間後に削除
+}
+
+// Save AI generation history
+export const saveAIGenerationHistory = async (userId: string, history: Omit<AIGenerationHistory, "id" | "createdAt" | "expiresAt">) => {
+  try {
+    const historyRef = doc(collection(db, "users", userId, "aiGenerationHistory"));
+    const expiresAt = new Date();
+    expiresAt.setDate(expiresAt.getDate() + 7); // 1週間後
+
+    await setDoc(historyRef, {
+      ...history,
+      createdAt: Timestamp.now(),
+      expiresAt: Timestamp.fromDate(expiresAt),
+    });
+    return historyRef.id;
+  } catch (error) {
+    console.error("Save AI generation history error:", error);
+    throw error;
+  }
+};
+
+// Get AI generation history (exclude expired)
+export const getAIGenerationHistory = async (userId: string) => {
+  try {
+    const historyRef = collection(db, "users", userId, "aiGenerationHistory");
+    const snapshot = await getDocs(historyRef);
+    const now = new Date();
+
+    const histories = snapshot.docs
+      .map((doc) => {
+        const data = doc.data();
+        return {
+          id: doc.id,
+          ...data,
+          createdAt: data.createdAt?.toDate?.()?.toISOString?.() || new Date().toISOString(),
+          expiresAt: data.expiresAt?.toDate?.()?.toISOString?.() || null,
+        };
+      })
+      .filter((h) => {
+        // Filter out expired items
+        if (h.expiresAt) {
+          return new Date(h.expiresAt) > now;
+        }
+        return true;
+      }) as AIGenerationHistory[];
+
+    // Sort by createdAt descending
+    return histories.sort((a, b) => {
+      const dateA = new Date(a.createdAt!).getTime();
+      const dateB = new Date(b.createdAt!).getTime();
+      return dateB - dateA;
+    });
+  } catch (error) {
+    console.error("Get AI generation history error:", error);
+    return [];
+  }
+};
+
+// Delete AI generation history
+export const deleteAIGenerationHistory = async (userId: string, historyId: string) => {
+  try {
+    const historyRef = doc(db, "users", userId, "aiGenerationHistory", historyId);
+    await deleteDoc(historyRef);
+  } catch (error) {
+    console.error("Delete AI generation history error:", error);
+    throw error;
+  }
+};
+
+// Cleanup expired AI generation histories (can be called periodically)
+export const cleanupExpiredAIHistories = async (userId: string) => {
+  try {
+    const historyRef = collection(db, "users", userId, "aiGenerationHistory");
+    const snapshot = await getDocs(historyRef);
+    const now = new Date();
+
+    const deletePromises = snapshot.docs
+      .filter((doc) => {
+        const data = doc.data();
+        if (data.expiresAt) {
+          const expiresAt = data.expiresAt.toDate?.() || new Date(data.expiresAt);
+          return expiresAt < now;
+        }
+        return false;
+      })
+      .map((doc) => deleteDoc(doc.ref));
+
+    await Promise.all(deletePromises);
+    return deletePromises.length;
+  } catch (error) {
+    console.error("Cleanup expired AI histories error:", error);
+    return 0;
+  }
+};
+
+// ==========================================
 // Extended Scheduled Post with Quote Tweet
 // ==========================================
 
