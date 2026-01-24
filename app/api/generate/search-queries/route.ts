@@ -14,12 +14,12 @@ async function deepSearchWithPerplexity(
 ): Promise<{ searchResults: string; topics: string[] }> {
   const perplexityKey = process.env.PERPLEXITY_API_KEY;
   if (!perplexityKey) {
-    console.log("[SearchQueries] Perplexity API key not found");
+    console.log("[SearchQueries] Perplexity API key not found, will use OpenAI only");
     return { searchResults: "", topics: [] };
   }
 
   try {
-    // Step 1: まず投稿内容とカテゴリを理解して検索すべきトピックを特定
+    console.log("[SearchQueries] Calling Perplexity API...");
     const response = await fetch("https://api.perplexity.ai/chat/completions", {
       method: "POST",
       headers: {
@@ -27,7 +27,7 @@ async function deepSearchWithPerplexity(
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "llama-3.1-sonar-large-128k-online", // 大きいモデルで徹底検索
+        model: "llama-3.1-sonar-large-128k-online",
         messages: [
           {
             role: "system",
@@ -59,17 +59,17 @@ ${category ? `【カテゴリー】${category}` : ""}
 3. 関連する有識者の記事や解説
 4. 実際の活用事例や評価
 
-できるだけ具体的な情報（バージョン番号、機能名、日付など）を含めて回答してください。
-「新機能」「アップデート」だけではなく、何がどう変わったのか具体的に教えてください。`,
+できるだけ具体的な情報（バージョン番号、機能名、日付など）を含めて回答してください。`,
           },
         ],
-        max_tokens: 2500, // 多めに取得
+        max_tokens: 2500,
         temperature: 0.1,
       }),
     });
 
     if (!response.ok) {
-      console.error("[SearchQueries] Perplexity API error:", response.status);
+      const errorText = await response.text();
+      console.error("[SearchQueries] Perplexity API error:", response.status, errorText);
       return { searchResults: "", topics: [] };
     }
 
@@ -78,10 +78,9 @@ ${category ? `【カテゴリー】${category}` : ""}
 
     console.log("[SearchQueries] Perplexity search completed, length:", searchResults.length);
 
-    // Step 2: 検索結果からトピック（テーマ）を抽出
+    // トピックを抽出
     const topics: string[] = [];
     if (searchResults) {
-      // 簡易的にトピックを抽出（後でOpenAIで精査）
       const lines = searchResults.split("\n").filter((l: string) => l.trim());
       for (const line of lines) {
         if (line.includes("：") || line.includes(":") || line.match(/^\d+\./)) {
@@ -126,12 +125,12 @@ export async function POST(request: NextRequest) {
     const dateContext = `${todayDate.getFullYear()}年${todayDate.getMonth() + 1}月${todayDate.getDate()}日`;
     const monthYearContext = `${todayDate.getFullYear()}年${todayDate.getMonth() + 1}月`;
 
-    console.log("[SearchQueries] Starting deep search...");
+    console.log("[SearchQueries] Starting search...");
     console.log("[SearchQueries] Content:", content.slice(0, 100));
     console.log("[SearchQueries] Category:", postCategory || "none");
     console.log("[SearchQueries] Date:", dateContext);
 
-    // Step 1: Perplexityで徹底的に検索（中規模ディープリサーチ）
+    // Step 1: Perplexityで検索（利用可能な場合）
     const { searchResults, topics } = await deepSearchWithPerplexity(
       content,
       postCategory || "",
@@ -139,115 +138,122 @@ export async function POST(request: NextRequest) {
       dateRange
     );
 
-    console.log("[SearchQueries] Search results length:", searchResults.length);
-    console.log("[SearchQueries] Found topics:", topics.length);
+    const hasPerplexityResults = searchResults.length > 0;
+    console.log("[SearchQueries] Has Perplexity results:", hasPerplexityResults);
 
-    // Step 2: 検索結果を元に具体的なテーマを生成
-    const response = await openai.chat.completions.create({
-      model: "gpt-4o",
-      messages: [
-        {
-          role: "system",
-          content: `あなたは最新情報リサーチの専門家です。
+    // Step 2: OpenAIでテーマを生成（Perplexity結果の有無に関わらず）
+    const systemPrompt = hasPerplexityResults
+      ? `あなたは最新情報リサーチの専門家です。
 
 【今日の日付】${dateContext}
-【検索対象期間】${dateRange.from}〜${dateRange.to}（直近2週間のみ）
+【検索対象期間】${dateRange.from}〜${dateRange.to}
 
-Web検索で見つかった【実際の最新情報】を元に、投稿に使える具体的な「リサーチテーマ」を生成してください。
+Web検索で見つかった最新情報を元に、投稿に使える「リサーチテーマ」を生成してください。
+検索結果に含まれる具体的な情報（機能名、バージョン、日付など）を反映してください。`
+      : `あなたは最新情報リサーチの専門家です。
 
-【重要】抽象的なテーマは禁止
-✗ NG: 「${monthYearContext}の新機能」「最新アップデート」「AIツールの動向」
-○ OK: 「Claude 3.5 Sonnet の computer use 機能（${monthYearContext}11日発表）」
-○ OK: 「GPT-4o の画像生成機能 DALL-E 3統合（${monthYearContext}15日リリース）」
-○ OK: 「GitHub Copilot Chat のマルチファイル編集機能」
+【今日の日付】${dateContext}
+【検索対象期間】${dateRange.from}〜${dateRange.to}
 
-【テーマの条件】
-1. 検索結果で見つかった実際の情報を反映
-2. 具体的な機能名、バージョン、日付を含める
-3. 投稿で使える有益な情報になるもの
-4. 古い情報は絶対に含めない`,
-        },
-        {
-          role: "user",
-          content: `【投稿内容】
+投稿内容とカテゴリを分析して、この投稿を充実させるために調べるべき「リサーチテーマ」を提案してください。
+投稿内容から推測される関連トピック、最新動向、深掘りすべき観点を提案してください。
+
+【重要】
+- テーマは具体的に（「最新情報」ではなく、何についての情報か明示）
+- 投稿内容に関連する技術、ツール、トレンドを含める
+- ユーザーが投稿で言及しそうな内容を予測`;
+
+    const userPrompt = hasPerplexityResults
+      ? `【投稿内容】
 ${content}
 
 ${postCategory ? `【カテゴリー】${postCategory}` : ""}
 
-【Web検索で見つかった最新情報（これを元にテーマを生成）】
-${searchResults || "（検索結果なし）"}
+【Web検索で見つかった最新情報】
+${searchResults}
 
 ${topics.length > 0 ? `【検出されたトピック】\n${topics.join("\n")}` : ""}
 
-上記の検索結果を元に、この投稿で使える具体的な「リサーチテーマ」を8〜12個生成してください。
-検索結果で見つかった具体的な情報（機能名、バージョン、日付など）を必ずテーマに含めてください。
+上記の検索結果を元に、この投稿で使える「リサーチテーマ」を8〜12個生成してください。`
+      : `【投稿内容】
+${content}
 
-【重要】検索結果に含まれていない情報や、古い情報（2023-2025年）は絶対に含めないでください。
+${postCategory ? `【カテゴリー】${postCategory}` : ""}
+
+投稿内容を分析して、この投稿を充実させるために調べるべき「リサーチテーマ」を8〜12個提案してください。
+
+【テーマの例】
+- 投稿で言及されているツール・サービスの最新機能
+- 関連する技術トレンドや業界動向
+- 競合サービスとの比較ポイント
+- 実践的な活用方法やTips
+- 有識者の見解や評価`;
+
+    console.log("[SearchQueries] Calling OpenAI to generate themes...");
+
+    const response = await openai.chat.completions.create({
+      model: "gpt-4o",
+      messages: [
+        { role: "system", content: systemPrompt },
+        {
+          role: "user",
+          content: `${userPrompt}
 
 JSON形式で回答：
 {
   "themes": [
     {
       "id": "theme_1",
-      "title": "具体的なテーマタイトル（機能名・バージョン・日付を含む）",
-      "description": "このテーマで調べると分かること（2-3文）",
-      "keywords": ["関連キーワード1", "関連キーワード2"],
-      "source": "検索結果のどの情報を元にしたか",
+      "title": "具体的なテーマタイトル",
+      "description": "このテーマで調べると分かること（1-2文）",
+      "keywords": ["キーワード1", "キーワード2"],
       "relevance": "high | medium | low"
     }
   ],
-  "searchSummary": "検索結果の要約（100-200文字）"
+  "searchSummary": "${hasPerplexityResults ? "検索結果の要約（100-150文字）" : "投稿内容の分析結果（100-150文字）"}"
 }`,
         },
       ],
-      temperature: 0.2,
+      temperature: 0.3,
       response_format: { type: "json_object" },
     });
 
-    try {
-      const result = JSON.parse(response.choices[0]?.message?.content || "{}");
-      const themes = result.themes || [];
-      const searchSummary = result.searchSummary || "";
+    const resultContent = response.choices[0]?.message?.content;
+    console.log("[SearchQueries] OpenAI response received");
 
-      console.log("[SearchQueries] Generated", themes.length, "themes");
-      if (themes.length > 0) {
-        console.log("[SearchQueries] Sample theme:", themes[0].title);
-      }
-
-      // テーマをクエリ形式に変換（後方互換性のため）
-      const queries = themes.map((theme: any, i: number) => ({
-        id: `query_${i}`,
-        query: theme.title,
-        category: theme.relevance === "high" ? "注目情報" : theme.relevance === "medium" ? "関連情報" : "参考情報",
-        description: theme.description,
-        keywords: theme.keywords || [],
-        source: theme.source || "",
-      }));
-
-      return NextResponse.json({
-        success: true,
-        queries,
-        themes, // 新形式
-        searchSummary, // 検索結果の要約
-        searchResultsPreview: searchResults.slice(0, 1000), // 検索結果のプレビュー（最初の1000文字）
-        dateRange,
-        postCategory: postCategory || null,
-        webSearchUsed: searchResults.length > 0,
-        searchedAt: dateContext,
-      });
-    } catch (parseError) {
-      console.error("[SearchQueries] Parse error:", parseError);
-      return NextResponse.json({
-        success: false,
-        error: "テーマの解析に失敗しました",
-        queries: [],
-        themes: [],
-      });
+    if (!resultContent) {
+      throw new Error("OpenAI response is empty");
     }
+
+    const result = JSON.parse(resultContent);
+    const themes = result.themes || [];
+    const searchSummary = result.searchSummary || "";
+
+    console.log("[SearchQueries] Generated", themes.length, "themes");
+
+    // テーマをクエリ形式に変換
+    const queries = themes.map((theme: any, i: number) => ({
+      id: `query_${i}`,
+      query: theme.title,
+      category: theme.relevance === "high" ? "注目情報" : theme.relevance === "medium" ? "関連情報" : "参考情報",
+      description: theme.description,
+      keywords: theme.keywords || [],
+    }));
+
+    return NextResponse.json({
+      success: true,
+      queries,
+      themes,
+      searchSummary,
+      searchResultsPreview: searchResults.slice(0, 1000),
+      dateRange,
+      postCategory: postCategory || null,
+      webSearchUsed: hasPerplexityResults,
+      searchedAt: dateContext,
+    });
   } catch (error) {
     console.error("[SearchQueries] Error:", error);
-    const message =
-      error instanceof Error ? error.message : "検索クエリの生成に失敗しました";
-    return NextResponse.json({ error: message }, { status: 500 });
+    const message = error instanceof Error ? error.message : "検索クエリの生成に失敗しました";
+    return NextResponse.json({ error: message, success: false }, { status: 500 });
   }
 }
