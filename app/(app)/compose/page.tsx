@@ -9,6 +9,7 @@ import {
   CheckCircle2,
   Calendar,
   ExternalLink,
+  Link as LinkIcon,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 import { saveScheduledPost } from "@/lib/firebase";
@@ -22,6 +23,7 @@ export default function ComposePage() {
   const router = useRouter();
   const { user } = useAuth();
   const [content, setContent] = useState("");
+  const [linkUrl, setLinkUrl] = useState("");
   const [images, setImages] = useState<string[]>([]);
   const [copied, setCopied] = useState(false);
 
@@ -34,8 +36,9 @@ export default function ComposePage() {
 
   const handleStartGeneration = () => {
     if (!content.trim()) return;
-    // Store content in sessionStorage to avoid URL length issues
+    // Store content and link in sessionStorage to avoid URL length issues
     sessionStorage.setItem("compose_content", content);
+    sessionStorage.setItem("compose_link", linkUrl);
     router.push("/compose/generate");
   };
 
@@ -97,23 +100,44 @@ export default function ComposePage() {
             <div className="p-6">
               <div className="flex items-start gap-4">
                 {/* Text Input */}
-                <div className="flex-1">
-                  <label className="block text-sm font-medium text-zinc-700 mb-2">
-                    投稿したい内容
-                  </label>
-                  <textarea
-                    value={content}
-                    onChange={(e) => setContent(e.target.value)}
-                    placeholder="投稿したい内容をペースト、または入力してください..."
-                    className="w-full h-40 p-4 text-base text-zinc-900 placeholder:text-zinc-400 bg-zinc-50 border border-zinc-200 rounded-xl resize-none focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent leading-relaxed"
-                  />
+                <div className="flex-1 space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-zinc-700 mb-2">
+                      投稿したい内容
+                    </label>
+                    <textarea
+                      value={content}
+                      onChange={(e) => setContent(e.target.value)}
+                      placeholder="投稿したい内容をペースト、または入力してください..."
+                      className="w-full h-32 p-4 text-base text-zinc-900 placeholder:text-zinc-400 bg-zinc-50 border border-zinc-200 rounded-xl resize-none focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent leading-relaxed"
+                    />
+                  </div>
+
+                  {/* Link Input */}
+                  <div>
+                    <label className="block text-sm font-medium text-zinc-700 mb-2">
+                      <LinkIcon className="w-4 h-4 inline-block mr-1.5" />
+                      入れ込むリンク
+                      <span className="text-zinc-400 font-normal ml-2">（任意）</span>
+                    </label>
+                    <input
+                      type="url"
+                      value={linkUrl}
+                      onChange={(e) => setLinkUrl(e.target.value)}
+                      placeholder="https://..."
+                      className="w-full h-11 px-4 text-base text-zinc-900 placeholder:text-zinc-400 bg-zinc-50 border border-zinc-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                    />
+                    <p className="text-xs text-zinc-400 mt-1.5">
+                      生成された投稿の末尾にURLが自動で追加されます
+                    </p>
+                  </div>
                 </div>
 
                 {/* AI Generate Button */}
                 <button
                   onClick={handleStartGeneration}
                   disabled={!content.trim()}
-                  className="flex-shrink-0 flex flex-col items-center justify-center gap-2 w-32 h-40 bg-gradient-to-br from-emerald-500 to-emerald-600 text-white rounded-xl hover:from-emerald-600 hover:to-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-lg shadow-emerald-500/25"
+                  className="flex-shrink-0 flex flex-col items-center justify-center gap-2 w-32 h-48 bg-gradient-to-br from-emerald-500 to-emerald-600 text-white rounded-xl hover:from-emerald-600 hover:to-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-lg shadow-emerald-500/25"
                 >
                   <Sparkles className="w-10 h-10" />
                   <span className="text-base font-semibold">AIで生成</span>

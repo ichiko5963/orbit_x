@@ -788,27 +788,6 @@ export default function ExternalPage() {
 
             {/* Pattern Cards */}
             <div className="p-6">
-              {/* Generation Progress Bar */}
-              {generationProgress.isGenerating && (
-                <div className="bg-zinc-50 rounded-xl border border-zinc-200 p-4 mb-4">
-                  <div className="flex items-center justify-between mb-2">
-                    <div className="flex items-center gap-2">
-                      <Loader2 className="w-5 h-5 animate-spin text-emerald-500" />
-                      <span className="font-medium text-zinc-900">生成中...</span>
-                    </div>
-                    <span className="text-sm font-medium text-emerald-600">
-                      {generationProgress.completed}/{generationProgress.total}
-                    </span>
-                  </div>
-                  <div className="w-full bg-zinc-200 rounded-full h-2.5 overflow-hidden">
-                    <div
-                      className="h-full bg-gradient-to-r from-emerald-400 to-emerald-500 rounded-full transition-all duration-500 ease-out"
-                      style={{ width: `${(generationProgress.completed / generationProgress.total) * 100}%` }}
-                    />
-                  </div>
-                </div>
-              )}
-
               <div className="flex items-center justify-between mb-4">
                 <p className="text-sm text-zinc-500">
                   {articlePatterns.length}パターンで生成
@@ -825,30 +804,94 @@ export default function ExternalPage() {
                 {generatedPatterns.map((pattern) => {
                   const patternInfo = articlePatterns[pattern.id - 1];
 
+                  // Calculate individual card progress
+                  const batchSize = 2;
+                  const cardBatchStart = Math.floor((pattern.id - 1) / batchSize) * batchSize;
+                  const isInCurrentBatch = generationProgress.isGenerating &&
+                    generationProgress.completed >= cardBatchStart &&
+                    generationProgress.completed < cardBatchStart + batchSize;
+                  const isCompleted = !pattern.isLoading && pattern.text && !pattern.error;
+                  const cardProgress = isCompleted ? 100 : (isInCurrentBatch ? 50 : 0);
+
                   return (
                     <div
                       key={pattern.id}
                       className="bg-white rounded-xl border border-zinc-200 shadow-sm overflow-hidden flex flex-col"
                     >
-                      {/* Card Header */}
+                      {/* Card Header with Circular Progress */}
                       <div className="flex items-center justify-between p-4 border-b border-zinc-100 bg-zinc-50">
                         <div className="flex items-center gap-2">
-                          <span className="w-7 h-7 rounded-full bg-emerald-500 text-white flex items-center justify-center text-sm font-bold">
-                            {pattern.id}
-                          </span>
+                          {/* Circular Progress Number */}
+                          <div className="relative w-9 h-9">
+                            <svg className="w-9 h-9 -rotate-90" viewBox="0 0 36 36">
+                              <circle
+                                cx="18"
+                                cy="18"
+                                r="15"
+                                fill="none"
+                                stroke={pattern.isLoading ? "#e4e4e7" : "#10b981"}
+                                strokeWidth="3"
+                              />
+                              {pattern.isLoading && (
+                                <circle
+                                  cx="18"
+                                  cy="18"
+                                  r="15"
+                                  fill="none"
+                                  stroke="#10b981"
+                                  strokeWidth="3"
+                                  strokeDasharray={`${cardProgress * 0.94} 94`}
+                                  strokeLinecap="round"
+                                  className="transition-all duration-500"
+                                />
+                              )}
+                            </svg>
+                            <span className={`absolute inset-0 flex items-center justify-center text-sm font-bold ${
+                              isCompleted ? "text-white" : pattern.isLoading ? "text-zinc-600" : "text-white"
+                            }`} style={{
+                              backgroundColor: isCompleted ? "#10b981" : pattern.isLoading ? "transparent" : "#10b981",
+                              borderRadius: "50%",
+                              margin: "3px",
+                            }}>
+                              {pattern.id}
+                            </span>
+                          </div>
                           <div>
                             <span className="text-sm font-medium text-zinc-900">{pattern.name}</span>
                             <p className="text-xs text-zinc-500">{patternInfo?.description}</p>
                           </div>
                         </div>
+                        {pattern.isLoading && (
+                          <span className="text-xs text-zinc-400">{cardProgress}%</span>
+                        )}
                       </div>
 
                       {/* Card Body */}
                       <div className="flex-1 p-4">
                         {pattern.isLoading ? (
-                          <div className="h-36 flex flex-col items-center justify-center text-zinc-400">
-                            <Loader2 className="w-8 h-8 animate-spin mb-2" />
-                            <span className="text-sm">生成中...</span>
+                          <div className="h-36 flex flex-col items-center justify-center">
+                            <div className="relative w-16 h-16 mb-3">
+                              <svg className="w-16 h-16 -rotate-90" viewBox="0 0 64 64">
+                                <circle cx="32" cy="32" r="28" fill="none" stroke="#e4e4e7" strokeWidth="5" />
+                                <circle
+                                  cx="32"
+                                  cy="32"
+                                  r="28"
+                                  fill="none"
+                                  stroke="#10b981"
+                                  strokeWidth="5"
+                                  strokeDasharray={`${cardProgress * 1.76} 176`}
+                                  strokeLinecap="round"
+                                  className="transition-all duration-500"
+                                />
+                              </svg>
+                              <div className="absolute inset-0 flex items-center justify-center">
+                                <span className="text-base font-bold text-emerald-600">{cardProgress}%</span>
+                              </div>
+                            </div>
+                            <span className="text-sm text-zinc-500">
+                              {cardProgress === 0 ? "待機中..." : "生成中..."}
+                            </span>
                           </div>
                         ) : pattern.error ? (
                           <div className="h-36 flex flex-col items-center justify-center text-red-500">

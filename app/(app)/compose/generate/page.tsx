@@ -92,7 +92,6 @@ export default function GeneratePage() {
 
   // URL input state
   const [referenceUrls, setReferenceUrls] = useState<string[]>([]);
-  const [newUrlInput, setNewUrlInput] = useState("");
 
   // Source toggle: 過去投稿一覧 (myPosts) or 他者バズ投稿 (othersPosts) or AIおまかせ (aiAuto)
   const [postSource, setPostSource] = useState<PostSource>("myPosts");
@@ -136,12 +135,18 @@ export default function GeneratePage() {
   const [isSavingSchedule, setIsSavingSchedule] = useState(false);
   const scheduleTextareaRef = useRef<HTMLTextAreaElement>(null);
 
-  // Load content from sessionStorage
+  // Load content and link from sessionStorage
   useEffect(() => {
     const savedContent = sessionStorage.getItem("compose_content");
     if (savedContent) {
       setContent(savedContent);
       setPreviousContent(savedContent);
+    }
+
+    // Load link from sessionStorage
+    const savedLink = sessionStorage.getItem("compose_link");
+    if (savedLink) {
+      setReferenceUrls([savedLink]);
     }
 
     // Only restore cards if coming back from editor (check navigation history)
@@ -873,80 +878,33 @@ export default function GeneratePage() {
           </div>
         )}
 
-        {/* Link Input Section */}
-        <div className="p-4">
-          <div className="flex items-center gap-2 mb-3">
-            <LinkIcon className="w-5 h-5 text-emerald-500" />
-            <span className="font-medium text-zinc-900">入れ込むリンク</span>
-            <span className="text-xs text-zinc-400">生成した投稿に含めるURL（任意）</span>
-          </div>
-
-          {/* URL List */}
-          {referenceUrls.length > 0 && (
-            <div className="space-y-2 mb-3">
-              {referenceUrls.map((url, index) => (
-                <div
-                  key={index}
-                  className="flex items-center gap-2 p-2 bg-emerald-50 rounded-lg group"
-                >
-                  <LinkIcon className="w-4 h-4 text-emerald-500 flex-shrink-0" />
-                  <span className="flex-1 text-sm text-emerald-600 truncate font-mono">
-                    {url}
-                  </span>
-                  <a
-                    href={url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="p-1.5 rounded text-emerald-500 hover:bg-emerald-100 transition-colors"
-                    title="URLを開く"
-                  >
-                    <ExternalLink className="w-4 h-4" />
-                  </a>
-                  <button
-                    onClick={() => setReferenceUrls(prev => prev.filter((_, i) => i !== index))}
-                    className="p-1.5 rounded text-red-400 hover:text-red-500 hover:bg-red-50 transition-colors"
-                    title="削除"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                </div>
-              ))}
+        {/* Link Preview Section (read-only) */}
+        {referenceUrls.length > 0 && (
+          <div className="p-4 border-t border-zinc-100">
+            <div className="flex items-center gap-2 mb-2">
+              <LinkIcon className="w-4 h-4 text-emerald-500" />
+              <span className="text-sm font-medium text-zinc-700">入れ込むリンク</span>
             </div>
-          )}
-
-          {/* Add URL Input */}
-          <div className="flex gap-2">
-            <input
-              type="url"
-              value={newUrlInput}
-              onChange={(e) => setNewUrlInput(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && newUrlInput.trim()) {
-                  e.preventDefault();
-                  if (newUrlInput.startsWith("http://") || newUrlInput.startsWith("https://")) {
-                    setReferenceUrls(prev => [...prev, newUrlInput.trim()]);
-                    setNewUrlInput("");
-                  }
-                }
-              }}
-              placeholder="https://example.com/article"
-              className="flex-1 h-10 px-3 bg-zinc-50 border border-zinc-200 rounded-lg text-zinc-900 placeholder:text-zinc-400 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
-            />
-            <button
-              onClick={() => {
-                if (newUrlInput.trim() && (newUrlInput.startsWith("http://") || newUrlInput.startsWith("https://"))) {
-                  setReferenceUrls(prev => [...prev, newUrlInput.trim()]);
-                  setNewUrlInput("");
-                }
-              }}
-              disabled={!newUrlInput.trim() || (!newUrlInput.startsWith("http://") && !newUrlInput.startsWith("https://"))}
-              className="px-4 h-10 bg-emerald-500 text-white text-sm font-medium rounded-lg hover:bg-emerald-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-1.5"
-            >
-              <Plus className="w-4 h-4" />
-              追加
-            </button>
+            <div className="flex items-center gap-2 p-2.5 bg-emerald-50 rounded-lg">
+              <LinkIcon className="w-4 h-4 text-emerald-500 flex-shrink-0" />
+              <span className="flex-1 text-sm text-emerald-600 truncate font-mono">
+                {referenceUrls[0]}
+              </span>
+              <a
+                href={referenceUrls[0]}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="p-1.5 rounded text-emerald-500 hover:bg-emerald-100 transition-colors"
+                title="URLを開く"
+              >
+                <ExternalLink className="w-4 h-4" />
+              </a>
+            </div>
+            <p className="text-xs text-zinc-400 mt-1.5">
+              生成された投稿の末尾に自動で追加されます
+            </p>
           </div>
-        </div>
+        )}
       </div>
 
       {/* Category Selection (if not yet generated) */}
@@ -1131,45 +1089,67 @@ export default function GeneratePage() {
         </div>
       )}
 
-      {/* Generation Progress Bar */}
-      {generationProgress.isGenerating && (
-        <div className="bg-white rounded-xl border border-zinc-200 shadow-sm p-4 mb-6">
-          <div className="flex items-center justify-between mb-2">
-            <div className="flex items-center gap-2">
-              <Loader2 className="w-5 h-5 animate-spin text-emerald-500" />
-              <span className="font-medium text-zinc-900">6パターン生成中...</span>
-            </div>
-            <span className="text-sm font-medium text-emerald-600">
-              {generationProgress.completed}/{generationProgress.total}
-            </span>
-          </div>
-          <div className="w-full bg-zinc-100 rounded-full h-3 overflow-hidden">
-            <div
-              className="h-full bg-gradient-to-r from-emerald-400 to-emerald-500 rounded-full transition-all duration-500 ease-out"
-              style={{ width: `${(generationProgress.completed / generationProgress.total) * 100}%` }}
-            />
-          </div>
-          <p className="text-xs text-zinc-500 mt-2">
-            レート制限を回避するため、2つずつ順番に生成しています
-          </p>
-        </div>
-      )}
-
       {/* 6 Cards Grid */}
       {hasGenerated && (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
           {cards.map((card) => {
+            // Calculate individual card progress
+            // Cards are generated in batches of 2
+            // Card progress: waiting = 0%, in batch = 50%, completed = 100%
+            const batchSize = 2;
+            const cardBatchStart = Math.floor((card.id - 1) / batchSize) * batchSize;
+            const isInCurrentBatch = generationProgress.isGenerating &&
+              generationProgress.completed >= cardBatchStart &&
+              generationProgress.completed < cardBatchStart + batchSize;
+            const isCompleted = !card.isLoading && card.text && !card.error;
+            const cardProgress = isCompleted ? 100 : (isInCurrentBatch ? 50 : 0);
+
             return (
               <div
                 key={card.id}
                 className="bg-white rounded-2xl border border-zinc-200 shadow-sm overflow-hidden flex flex-col"
               >
-                {/* Card Header */}
+                {/* Card Header with Circular Progress */}
                 <div className="flex items-center justify-between p-4 border-b border-zinc-100">
                   <div className="flex items-center gap-2">
-                    <span className="w-7 h-7 rounded-full bg-emerald-500 text-white flex items-center justify-center text-sm font-bold">
-                      {card.id}
-                    </span>
+                    {/* Circular Progress Number */}
+                    <div className="relative w-9 h-9">
+                      {/* Background circle */}
+                      <svg className="w-9 h-9 -rotate-90" viewBox="0 0 36 36">
+                        <circle
+                          cx="18"
+                          cy="18"
+                          r="15"
+                          fill="none"
+                          stroke={card.isLoading ? "#e4e4e7" : "#10b981"}
+                          strokeWidth="3"
+                        />
+                        {/* Progress circle */}
+                        {card.isLoading && (
+                          <circle
+                            cx="18"
+                            cy="18"
+                            r="15"
+                            fill="none"
+                            stroke="#10b981"
+                            strokeWidth="3"
+                            strokeDasharray={`${cardProgress * 0.94} 94`}
+                            strokeLinecap="round"
+                            className="transition-all duration-500"
+                          />
+                        )}
+                      </svg>
+                      {/* Number in center */}
+                      <span className={`absolute inset-0 flex items-center justify-center text-sm font-bold ${
+                        isCompleted ? "text-white" : card.isLoading ? "text-zinc-600" : "text-white"
+                      }`} style={{
+                        backgroundColor: isCompleted ? "#10b981" : card.isLoading ? "transparent" : "#10b981",
+                        borderRadius: "50%",
+                        margin: "3px",
+                      }}>
+                        {card.id}
+                      </span>
+                    </div>
                     <span className={`px-2 py-1 text-xs font-medium rounded-lg ${
                       card.referencePost.source === "myPosts"
                         ? "bg-blue-100 text-blue-600"
@@ -1179,21 +1159,54 @@ export default function GeneratePage() {
                     </span>
                   </div>
 
-                  <span className={`px-2 py-0.5 text-xs font-bold rounded ${
-                    card.referencePost.tier === "S"
-                      ? "bg-amber-100 text-amber-700"
-                      : "bg-violet-100 text-violet-700"
-                  }`}>
-                    {card.referencePost.tier}
-                  </span>
+                  <div className="flex items-center gap-2">
+                    {card.isLoading && (
+                      <span className="text-xs text-zinc-400">{cardProgress}%</span>
+                    )}
+                    <span className={`px-2 py-0.5 text-xs font-bold rounded ${
+                      card.referencePost.tier === "S"
+                        ? "bg-amber-100 text-amber-700"
+                        : "bg-violet-100 text-violet-700"
+                    }`}>
+                      {card.referencePost.tier}
+                    </span>
+                  </div>
                 </div>
 
                 {/* Card Body - X風プレビュー */}
                 <div className="flex-1 p-4">
                   {card.isLoading ? (
-                    <div className="h-40 flex flex-col items-center justify-center text-zinc-400">
-                      <Loader2 className="w-8 h-8 animate-spin mb-2" />
-                      <span className="text-sm">生成中...</span>
+                    <div className="h-40 flex flex-col items-center justify-center">
+                      {/* Circular Progress Indicator */}
+                      <div className="relative w-20 h-20 mb-3">
+                        <svg className="w-20 h-20 -rotate-90" viewBox="0 0 80 80">
+                          <circle
+                            cx="40"
+                            cy="40"
+                            r="35"
+                            fill="none"
+                            stroke="#e4e4e7"
+                            strokeWidth="6"
+                          />
+                          <circle
+                            cx="40"
+                            cy="40"
+                            r="35"
+                            fill="none"
+                            stroke="#10b981"
+                            strokeWidth="6"
+                            strokeDasharray={`${cardProgress * 2.2} 220`}
+                            strokeLinecap="round"
+                            className="transition-all duration-500"
+                          />
+                        </svg>
+                        <div className="absolute inset-0 flex items-center justify-center">
+                          <span className="text-lg font-bold text-emerald-600">{cardProgress}%</span>
+                        </div>
+                      </div>
+                      <span className="text-sm text-zinc-500">
+                        {cardProgress === 0 ? "待機中..." : "生成中..."}
+                      </span>
                     </div>
                   ) : card.error ? (
                     <div className="h-40 flex flex-col items-center justify-center text-red-500">
