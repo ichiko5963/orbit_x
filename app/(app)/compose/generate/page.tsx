@@ -104,6 +104,13 @@ export default function GeneratePage() {
   const [copiedId, setCopiedId] = useState<number | null>(null);
   const [schedulingId, setSchedulingId] = useState<number | null>(null);
 
+  // Generation progress state
+  const [generationProgress, setGenerationProgress] = useState<{
+    isGenerating: boolean;
+    completed: number;
+    total: number;
+  }>({ isGenerating: false, completed: 0, total: 0 });
+
   // Schedule modal state
   const [showScheduleModal, setShowScheduleModal] = useState(false);
   const [scheduleCardId, setScheduleCardId] = useState<number | null>(null);
@@ -301,6 +308,45 @@ export default function GeneratePage() {
       .slice(0, 6); // Top 6 from this category
   };
 
+  // Helper function for rate-limit-aware API call with retry
+  const generateWithRetry = async (body: any, maxRetries = 3): Promise<{ text: string; error?: string }> => {
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+      try {
+        const response = await fetch("/api/generate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+
+        const data = await response.json();
+
+        // Handle rate limit error
+        if (response.status === 429) {
+          // Extract wait time from error message or use default
+          const waitMatch = data.error?.match(/(\d+\.?\d*)\s*s/);
+          const waitTime = waitMatch ? parseFloat(waitMatch[1]) * 1000 : 20000;
+          console.log(`Rate limited, waiting ${waitTime}ms before retry...`);
+          await new Promise(resolve => setTimeout(resolve, waitTime + 1000)); // Add 1s buffer
+          continue;
+        }
+
+        if (!response.ok) {
+          throw new Error(data.error || "生成に失敗しました");
+        }
+
+        return { text: data.text };
+      } catch (err) {
+        if (attempt === maxRetries - 1) {
+          const message = err instanceof Error ? err.message : "エラー";
+          return { text: "", error: message };
+        }
+        // Wait before retry on other errors
+        await new Promise(resolve => setTimeout(resolve, 2000));
+      }
+    }
+    return { text: "", error: "リトライ回数を超えました" };
+  };
+
   // Generate all 6 cards using top 6 posts from selected category or AI auto
   const handleGenerateAll = async () => {
     if (!content.trim()) return;
@@ -369,53 +415,65 @@ export default function GeneratePage() {
     }
 
     setCards(initialCards);
+    setGenerationProgress({ isGenerating: true, completed: 0, total: 6 });
 
-    // Generate all 6 in parallel
-    const promises = initialCards.map(async (card, index) => {
-      try {
-        const body: any = {
+    // Generate cards sequentially to avoid rate limits
+    // Process in batches of 2 with delay between batches
+    const batchSize = 2;
+    const delayBetweenBatches = 3000; // 3 seconds between batches
+
+    for (let batchStart = 0; batchStart < initialCards.length; batchStart += batchSize) {
+      const batchEnd = Math.min(batchStart + batchSize, initialCards.length);
+      const batchCards = initialCards.slice(batchStart, batchEnd);
+
+      // Process batch in parallel
+      const batchPromises = batchCards.map(async (card) => {
+        const body = {
           mode: "reference",
           content,
           referenceText: card.referencePost.text,
           userStyle: userStyle || undefined,
         };
 
-        const response = await fetch("/api/generate", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(body),
-        });
-
-        const data = await response.json();
-
-        if (!response.ok) {
-          throw new Error(data.error || "生成に失敗しました");
-        }
+        const result = await generateWithRetry(body);
 
         // Append URL to generated text if provided
-        let generatedText = data.text;
-        if (referenceUrls.length > 0) {
+        let generatedText = result.text;
+        if (generatedText && referenceUrls.length > 0) {
           generatedText = `${generatedText}\n\n${referenceUrls[0]}`;
         }
 
-        return { index, text: generatedText, error: undefined };
-      } catch (err) {
-        const message = err instanceof Error ? err.message : "エラー";
-        return { index, text: "", error: message };
+        return { id: card.id, text: generatedText, error: result.error };
+      });
+
+      const batchResults = await Promise.all(batchPromises);
+
+      // Update cards and progress for this batch
+      setCards(prev => prev.map(card => {
+        const result = batchResults.find(r => r.id === card.id);
+        if (result) {
+          return {
+            ...card,
+            text: result.text,
+            error: result.error,
+            isLoading: false,
+          };
+        }
+        return card;
+      }));
+
+      setGenerationProgress(prev => ({
+        ...prev,
+        completed: batchEnd,
+      }));
+
+      // Wait between batches (except for the last batch)
+      if (batchEnd < initialCards.length) {
+        await new Promise(resolve => setTimeout(resolve, delayBetweenBatches));
       }
-    });
+    }
 
-    const results = await Promise.all(promises);
-
-    setCards(prev => prev.map((card, i) => {
-      const result = results.find(r => r.index === i);
-      return {
-        ...card,
-        text: result?.text || "",
-        error: result?.error,
-        isLoading: false,
-      };
-    }));
+    setGenerationProgress(prev => ({ ...prev, isGenerating: false }));
   };
 
   // AI強化: 要素漏れなしでバズる投稿に強化
@@ -883,6 +941,30 @@ export default function GeneratePage() {
             <CheckCircle2 className="w-4 h-4 text-emerald-500" />
             あなたの投稿スタイルを学習済み
           </span>
+        </div>
+      )}
+
+      {/* Generation Progress Bar */}
+      {generationProgress.isGenerating && (
+        <div className="bg-white rounded-xl border border-zinc-200 shadow-sm p-4 mb-6">
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-2">
+              <Loader2 className="w-5 h-5 animate-spin text-emerald-500" />
+              <span className="font-medium text-zinc-900">6パターン生成中...</span>
+            </div>
+            <span className="text-sm font-medium text-emerald-600">
+              {generationProgress.completed}/{generationProgress.total}
+            </span>
+          </div>
+          <div className="w-full bg-zinc-100 rounded-full h-3 overflow-hidden">
+            <div
+              className="h-full bg-gradient-to-r from-emerald-400 to-emerald-500 rounded-full transition-all duration-500 ease-out"
+              style={{ width: `${(generationProgress.completed / generationProgress.total) * 100}%` }}
+            />
+          </div>
+          <p className="text-xs text-zinc-500 mt-2">
+            レート制限を回避するため、2つずつ順番に生成しています
+          </p>
         </div>
       )}
 
