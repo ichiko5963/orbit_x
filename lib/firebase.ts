@@ -897,15 +897,11 @@ export interface ScheduledPostExtended {
 
 export interface BuzzPrompt {
   id?: string;
-  prompt: string; // バズる投稿を作るためのプロンプト
-  patterns: {
-    name: string; // パターン名
-    description: string; // 説明
-    template: string; // 抽象化されたテンプレート
-  }[];
-  characteristics: string[]; // バズる投稿の特徴
-  avoidPatterns: string[]; // 避けるべきパターン
-  samplePhrases: string[]; // 使える表現例
+  prompt: string; // AIに直接渡せる完全なプロンプト（バズる投稿の特徴を羅列）
+  characteristics: string[]; // バズる投稿の具体的な特徴（10個以上）
+  avoidPatterns: string[]; // 避けるべきパターン（5個以上）
+  samplePhrases: string[]; // 実際の投稿から抜き出した使える表現
+  structurePatterns: string[]; // 構造パターン（行構成など）
   analyzedPosts: number; // 分析した投稿数
   avgLikesAnalyzed: number; // 分析した投稿の平均いいね数
   createdAt?: any;

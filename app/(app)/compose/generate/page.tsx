@@ -159,6 +159,8 @@ export default function GeneratePage() {
   const [isResearching, setIsResearching] = useState(false);
   const [researchComplete, setResearchComplete] = useState(false);
   const [showFullResearch, setShowFullResearch] = useState(false);
+  const [searchSummary, setSearchSummary] = useState<string>(""); // 検索結果の要約
+  const [searchedAt, setSearchedAt] = useState<string>(""); // 検索日時
 
   // Generation progress state
   const [generationProgress, setGenerationProgress] = useState<{
@@ -299,10 +301,17 @@ export default function GeneratePage() {
         if (data.success && data.queries) {
           setSearchQueries(data.queries.map((q: any, i: number) => ({
             ...q,
-            id: `query_${i}`,
+            id: q.id || `query_${i}`,
             selected: false,
           })));
           setQueriesGenerated(true);
+          // 検索結果の要約を保存
+          if (data.searchSummary) {
+            setSearchSummary(data.searchSummary);
+          }
+          if (data.searchedAt) {
+            setSearchedAt(data.searchedAt);
+          }
         }
       } catch (error) {
         console.error("Search query generation failed:", error);
@@ -321,6 +330,8 @@ export default function GeneratePage() {
       setQueriesGenerated(false);
       setDeepResearch(null);
       setResearchComplete(false);
+      setSearchSummary("");
+      setSearchedAt("");
     }
   }, [autoEnrich]);
 
@@ -1043,13 +1054,13 @@ export default function GeneratePage() {
           originalContent: content,
           referenceText: card.referencePost.text,
           researchData: deepResearch || undefined,
-          // バズるプロンプトがあれば渡す
+          // バズるプロンプトがあれば渡す（新形式：パターンなし、特徴羅列）
           buzzPrompt: buzzPrompt ? {
             prompt: buzzPrompt.prompt,
-            patterns: buzzPrompt.patterns,
             characteristics: buzzPrompt.characteristics,
             avoidPatterns: buzzPrompt.avoidPatterns,
             samplePhrases: buzzPrompt.samplePhrases,
+            structurePatterns: buzzPrompt.structurePatterns,
           } : undefined,
         }),
       });
@@ -1539,21 +1550,46 @@ export default function GeneratePage() {
           {/* Search Query Selection (shown when autoEnrich is ON) */}
           {autoEnrich && (
             <div className="p-4">
-              {/* Loading queries */}
+              {/* Loading - AI検索中 */}
               {isLoadingQueries && (
-                <div className="flex items-center justify-center py-6">
-                  <div className="flex items-center gap-2 text-blue-600">
-                    <Loader2 className="w-5 h-5 animate-spin" />
-                    <span className="text-sm">検索クエリを生成中...</span>
+                <div className="py-6">
+                  <div className="flex flex-col items-center gap-3">
+                    <div className="relative w-12 h-12">
+                      <div className="absolute inset-0 border-3 border-blue-200 rounded-full"></div>
+                      <div className="absolute inset-0 border-3 border-blue-500 rounded-full border-t-transparent animate-spin"></div>
+                    </div>
+                    <div className="text-center">
+                      <p className="font-medium text-blue-900">AIで最新情報を検索中...</p>
+                      <p className="text-xs text-blue-600 mt-1">
+                        投稿内容とカテゴリを分析して、直近2週間の関連情報を徹底検索しています
+                      </p>
+                    </div>
                   </div>
                 </div>
               )}
 
-              {/* Query Options */}
+              {/* Query Options with Search Summary */}
               {searchQueries.length > 0 && !isResearching && !researchComplete && (
                 <div>
+                  {/* Search Summary */}
+                  {searchSummary && (
+                    <div className="mb-4 p-3 bg-gradient-to-r from-emerald-50 to-blue-50 rounded-lg border border-emerald-200">
+                      <div className="flex items-start gap-2">
+                        <CheckCircle2 className="w-4 h-4 text-emerald-600 flex-shrink-0 mt-0.5" />
+                        <div>
+                          <p className="text-xs font-semibold text-emerald-800 mb-1">
+                            AI検索完了{searchedAt ? `（${searchedAt}時点）` : ""}
+                          </p>
+                          <p className="text-xs text-emerald-700 leading-relaxed">
+                            {searchSummary}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
                   <p className="text-sm font-medium text-zinc-700 mb-3">
-                    検索クエリを選択（複数選択可、選択した軸で投稿を生成）
+                    リサーチテーマを選択（複数選択可）
                   </p>
                   <div className="space-y-2 max-h-80 overflow-y-auto">
                     {searchQueries.map((query) => (
@@ -1577,8 +1613,14 @@ export default function GeneratePage() {
                         </div>
                         <div className="flex-1">
                           <p className="font-medium text-zinc-900 text-sm">{query.query}</p>
-                          <div className="flex items-center gap-2 mt-1">
-                            <span className="px-1.5 py-0.5 bg-zinc-100 text-zinc-600 text-xs rounded">
+                          <div className="flex items-center gap-2 mt-1 flex-wrap">
+                            <span className={`px-1.5 py-0.5 text-xs rounded ${
+                              query.category === "注目情報"
+                                ? "bg-amber-100 text-amber-700"
+                                : query.category === "関連情報"
+                                  ? "bg-blue-100 text-blue-700"
+                                  : "bg-zinc-100 text-zinc-600"
+                            }`}>
                               {query.category}
                             </span>
                             {query.description && (
@@ -1595,20 +1637,20 @@ export default function GeneratePage() {
                     <div className="flex items-center justify-between">
                       <p className="text-sm text-zinc-500">
                         {searchQueries.filter(q => q.selected).length > 0
-                          ? `${searchQueries.filter(q => q.selected).length}件選択中`
-                          : "リサーチする軸を選択してください"}
+                          ? `${searchQueries.filter(q => q.selected).length}件選択中 → 詳細リサーチへ`
+                          : "リサーチするテーマを選択してください"}
                       </p>
                       <button
                         onClick={handleStartResearch}
                         disabled={searchQueries.filter(q => q.selected).length === 0}
-                        className="flex items-center gap-2 px-4 py-2 bg-blue-500 text-white text-sm font-medium rounded-lg hover:bg-blue-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                        className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-blue-500 to-indigo-500 text-white text-sm font-medium rounded-lg hover:from-blue-600 hover:to-indigo-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
                       >
                         <Search className="w-4 h-4" />
-                        リサーチ開始
+                        ディープリサーチ開始
                       </button>
                     </div>
                     <p className="text-xs text-zinc-400 mt-2">
-                      1個選択 → 6パターン全てその軸 / 2個 → 3パターンずつ / 3個 → 2パターンずつ
+                      選択したテーマについて5000字以上の詳細情報を収集します
                     </p>
                   </div>
                 </div>
@@ -2014,6 +2056,85 @@ export default function GeneratePage() {
                     この投稿を再生成
                   </button>
                 )}
+
+                {/* AI補正 インラインパネル（カード内に表示） */}
+                {correctionCardId === card.id && showCorrectionModal && (
+                  <div className="border-t-2 border-indigo-200 bg-gradient-to-b from-indigo-50 to-white">
+                    <div className="px-4 py-3 border-b border-indigo-100">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <Sparkles className="w-4 h-4 text-indigo-600" />
+                          <span className="text-sm font-semibold text-indigo-900">AI補正</span>
+                        </div>
+                        <button
+                          onClick={() => {
+                            if (!isLoadingCorrection) {
+                              setShowCorrectionModal(false);
+                              setCorrectionCardId(null);
+                              setCorrectionPatterns([]);
+                            }
+                          }}
+                          disabled={isLoadingCorrection}
+                          className="p-1 rounded hover:bg-indigo-100 text-indigo-400 hover:text-indigo-600 transition-colors"
+                        >
+                          <XIcon className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="p-4">
+                      {isLoadingCorrection ? (
+                        <div className="flex flex-col items-center justify-center py-8">
+                          <div className="relative w-12 h-12 mb-3">
+                            <div className="absolute inset-0 border-3 border-indigo-200 rounded-full"></div>
+                            <div className="absolute inset-0 border-3 border-indigo-500 rounded-full border-t-transparent animate-spin"></div>
+                          </div>
+                          <p className="text-sm font-medium text-indigo-900">補正パターンを生成中...</p>
+                        </div>
+                      ) : correctionPatterns.length > 0 ? (
+                        <div className="space-y-3">
+                          {correctionPatterns.map((pattern, index) => (
+                            <div
+                              key={index}
+                              className="p-3 bg-white rounded-lg border border-zinc-200 hover:border-indigo-300 transition-colors"
+                            >
+                              <div className="flex items-center justify-between mb-2">
+                                <span className={`px-2 py-0.5 text-xs font-semibold rounded ${
+                                  index === 0
+                                    ? "bg-blue-100 text-blue-700"
+                                    : index === 1
+                                      ? "bg-emerald-100 text-emerald-700"
+                                      : "bg-amber-100 text-amber-700"
+                                }`}>
+                                  {pattern.type}
+                                </span>
+                                {!pattern.structureValid && pattern.warning && (
+                                  <span className="px-1.5 py-0.5 text-[10px] bg-red-100 text-red-600 rounded">
+                                    {pattern.warning}
+                                  </span>
+                                )}
+                              </div>
+                              <p className="text-xs text-zinc-700 whitespace-pre-wrap leading-relaxed mb-2 max-h-32 overflow-y-auto">
+                                {pattern.text}
+                              </p>
+                              {pattern.changes && (
+                                <p className="text-[10px] text-zinc-500 mb-2 pt-2 border-t border-zinc-100">
+                                  {pattern.changes}
+                                </p>
+                              )}
+                              <button
+                                onClick={() => handleApplyCorrection(index)}
+                                className="w-full py-1.5 bg-indigo-500 text-white text-xs font-medium rounded-lg hover:bg-indigo-600 transition-colors"
+                              >
+                                この補正を適用
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      ) : null}
+                    </div>
+                  </div>
+                )}
               </div>
             );
           })}
@@ -2153,129 +2274,6 @@ export default function GeneratePage() {
         </div>
       )}
 
-      {/* AI補正 Modal */}
-      {showCorrectionModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center">
-          <div
-            className="absolute inset-0 bg-black/50 backdrop-blur-sm"
-            onClick={() => {
-              if (!isLoadingCorrection) {
-                setShowCorrectionModal(false);
-                setCorrectionCardId(null);
-                setCorrectionPatterns([]);
-              }
-            }}
-          />
-          <div className="relative w-full max-w-4xl bg-white rounded-2xl shadow-xl mx-4 overflow-hidden max-h-[90vh] flex flex-col">
-            {/* Header */}
-            <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-200">
-              <div className="flex items-center gap-3">
-                <div className="p-2 bg-indigo-100 rounded-lg">
-                  <Sparkles className="w-5 h-5 text-indigo-600" />
-                </div>
-                <div>
-                  <div className="font-semibold text-zinc-900">AI補正</div>
-                  <div className="text-sm text-zinc-500">構造を維持しつつ一貫性と有益さを高める</div>
-                </div>
-              </div>
-              <button
-                onClick={() => {
-                  if (!isLoadingCorrection) {
-                    setShowCorrectionModal(false);
-                    setCorrectionCardId(null);
-                    setCorrectionPatterns([]);
-                  }
-                }}
-                className="p-2 rounded-lg hover:bg-zinc-100"
-                disabled={isLoadingCorrection}
-              >
-                <XIcon className="w-5 h-5 text-zinc-500" />
-              </button>
-            </div>
-
-            {/* Content */}
-            <div className="flex-1 overflow-y-auto p-6">
-              {isLoadingCorrection ? (
-                <div className="flex flex-col items-center justify-center py-12">
-                  <div className="relative w-16 h-16 mb-4">
-                    <div className="absolute inset-0 border-4 border-indigo-200 rounded-full"></div>
-                    <div className="absolute inset-0 border-4 border-indigo-500 rounded-full border-t-transparent animate-spin"></div>
-                  </div>
-                  <p className="text-lg font-medium text-zinc-900 mb-2">AI補正パターンを生成中...</p>
-                  <p className="text-sm text-zinc-500">構造を分析して3つのパターンを作成しています</p>
-                </div>
-              ) : correctionPatterns.length > 0 ? (
-                <div className="space-y-4">
-                  {/* Original Text */}
-                  <div className="mb-6">
-                    <h4 className="text-sm font-medium text-zinc-500 mb-2">元の投稿</h4>
-                    <div className="p-4 bg-zinc-50 rounded-lg border border-zinc-200">
-                      <p className="text-sm text-zinc-600 whitespace-pre-wrap">{correctionCardText}</p>
-                    </div>
-                  </div>
-
-                  {/* Correction Patterns */}
-                  <h4 className="text-sm font-medium text-zinc-900 mb-3">補正パターンを選択</h4>
-                  <div className="grid gap-4">
-                    {correctionPatterns.map((pattern, index) => (
-                      <div
-                        key={index}
-                        className="p-4 bg-white rounded-xl border-2 border-zinc-200 hover:border-indigo-300 transition-colors"
-                      >
-                        <div className="flex items-center justify-between mb-3">
-                          <div className="flex items-center gap-2">
-                            <span className={`px-2.5 py-1 text-xs font-semibold rounded-full ${
-                              index === 0
-                                ? "bg-blue-100 text-blue-700"
-                                : index === 1
-                                  ? "bg-emerald-100 text-emerald-700"
-                                  : "bg-amber-100 text-amber-700"
-                            }`}>
-                              {pattern.type}
-                            </span>
-                            {!pattern.structureValid && pattern.warning && (
-                              <span className="px-2 py-0.5 text-xs bg-red-100 text-red-600 rounded">
-                                ⚠ {pattern.warning}
-                              </span>
-                            )}
-                          </div>
-                          <button
-                            onClick={() => handleApplyCorrection(index)}
-                            className="px-4 py-1.5 bg-indigo-500 text-white text-sm font-medium rounded-lg hover:bg-indigo-600 transition-colors"
-                          >
-                            この補正を適用
-                          </button>
-                        </div>
-                        <p className="text-sm text-zinc-700 whitespace-pre-wrap leading-relaxed mb-2">
-                          {pattern.text}
-                        </p>
-                        {pattern.changes && (
-                          <p className="text-xs text-zinc-500 mt-2 pt-2 border-t border-zinc-100">
-                            📝 {pattern.changes}
-                          </p>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              ) : (
-                <div className="text-center py-12 text-zinc-500">
-                  補正パターンを読み込んでいます...
-                </div>
-              )}
-            </div>
-
-            {/* Footer */}
-            {!isLoadingCorrection && correctionPatterns.length > 0 && (
-              <div className="px-6 py-4 border-t border-zinc-200 bg-zinc-50">
-                <p className="text-xs text-zinc-500 text-center">
-                  💡 各パターンは構造（行数、改行、箇条書き、絵文字）を維持しつつ、中身を補正しています
-                </p>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
     </div>
   );
 }

@@ -5,18 +5,13 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
-interface BuzzPattern {
-  name: string;
-  description: string;
-  template: string;
-}
-
+// 新しいバズるプロンプト形式（パターン3種類ではなく、特徴羅列プロンプト形式）
 interface BuzzPrompt {
-  prompt: string;
-  patterns: BuzzPattern[];
-  characteristics: string[];
-  avoidPatterns: string[];
-  samplePhrases: string[];
+  prompt: string; // AIに直接渡せる完全なプロンプト
+  characteristics: string[]; // バズる投稿の具体的な特徴
+  avoidPatterns: string[]; // 避けるべきパターン
+  samplePhrases: string[]; // 使える表現例
+  structurePatterns?: string[]; // 構造パターン
 }
 
 interface CorrectionRequest {
@@ -54,7 +49,7 @@ export async function POST(request: NextRequest) {
     const emojis = [...new Set(emojiMatches)];
 
     // バズるプロンプトの有無で生成方法を変更
-    const hasBuzzPrompt = buzzPrompt && buzzPrompt.prompt && buzzPrompt.patterns.length > 0;
+    const hasBuzzPrompt = buzzPrompt && buzzPrompt.prompt && buzzPrompt.characteristics.length > 0;
 
     // システムプロンプト
     const systemPrompt = hasBuzzPrompt
@@ -62,22 +57,37 @@ export async function POST(request: NextRequest) {
 
 【あなたのミッション】
 1. 元の投稿の構造（行数、改行、箇条書き）を維持
-2. バズるプロンプトに基づいて内容を改善
+2. バズるプロンプトの指示に完全に従って内容を改善
 3. 一貫性のある、読みやすい投稿に仕上げる
 
+━━━━━━━━━━━━━━━━━━━━
 【バズるプロンプト（この指示に従う）】
+━━━━━━━━━━━━━━━━━━━━
 ${buzzPrompt.prompt}
 
-【バズる投稿の特徴】
-${buzzPrompt.characteristics.map(c => `・${c}`).join("\n")}
+━━━━━━━━━━━━━━━━━━━━
+【バズる投稿の特徴（これらを適用する）】
+━━━━━━━━━━━━━━━━━━━━
+${buzzPrompt.characteristics.map(c => `✓ ${c}`).join("\n")}
 
-【避けるべきパターン】
-${buzzPrompt.avoidPatterns.map(p => `・${p}`).join("\n")}
+${buzzPrompt.structurePatterns && buzzPrompt.structurePatterns.length > 0 ? `
+━━━━━━━━━━━━━━━━━━━━
+【構造パターン（参考にする）】
+━━━━━━━━━━━━━━━━━━━━
+${buzzPrompt.structurePatterns.map((p, i) => `${i + 1}. ${p}`).join("\n")}
+` : ""}
 
+━━━━━━━━━━━━━━━━━━━━
+【避けるべきパターン（絶対にやらない）】
+━━━━━━━━━━━━━━━━━━━━
+${buzzPrompt.avoidPatterns.map(p => `✗ ${p}`).join("\n")}
+
+━━━━━━━━━━━━━━━━━━━━
 【使える表現例】
-${buzzPrompt.samplePhrases.map(p => `「${p}」`).join("、")}
+━━━━━━━━━━━━━━━━━━━━
+${buzzPrompt.samplePhrases.map(p => `「${p}」`).join("\n")}
 
-【重要】
+【重要な注意】
 - 元の投稿の伝えたいことは維持
 - より明確で一貫性のある表現に
 - 違和感のある箇所は修正・削除してOK
@@ -96,21 +106,16 @@ ${buzzPrompt.samplePhrases.map(p => `「${p}」`).join("、")}
 - 冒頭のフックを強化
 - 締めくくりにインパクトを`;
 
-    // 3パターン生成（バズるプロンプトがある場合はそのパターンを使用）
-    const patternInstructions = hasBuzzPrompt && buzzPrompt.patterns.length >= 3
-      ? buzzPrompt.patterns.slice(0, 3).map((p, i) => `
-【パターン${i + 1}: ${p.name}】
-${p.description}
-テンプレート: ${p.template}`).join("\n")
-      : `
-【パターン1: 一貫性強化】
-投稿全体で1つのメッセージを明確に伝える。話の流れを自然に。
+    // 3パターンは固定（フック強化、具体性追加、表現磨き）
+    const patternInstructions = `
+【パターン1: フック強化】
+冒頭のインパクトを最大化。意外性や共感を呼ぶ要素を追加。読者が「続きを読みたい」と思う導入に。
 
 【パターン2: 具体性追加】
-抽象的な表現を具体的に。数字、事実、データで説得力を。
+抽象的な表現を具体的に。数字、事実、データで説得力を。「すごい」→「3日で10万回再生」のように。
 
-【パターン3: フック強化】
-冒頭のインパクトを強化。意外性や共感を呼ぶ要素を追加。`;
+【パターン3: 表現磨き】
+全体の言い回しをより自然で読みやすく。語尾や接続詞を改善。伝えたいことが明確に伝わる文章に。`;
 
     const generatePrompt = `【AI補正タスク】以下の投稿を3パターンに補正してください。
 
