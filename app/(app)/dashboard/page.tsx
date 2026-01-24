@@ -437,20 +437,22 @@ export default function Dashboard() {
           </div>
 
           {/* AI Generation History */}
-          {aiHistory.length > 0 && (
-            <div className="bg-white rounded-2xl border border-zinc-200 shadow-sm overflow-hidden">
-              <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-100 bg-violet-50">
-                <div className="flex items-center gap-2">
-                  <Sparkles className="w-4 h-4 text-violet-600" />
-                  <span className="text-sm font-semibold text-violet-800">AI生成履歴</span>
-                </div>
+          <div className="bg-white rounded-2xl border border-zinc-200 shadow-sm overflow-hidden">
+            <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-100 bg-violet-50">
+              <div className="flex items-center gap-2">
+                <Sparkles className="w-4 h-4 text-violet-600" />
+                <span className="text-sm font-semibold text-violet-800">AI生成履歴</span>
+              </div>
+              {aiHistory.length > 0 && (
                 <Link
                   href="/compose/generate"
                   className="text-xs text-violet-600 hover:text-violet-700"
                 >
                   すべて見る
                 </Link>
-              </div>
+              )}
+            </div>
+            {aiHistory.length > 0 ? (
               <div className="divide-y divide-zinc-100">
                 {aiHistory.map((history) => (
                   <Link
@@ -486,8 +488,25 @@ export default function Dashboard() {
                   </Link>
                 ))}
               </div>
-            </div>
-          )}
+            ) : (
+              <div className="p-6 text-center">
+                <div className="w-12 h-12 rounded-full bg-violet-100 flex items-center justify-center mx-auto mb-3">
+                  <Sparkles className="w-6 h-6 text-violet-400" />
+                </div>
+                <p className="text-sm text-zinc-600 mb-2">AI生成履歴がありません</p>
+                <p className="text-xs text-zinc-400 mb-4">
+                  AIで投稿を作成すると、ここに履歴が表示されます
+                </p>
+                <Link
+                  href="/compose"
+                  className="inline-flex items-center gap-2 px-4 py-2 bg-violet-500 text-white text-sm font-medium rounded-lg hover:bg-violet-600 transition-colors"
+                >
+                  <Sparkles className="w-4 h-4" />
+                  AI投稿作成
+                </Link>
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Right Column: Posted History */}

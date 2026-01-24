@@ -1,6 +1,6 @@
 "use client";
 
-import { ReactNode, useState } from "react";
+import { ReactNode, useState, useRef, useEffect } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
@@ -27,10 +27,12 @@ import {
   CheckCircle2,
   X,
   Bookmark,
+  User,
+  LinkIcon,
 } from "lucide-react";
 import { AuthProvider, useAuth } from "@/lib/auth-context";
 import { ImportProvider, useImport } from "@/lib/import-context";
-import { XProfileProvider } from "@/lib/x-profile-context";
+import { XProfileProvider, useXProfile } from "@/lib/x-profile-context";
 
 // Custom X logo component
 const XLogo = ({ className }: { className?: string }) => (
@@ -143,8 +145,23 @@ function BackgroundImportIndicator() {
 
 function AppLayoutContent({ children }: { children: ReactNode }) {
   const [collapsed, setCollapsed] = useState(false);
+  const [showProfileMenu, setShowProfileMenu] = useState(false);
+  const profileMenuRef = useRef<HTMLDivElement>(null);
   const pathname = usePathname();
   const { user, loading, signIn, signOut } = useAuth();
+  const { profile: xProfile, isConnected: xConnected } = useXProfile();
+
+  // Close profile menu when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (profileMenuRef.current && !profileMenuRef.current.contains(event.target as Node)) {
+        setShowProfileMenu(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
 
   if (loading) {
     return (
@@ -310,7 +327,16 @@ function AppLayoutContent({ children }: { children: ReactNode }) {
         <div className="p-4 border-t border-zinc-100">
           {!collapsed ? (
             <div className="flex items-center gap-3 p-3 rounded-xl bg-zinc-50">
-              {user.photoURL ? (
+              {/* Show X profile if connected, otherwise Google profile */}
+              {xConnected && xProfile?.profileImageUrl ? (
+                <Image
+                  src={xProfile.profileImageUrl.replace("_normal", "_200x200")}
+                  alt={xProfile.name}
+                  width={44}
+                  height={44}
+                  className="rounded-full border-2 border-blue-400"
+                />
+              ) : user.photoURL ? (
                 <Image
                   src={user.photoURL}
                   alt={user.displayName || "User"}
@@ -324,12 +350,26 @@ function AppLayoutContent({ children }: { children: ReactNode }) {
                 </div>
               )}
               <div className="flex-1 min-w-0">
-                <p className="text-base font-semibold text-zinc-900 truncate">
-                  {user.displayName || "ユーザー"}
-                </p>
-                <p className="text-sm text-zinc-500 truncate">
-                  {user.email}
-                </p>
+                {/* Show X name/username if connected */}
+                {xConnected && xProfile ? (
+                  <>
+                    <p className="text-base font-semibold text-zinc-900 truncate">
+                      {xProfile.name}
+                    </p>
+                    <p className="text-sm text-blue-500 truncate">
+                      @{xProfile.username}
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <p className="text-base font-semibold text-zinc-900 truncate">
+                      {user.displayName || "ユーザー"}
+                    </p>
+                    <p className="text-sm text-zinc-500 truncate">
+                      {user.email}
+                    </p>
+                  </>
+                )}
               </div>
               <button
                 onClick={signOut}
@@ -389,20 +429,103 @@ function AppLayoutContent({ children }: { children: ReactNode }) {
               <span className="absolute top-2 right-2 w-2.5 h-2.5 bg-red-500 rounded-full" />
             </button>
 
-            {/* User Avatar */}
-            {user.photoURL ? (
-              <Image
-                src={user.photoURL}
-                alt={user.displayName || "User"}
-                width={44}
-                height={44}
-                className="rounded-full border-2 border-zinc-200"
-              />
-            ) : (
-              <div className="w-11 h-11 rounded-full bg-emerald-500 flex items-center justify-center text-white text-lg font-bold border-2 border-emerald-400">
-                {user.displayName?.[0] || user.email?.[0] || "U"}
-              </div>
-            )}
+            {/* User Avatar with Dropdown */}
+            <div className="relative" ref={profileMenuRef}>
+              <button
+                onClick={() => setShowProfileMenu(!showProfileMenu)}
+                className="focus:outline-none focus:ring-2 focus:ring-emerald-500 rounded-full"
+              >
+                {user.photoURL ? (
+                  <Image
+                    src={user.photoURL}
+                    alt={user.displayName || "User"}
+                    width={44}
+                    height={44}
+                    className="rounded-full border-2 border-zinc-200 hover:border-emerald-400 transition-colors cursor-pointer"
+                  />
+                ) : (
+                  <div className="w-11 h-11 rounded-full bg-emerald-500 flex items-center justify-center text-white text-lg font-bold border-2 border-emerald-400 hover:border-emerald-300 transition-colors cursor-pointer">
+                    {user.displayName?.[0] || user.email?.[0] || "U"}
+                  </div>
+                )}
+              </button>
+
+              {/* Dropdown Menu */}
+              {showProfileMenu && (
+                <div className="absolute right-0 top-full mt-2 w-64 bg-white rounded-xl shadow-xl border border-zinc-200 py-2 animate-fade-in z-50">
+                  {/* User Info */}
+                  <div className="px-4 py-3 border-b border-zinc-100">
+                    <div className="flex items-center gap-3">
+                      {user.photoURL ? (
+                        <Image
+                          src={user.photoURL}
+                          alt={user.displayName || "User"}
+                          width={40}
+                          height={40}
+                          className="rounded-full"
+                        />
+                      ) : (
+                        <div className="w-10 h-10 rounded-full bg-emerald-500 flex items-center justify-center text-white font-bold">
+                          {user.displayName?.[0] || user.email?.[0] || "U"}
+                        </div>
+                      )}
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-semibold text-zinc-900 truncate">
+                          {user.displayName || "ユーザー"}
+                        </p>
+                        <p className="text-xs text-zinc-500 truncate">{user.email}</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* X Connection Status */}
+                  {xConnected && xProfile && (
+                    <div className="px-4 py-2 border-b border-zinc-100 bg-blue-50">
+                      <div className="flex items-center gap-2">
+                        <XLogo className="w-4 h-4 text-blue-500" />
+                        <span className="text-xs text-blue-600">@{xProfile.username}</span>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Menu Items */}
+                  <div className="py-1">
+                    <Link
+                      href="/settings"
+                      onClick={() => setShowProfileMenu(false)}
+                      className="flex items-center gap-3 px-4 py-2.5 text-sm text-zinc-700 hover:bg-zinc-50 transition-colors"
+                    >
+                      <Settings className="w-4 h-4 text-zinc-400" />
+                      設定
+                    </Link>
+                    {!xConnected && (
+                      <Link
+                        href="/settings?section=xauth"
+                        onClick={() => setShowProfileMenu(false)}
+                        className="flex items-center gap-3 px-4 py-2.5 text-sm text-blue-600 hover:bg-blue-50 transition-colors"
+                      >
+                        <LinkIcon className="w-4 h-4" />
+                        X連携する
+                      </Link>
+                    )}
+                  </div>
+
+                  {/* Logout */}
+                  <div className="border-t border-zinc-100 pt-1">
+                    <button
+                      onClick={() => {
+                        setShowProfileMenu(false);
+                        signOut();
+                      }}
+                      className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-red-600 hover:bg-red-50 transition-colors"
+                    >
+                      <LogOut className="w-4 h-4" />
+                      ログアウト
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
         </header>
 

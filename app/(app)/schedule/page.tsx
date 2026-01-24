@@ -634,10 +634,10 @@ export default function SchedulePage() {
                             draggedPost?.id === post.id ? "opacity-50" : ""
                           } ${
                             isPosted
-                              ? "bg-emerald-100 text-emerald-700"
+                              ? "bg-emerald-500 text-white"
                               : isFailed
                               ? "bg-red-100 text-red-700"
-                              : "bg-emerald-500 text-white hover:bg-emerald-600"
+                              : "bg-amber-100 text-amber-800 hover:bg-amber-200 border border-amber-200"
                           }`}
                         >
                           {!isPosted && !isFailed && (
@@ -837,10 +837,10 @@ export default function SchedulePage() {
                 <span
                   className={`px-3 py-1 text-sm font-medium rounded-full ${
                     selectedPost.status === "posted"
-                      ? "bg-emerald-100 text-emerald-700"
+                      ? "bg-emerald-500 text-white"
                       : selectedPost.status === "failed"
                       ? "bg-red-100 text-red-700"
-                      : "bg-amber-100 text-amber-700"
+                      : "bg-amber-100 text-amber-800"
                   }`}
                 >
                   {selectedPost.status === "posted"

@@ -53,21 +53,95 @@ async function postTweet(
 }
 
 /**
- * Upload images using OAuth 1.0a and return media IDs
+ * Upload a single image using OAuth 2.0 bearer token
  */
-async function uploadImages(imageUrls: string[]): Promise<string[]> {
+async function uploadMediaWithOAuth2(
+  accessToken: string,
+  imageUrl: string
+): Promise<string | null> {
+  try {
+    // Fetch the image
+    console.log(`[Cron] Fetching image: ${imageUrl.slice(0, 100)}...`);
+    const imageResponse = await fetch(imageUrl);
+    if (!imageResponse.ok) {
+      console.error(`[Cron] Failed to fetch image: ${imageResponse.status}`);
+      return null;
+    }
+
+    const imageBuffer = Buffer.from(await imageResponse.arrayBuffer());
+    const base64Data = imageBuffer.toString("base64");
+    const contentType = imageResponse.headers.get("content-type") || "image/jpeg";
+
+    console.log(`[Cron] Image size: ${imageBuffer.length} bytes, type: ${contentType}`);
+
+    // Upload to Twitter using OAuth 2.0
+    const formData = new URLSearchParams();
+    formData.append("media_data", base64Data);
+
+    // Determine media_category based on content type
+    if (contentType.includes("gif")) {
+      formData.append("media_category", "tweet_gif");
+    } else if (contentType.includes("video")) {
+      formData.append("media_category", "tweet_video");
+    } else {
+      formData.append("media_category", "tweet_image");
+    }
+
+    const uploadResponse = await fetch("https://upload.twitter.com/1.1/media/upload.json", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: formData.toString(),
+    });
+
+    const uploadData = await uploadResponse.json();
+
+    if (!uploadResponse.ok) {
+      console.error("[Cron] Media upload error:", uploadData);
+      // If OAuth 2.0 fails, try with app-level OAuth 1.0a
+      console.log("[Cron] Trying OAuth 1.0a fallback...");
+      return await uploadMediaWithOAuth1Fallback(imageUrl);
+    }
+
+    console.log(`[Cron] Media uploaded successfully: ${uploadData.media_id_string}`);
+    return uploadData.media_id_string;
+  } catch (error) {
+    console.error("[Cron] Error uploading media:", error);
+    return null;
+  }
+}
+
+/**
+ * Fallback: Upload images using OAuth 1.0a (app-level)
+ */
+async function uploadMediaWithOAuth1Fallback(imageUrl: string): Promise<string | null> {
   const client = createTwitterClient();
   if (!client) {
-    console.warn("[Cron] Twitter client not available for media upload (OAuth 1.0a credentials missing)");
-    return [];
+    console.warn("[Cron] Twitter client not available for OAuth 1.0a fallback");
+    return null;
   }
 
+  try {
+    const mediaId = await client.uploadMediaFromUrl(imageUrl);
+    return mediaId;
+  } catch (error) {
+    console.error("[Cron] OAuth 1.0a fallback failed:", error);
+    return null;
+  }
+}
+
+/**
+ * Upload images using user's OAuth 2.0 token
+ */
+async function uploadImages(accessToken: string, imageUrls: string[]): Promise<string[]> {
   const mediaIds: string[] = [];
 
   for (const imageUrl of imageUrls) {
     try {
       console.log(`[Cron] Uploading image: ${imageUrl.slice(0, 50)}...`);
-      const mediaId = await client.uploadMediaFromUrl(imageUrl);
+      const mediaId = await uploadMediaWithOAuth2(accessToken, imageUrl);
       if (mediaId) {
         mediaIds.push(mediaId);
         console.log(`[Cron] Image uploaded, media_id: ${mediaId}`);
@@ -220,11 +294,11 @@ export async function GET(request: NextRequest) {
         try {
           console.log(`[Cron] Posting for user ${userId}: "${post.text.slice(0, 50)}..."`);
 
-          // Upload images if any (using OAuth 1.0a)
+          // Upload images if any (using user's OAuth 2.0 token)
           let mediaIds: string[] = [];
           if (post.imageUrls && Array.isArray(post.imageUrls) && post.imageUrls.length > 0) {
             console.log(`[Cron] Uploading ${post.imageUrls.length} images...`);
-            mediaIds = await uploadImages(post.imageUrls);
+            mediaIds = await uploadImages(accessToken, post.imageUrls);
             console.log(`[Cron] Uploaded ${mediaIds.length} images`);
           }
 

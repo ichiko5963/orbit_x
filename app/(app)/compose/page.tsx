@@ -12,6 +12,7 @@ import {
   Link as LinkIcon,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
+import { useXProfile } from "@/lib/x-profile-context";
 import { saveScheduledPost } from "@/lib/firebase";
 import {
   ImageUploadGrid,
@@ -22,6 +23,7 @@ import {
 export default function ComposePage() {
   const router = useRouter();
   const { user } = useAuth();
+  const { profile: xProfile, isConnected: xConnected } = useXProfile();
   const [content, setContent] = useState("");
   const [linkUrl, setLinkUrl] = useState("");
   const [images, setImages] = useState<string[]>([]);
@@ -214,7 +216,15 @@ export default function ComposePage() {
             <div className="px-4 py-3 border-b border-zinc-100 bg-zinc-50">
               <h3 className="text-sm font-semibold text-zinc-900">プレビュー</h3>
             </div>
-            <PostPreview text={content} images={images} />
+            <PostPreview
+              text={content}
+              images={images}
+              userName={xConnected && xProfile ? xProfile.name : user?.displayName || "ユーザー名"}
+              userHandle={xConnected && xProfile ? `@${xProfile.username}` : "@username"}
+              userAvatar={xConnected && xProfile?.profileImageUrl
+                ? xProfile.profileImageUrl.replace("_normal", "_200x200")
+                : user?.photoURL || undefined}
+            />
           </div>
 
           {/* Quick Actions */}
