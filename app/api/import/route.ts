@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
   parseCSV,
+  filterCSVRows,
   convertRowsToPosts,
   calculateImportStats,
 } from "@/lib/csv-parser";
@@ -159,8 +160,20 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Filter rows: exclude @ mentions and likes <= 5
+    const { filtered: filteredRows, excluded } = filterCSVRows(rows);
+
+    console.log(`[Import] Filtered: ${excluded.replies} replies, ${excluded.lowLikes} low-likes posts excluded`);
+
+    if (filteredRows.length === 0) {
+      return NextResponse.json(
+        { error: "フィルタ条件を満たす投稿がありません（リプライと5いいね以下を除外）" },
+        { status: 400 }
+      );
+    }
+
     // Convert to posts (without category yet)
-    const rawPosts = convertRowsToPosts(rows);
+    const rawPosts = convertRowsToPosts(filteredRows);
 
     // Get Firebase instance
     const db = await getAdminDb();
@@ -263,6 +276,10 @@ export async function POST(request: NextRequest) {
       categoryCounts,
       savedCount: categorizedPosts.length,
       duplicateCount,
+      excludedCount: {
+        replies: excluded.replies,
+        lowLikes: excluded.lowLikes,
+      },
     });
   } catch (error) {
     console.error("Import error:", error);

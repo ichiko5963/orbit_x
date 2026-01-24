@@ -211,6 +211,41 @@ export function extractUrls(text: string): string[] {
 }
 
 /**
+ * Filter CSV rows before conversion
+ * - Exclude replies (rows containing @)
+ * - Exclude posts with likes <= 5
+ */
+export function filterCSVRows(rows: CSVRow[]): { filtered: CSVRow[]; excluded: { replies: number; lowLikes: number } } {
+  let repliesExcluded = 0;
+  let lowLikesExcluded = 0;
+
+  const filtered = rows.filter(row => {
+    // Exclude replies (text contains @)
+    if (row.text.includes("@")) {
+      repliesExcluded++;
+      return false;
+    }
+
+    // Exclude posts with likes <= 5
+    const likes = parseInt(row.likes, 10) || 0;
+    if (likes <= 5) {
+      lowLikesExcluded++;
+      return false;
+    }
+
+    return true;
+  });
+
+  return {
+    filtered,
+    excluded: {
+      replies: repliesExcluded,
+      lowLikes: lowLikesExcluded,
+    },
+  };
+}
+
+/**
  * Convert CSV rows to Post objects
  */
 export function convertRowsToPosts(rows: CSVRow[]): Post[] {

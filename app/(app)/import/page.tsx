@@ -406,6 +406,34 @@ export default function ImportPage() {
             </p>
           </div>
 
+          {/* Auto Filter Rules */}
+          <div className="bg-white p-6 rounded-2xl border border-zinc-200 shadow-sm">
+            <div className="flex items-center gap-2 mb-4">
+              <AlertCircle className="w-5 h-5 text-amber-500" />
+              <h3 className="text-lg font-semibold text-zinc-900">自動除外ルール</h3>
+            </div>
+            <div className="space-y-3">
+              <div className="flex items-start gap-3 p-3 bg-zinc-50 rounded-lg">
+                <div className="w-6 h-6 rounded-full bg-red-100 flex items-center justify-center flex-shrink-0 mt-0.5">
+                  <span className="text-red-600 text-sm font-bold">@</span>
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-zinc-700">リプライ・メンション</p>
+                  <p className="text-xs text-zinc-400">@を含む投稿は自動的に除外されます</p>
+                </div>
+              </div>
+              <div className="flex items-start gap-3 p-3 bg-zinc-50 rounded-lg">
+                <div className="w-6 h-6 rounded-full bg-zinc-200 flex items-center justify-center flex-shrink-0 mt-0.5">
+                  <span className="text-zinc-500 text-xs font-bold">≤5</span>
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-zinc-700">低エンゲージメント</p>
+                  <p className="text-xs text-zinc-400">いいね数が5以下の投稿は除外されます</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
           {/* Tier System */}
           <div className="bg-white p-6 rounded-2xl border border-zinc-200 shadow-sm">
             <h3 className="text-lg font-semibold text-zinc-900 mb-4">ティア設計</h3>
