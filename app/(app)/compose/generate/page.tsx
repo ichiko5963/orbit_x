@@ -183,6 +183,22 @@ export default function GeneratePage() {
   const [isSavingSchedule, setIsSavingSchedule] = useState(false);
   const scheduleTextareaRef = useRef<HTMLTextAreaElement>(null);
 
+  // AI補正モーダル state
+  interface CorrectionPattern {
+    type: string;
+    text: string;
+    changes: string;
+    lineCount: number;
+    expectedLineCount: number;
+    structureValid: boolean;
+    warning?: string | null;
+  }
+  const [showCorrectionModal, setShowCorrectionModal] = useState(false);
+  const [correctionCardId, setCorrectionCardId] = useState<number | null>(null);
+  const [correctionPatterns, setCorrectionPatterns] = useState<CorrectionPattern[]>([]);
+  const [isLoadingCorrection, setIsLoadingCorrection] = useState(false);
+  const [correctionCardText, setCorrectionCardText] = useState("");
+
   // Load content and link from sessionStorage
   useEffect(() => {
     const savedContent = sessionStorage.getItem("compose_content");
@@ -966,6 +982,58 @@ export default function GeneratePage() {
     } finally {
       setFactCheckingId(null);
     }
+  };
+
+  // AI補正: 構造維持で一貫性・有益性を高める3パターン生成
+  const handleAICorrect = async (cardId: number) => {
+    const card = cards.find(c => c.id === cardId);
+    if (!card || !card.text) return;
+
+    setIsLoadingCorrection(true);
+    setCorrectionCardId(cardId);
+    setCorrectionCardText(card.text);
+    setCorrectionPatterns([]);
+    setShowCorrectionModal(true);
+
+    try {
+      const response = await fetch("/api/generate/ai-correct", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          currentText: card.text,
+          originalContent: content,
+          referenceText: card.referencePost.text,
+          researchData: deepResearch || undefined,
+        }),
+      });
+
+      if (!response.ok) throw new Error("AI補正に失敗しました");
+
+      const result = await response.json();
+      if (result.success && result.patterns) {
+        setCorrectionPatterns(result.patterns);
+      }
+    } catch (error) {
+      console.error("AI correction error:", error);
+      alert("AI補正中にエラーが発生しました");
+      setShowCorrectionModal(false);
+    } finally {
+      setIsLoadingCorrection(false);
+    }
+  };
+
+  // AI補正パターンを選択して適用
+  const handleApplyCorrection = (patternIndex: number) => {
+    if (correctionCardId === null) return;
+    const pattern = correctionPatterns[patternIndex];
+    if (!pattern) return;
+
+    setCards(prev => prev.map(c =>
+      c.id === correctionCardId ? { ...c, text: pattern.text } : c
+    ));
+    setShowCorrectionModal(false);
+    setCorrectionCardId(null);
+    setCorrectionPatterns([]);
   };
 
   const handlePost = (text: string) => {
@@ -1818,6 +1886,18 @@ export default function GeneratePage() {
                         </>
                       )}
                     </button>
+                    <button
+                      onClick={() => handleAICorrect(card.id)}
+                      disabled={isLoadingCorrection && correctionCardId === card.id}
+                      className="flex-1 flex items-center justify-center gap-1.5 py-3 text-sm font-medium text-indigo-600 hover:bg-indigo-50 transition-colors border-r border-zinc-100 disabled:opacity-50"
+                    >
+                      {isLoadingCorrection && correctionCardId === card.id ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <Sparkles className="w-4 h-4" />
+                      )}
+                      AI補正
+                    </button>
                     <Link
                       href={`/compose/editor?text=${encodeURIComponent(card.text)}`}
                       className="flex-1 flex items-center justify-center gap-1.5 py-3 text-sm font-medium text-emerald-600 hover:bg-emerald-50 transition-colors border-r border-zinc-100"
@@ -1828,7 +1908,7 @@ export default function GeneratePage() {
                     <button
                       onClick={() => handleSchedule(card.id, card.text)}
                       disabled={schedulingId === card.id}
-                      className="flex-1 flex items-center justify-center gap-1.5 py-3 text-sm font-medium text-violet-600 hover:bg-violet-50 transition-colors border-r border-zinc-100 disabled:opacity-50"
+                      className="flex-1 flex items-center justify-center gap-1.5 py-3 text-sm font-medium text-violet-600 hover:bg-violet-50 transition-colors disabled:opacity-50"
                     >
                       {schedulingId === card.id ? (
                         <Loader2 className="w-4 h-4 animate-spin" />
@@ -1836,13 +1916,6 @@ export default function GeneratePage() {
                         <Calendar className="w-4 h-4" />
                       )}
                       予約
-                    </button>
-                    <button
-                      onClick={() => handlePost(card.text)}
-                      className="flex-1 flex items-center justify-center gap-1.5 py-3 text-sm font-medium text-zinc-900 hover:bg-zinc-100 transition-colors"
-                    >
-                      <ExternalLink className="w-4 h-4" />
-                      投稿
                     </button>
                   </div>
                 )}
@@ -2019,6 +2092,130 @@ export default function GeneratePage() {
                 予約する
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* AI補正 Modal */}
+      {showCorrectionModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div
+            className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+            onClick={() => {
+              if (!isLoadingCorrection) {
+                setShowCorrectionModal(false);
+                setCorrectionCardId(null);
+                setCorrectionPatterns([]);
+              }
+            }}
+          />
+          <div className="relative w-full max-w-4xl bg-white rounded-2xl shadow-xl mx-4 overflow-hidden max-h-[90vh] flex flex-col">
+            {/* Header */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-200">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-indigo-100 rounded-lg">
+                  <Sparkles className="w-5 h-5 text-indigo-600" />
+                </div>
+                <div>
+                  <div className="font-semibold text-zinc-900">AI補正</div>
+                  <div className="text-sm text-zinc-500">構造を維持しつつ一貫性と有益さを高める</div>
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  if (!isLoadingCorrection) {
+                    setShowCorrectionModal(false);
+                    setCorrectionCardId(null);
+                    setCorrectionPatterns([]);
+                  }
+                }}
+                className="p-2 rounded-lg hover:bg-zinc-100"
+                disabled={isLoadingCorrection}
+              >
+                <XIcon className="w-5 h-5 text-zinc-500" />
+              </button>
+            </div>
+
+            {/* Content */}
+            <div className="flex-1 overflow-y-auto p-6">
+              {isLoadingCorrection ? (
+                <div className="flex flex-col items-center justify-center py-12">
+                  <div className="relative w-16 h-16 mb-4">
+                    <div className="absolute inset-0 border-4 border-indigo-200 rounded-full"></div>
+                    <div className="absolute inset-0 border-4 border-indigo-500 rounded-full border-t-transparent animate-spin"></div>
+                  </div>
+                  <p className="text-lg font-medium text-zinc-900 mb-2">AI補正パターンを生成中...</p>
+                  <p className="text-sm text-zinc-500">構造を分析して3つのパターンを作成しています</p>
+                </div>
+              ) : correctionPatterns.length > 0 ? (
+                <div className="space-y-4">
+                  {/* Original Text */}
+                  <div className="mb-6">
+                    <h4 className="text-sm font-medium text-zinc-500 mb-2">元の投稿</h4>
+                    <div className="p-4 bg-zinc-50 rounded-lg border border-zinc-200">
+                      <p className="text-sm text-zinc-600 whitespace-pre-wrap">{correctionCardText}</p>
+                    </div>
+                  </div>
+
+                  {/* Correction Patterns */}
+                  <h4 className="text-sm font-medium text-zinc-900 mb-3">補正パターンを選択</h4>
+                  <div className="grid gap-4">
+                    {correctionPatterns.map((pattern, index) => (
+                      <div
+                        key={index}
+                        className="p-4 bg-white rounded-xl border-2 border-zinc-200 hover:border-indigo-300 transition-colors"
+                      >
+                        <div className="flex items-center justify-between mb-3">
+                          <div className="flex items-center gap-2">
+                            <span className={`px-2.5 py-1 text-xs font-semibold rounded-full ${
+                              index === 0
+                                ? "bg-blue-100 text-blue-700"
+                                : index === 1
+                                  ? "bg-emerald-100 text-emerald-700"
+                                  : "bg-amber-100 text-amber-700"
+                            }`}>
+                              {pattern.type}
+                            </span>
+                            {!pattern.structureValid && pattern.warning && (
+                              <span className="px-2 py-0.5 text-xs bg-red-100 text-red-600 rounded">
+                                ⚠ {pattern.warning}
+                              </span>
+                            )}
+                          </div>
+                          <button
+                            onClick={() => handleApplyCorrection(index)}
+                            className="px-4 py-1.5 bg-indigo-500 text-white text-sm font-medium rounded-lg hover:bg-indigo-600 transition-colors"
+                          >
+                            この補正を適用
+                          </button>
+                        </div>
+                        <p className="text-sm text-zinc-700 whitespace-pre-wrap leading-relaxed mb-2">
+                          {pattern.text}
+                        </p>
+                        {pattern.changes && (
+                          <p className="text-xs text-zinc-500 mt-2 pt-2 border-t border-zinc-100">
+                            📝 {pattern.changes}
+                          </p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <div className="text-center py-12 text-zinc-500">
+                  補正パターンを読み込んでいます...
+                </div>
+              )}
+            </div>
+
+            {/* Footer */}
+            {!isLoadingCorrection && correctionPatterns.length > 0 && (
+              <div className="px-6 py-4 border-t border-zinc-200 bg-zinc-50">
+                <p className="text-xs text-zinc-500 text-center">
+                  💡 各パターンは構造（行数、改行、箇条書き、絵文字）を維持しつつ、中身を補正しています
+                </p>
+              </div>
+            )}
           </div>
         </div>
       )}
