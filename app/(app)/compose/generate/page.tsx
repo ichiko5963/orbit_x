@@ -248,10 +248,13 @@ export default function GeneratePage() {
     }
   }, [content, previousContent]);
 
-  // Generate search queries when autoEnrich is turned ON
+  // Generate search queries when autoEnrich is turned ON (requires category selection first)
   useEffect(() => {
     const generateSearchQueries = async () => {
+      // AIおまかせモード以外はカテゴリー選択必須
+      const categoryRequired = postSource !== "aiAuto";
       if (!autoEnrich || !content.trim() || queriesGenerated) return;
+      if (categoryRequired && !selectedCategory) return;
 
       setIsLoadingQueries(true);
       setSearchQueries([]);
@@ -264,6 +267,8 @@ export default function GeneratePage() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             content,
+            postCategory: selectedCategory || undefined, // カテゴリーをAPIに渡す
+            postSource, // ソースモードも渡す
             today: new Date().toISOString().split("T")[0], // 2026-01-25形式
           }),
         });
@@ -286,7 +291,7 @@ export default function GeneratePage() {
     };
 
     generateSearchQueries();
-  }, [autoEnrich, content, queriesGenerated]);
+  }, [autoEnrich, content, queriesGenerated, selectedCategory, postSource]);
 
   // Reset queries when autoEnrich is turned OFF or content changes significantly
   useEffect(() => {
@@ -304,6 +309,19 @@ export default function GeneratePage() {
       setResearchComplete(false);
     }
   }, [content, previousContent]);
+
+  // Reset queries when category changes (to regenerate with new category context)
+  const [previousCategory, setPreviousCategory] = useState("");
+  useEffect(() => {
+    if (autoEnrich && selectedCategory && previousCategory && selectedCategory !== previousCategory) {
+      // カテゴリーが変更された場合、クエリを再生成
+      setQueriesGenerated(false);
+      setSearchQueries([]);
+      setDeepResearch(null);
+      setResearchComplete(false);
+    }
+    setPreviousCategory(selectedCategory);
+  }, [selectedCategory, autoEnrich, previousCategory]);
 
   // Save cards to sessionStorage whenever they change
   useEffect(() => {
@@ -1461,14 +1479,24 @@ export default function GeneratePage() {
                 <p className="text-sm text-zinc-500">
                   {autoEnrich
                     ? "最新情報をリサーチして投稿に反映します"
-                    : "ONにするとAIが最新情報をリサーチします"}
+                    : postSource !== "aiAuto" && !selectedCategory
+                      ? "先にカテゴリーを選択してください"
+                      : "ONにするとAIが最新情報をリサーチします"}
                 </p>
               </div>
             </div>
             <button
-              onClick={() => setAutoEnrich(!autoEnrich)}
+              onClick={() => {
+                // AIおまかせモード以外はカテゴリー選択必須
+                if (!autoEnrich && postSource !== "aiAuto" && !selectedCategory) {
+                  alert("先にカテゴリーを選択してください");
+                  return;
+                }
+                setAutoEnrich(!autoEnrich);
+              }}
+              disabled={!autoEnrich && postSource !== "aiAuto" && !selectedCategory}
               className={`relative w-12 h-6 rounded-full transition-colors ${
-                autoEnrich ? "bg-blue-500" : "bg-zinc-300"
+                autoEnrich ? "bg-blue-500" : !autoEnrich && postSource !== "aiAuto" && !selectedCategory ? "bg-zinc-200 cursor-not-allowed" : "bg-zinc-300"
               }`}
             >
               <span
