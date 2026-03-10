@@ -41,6 +41,9 @@ export interface XTweetData {
     type: "retweeted" | "quoted" | "replied_to";
     id: string;
   }>;
+  note_tweet?: {
+    text: string;
+  };
 }
 
 export interface XUser {
@@ -83,7 +86,7 @@ function getBearerToken(): string {
   return token;
 }
 
-const TWEET_FIELDS = "created_at,public_metrics,author_id,attachments,referenced_tweets";
+const TWEET_FIELDS = "created_at,public_metrics,author_id,attachments,referenced_tweets,note_tweet";
 const USER_FIELDS = "name,username,profile_image_url";
 const MEDIA_FIELDS = "url,preview_image_url,type,variants";
 const EXPANSIONS = "author_id,attachments.media_keys";
@@ -114,9 +117,12 @@ function buildTweetWithMedia(
     ?.sort((a, b) => (b.bit_rate || 0) - (a.bit_rate || 0))
     ?.[0]?.url;
 
+  // Use note_tweet.text for full text of long tweets (>280 chars)
+  const fullText = tweet.note_tweet?.text || tweet.text;
+
   return {
     id: tweet.id,
-    text: tweet.text,
+    text: fullText,
     created_at: tweet.created_at,
     author_id: tweet.author_id,
     author_name: author?.name || "Unknown",

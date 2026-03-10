@@ -27,6 +27,8 @@ import {
   ArrowUpDown,
   Play,
   Pencil,
+  ShieldCheck,
+  Wand2,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 import { useDailyX } from "@/lib/daily-x-context";
@@ -948,6 +950,7 @@ function PostCard({ post, expanded, onToggleExpand, onPostToX, onSaveDraft, onCo
 }) {
   const [isEditing, setIsEditing] = useState(false);
   const [editText, setEditText] = useState(post.finalPostText);
+  const [aiLoading, setAiLoading] = useState<string | null>(null);
 
   const sourceBadge = {
     keyword: { label: "キーワード", color: "bg-blue-100 text-blue-700" },
@@ -993,15 +996,7 @@ function PostCard({ post, expanded, onToggleExpand, onPostToX, onSaveDraft, onCo
             </div>
           </div>
         ) : (
-          <div className="relative group">
-            <div className="text-sm whitespace-pre-wrap leading-relaxed">{editText}</div>
-            {post.status === "pending" && (
-              <button onClick={() => setIsEditing(true)}
-                className="absolute top-0 right-0 p-1 rounded text-zinc-300 hover:text-zinc-600 opacity-0 group-hover:opacity-100 transition-opacity">
-                <Pencil size={14} />
-              </button>
-            )}
-          </div>
+          <div className="text-sm whitespace-pre-wrap leading-relaxed">{editText}</div>
         )}
         {post.mediaImageUrls.length > 0 && !post.originalTweet.hasVideo && (
           <div className="mt-3 flex gap-2 overflow-x-auto">
@@ -1014,38 +1009,82 @@ function PostCard({ post, expanded, onToggleExpand, onPostToX, onSaveDraft, onCo
           </div>
         )}
       </div>
-      <div className="flex items-center gap-2 px-4 py-3 border-t border-zinc-200">
-        {post.status === "pending" && (
-          <>
-            <button onClick={() => onPostToX(editText !== post.finalPostText ? editText : undefined)} disabled={!!actionLoading}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium disabled:opacity-50 transition-colors">
-              {actionLoading === "posting" ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
-              Xに投稿
+      {/* Action buttons */}
+      <div className="px-4 py-3 border-t border-zinc-200 space-y-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          {post.status === "pending" && (
+            <>
+              <button onClick={() => onPostToX(editText !== post.finalPostText ? editText : undefined)} disabled={!!actionLoading || !!aiLoading}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium disabled:opacity-50 transition-colors">
+                {actionLoading === "posting" ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
+                Xに投稿
+              </button>
+              <button onClick={onSaveDraft} disabled={!!actionLoading || !!aiLoading}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-zinc-100 hover:bg-zinc-200 text-zinc-700 text-sm font-medium disabled:opacity-50 transition-colors">
+                {actionLoading === "drafting" ? <Loader2 size={14} className="animate-spin" /> : <BookmarkPlus size={14} />}
+                下書き
+              </button>
+              <button onClick={() => setIsEditing(true)} disabled={isEditing}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-zinc-100 hover:bg-zinc-200 text-zinc-700 text-sm font-medium disabled:opacity-50 transition-colors">
+                <Pencil size={14} />編集
+              </button>
+            </>
+          )}
+          {post.status === "posted" && (
+            <span className="flex items-center gap-1 text-sm text-green-600">
+              <Check size={14} /> 投稿済み
+              {post.tweetId && <a href={`https://x.com/i/status/${post.tweetId}`} target="_blank" rel="noopener noreferrer" className="ml-1 text-blue-400 hover:underline"><ExternalLink size={12} /></a>}
+            </span>
+          )}
+          {post.status === "drafted" && <span className="flex items-center gap-1 text-sm text-yellow-600"><BookmarkPlus size={14} /> 下書き保存済み</span>}
+          <div className="ml-auto flex items-center gap-2">
+            <button onClick={() => onCopy(editText)}
+              className="flex items-center gap-1 px-2 py-1 rounded text-xs text-zinc-500 hover:text-zinc-900">
+              {copied ? <Check size={12} /> : <Copy size={12} />}{copied ? "コピー済" : "コピー"}
             </button>
-            <button onClick={onSaveDraft} disabled={!!actionLoading}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-zinc-100 hover:bg-zinc-200 text-zinc-700 text-sm font-medium disabled:opacity-50 transition-colors">
-              {actionLoading === "drafting" ? <Loader2 size={14} className="animate-spin" /> : <BookmarkPlus size={14} />}
-              下書き
+            <button onClick={onToggleExpand}
+              className="flex items-center gap-1 px-2 py-1 rounded text-xs text-zinc-500 hover:text-zinc-900">
+              {expanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}元ポスト
             </button>
-          </>
-        )}
-        {post.status === "posted" && (
-          <span className="flex items-center gap-1 text-sm text-green-600">
-            <Check size={14} /> 投稿済み
-            {post.tweetId && <a href={`https://x.com/i/status/${post.tweetId}`} target="_blank" rel="noopener noreferrer" className="ml-1 text-blue-400 hover:underline"><ExternalLink size={12} /></a>}
-          </span>
-        )}
-        {post.status === "drafted" && <span className="flex items-center gap-1 text-sm text-yellow-600"><BookmarkPlus size={14} /> 下書き保存済み</span>}
-        <div className="ml-auto flex items-center gap-2">
-          <button onClick={() => onCopy(editText)}
-            className="flex items-center gap-1 px-2 py-1 rounded text-xs text-zinc-500 hover:text-zinc-900">
-            {copied ? <Check size={12} /> : <Copy size={12} />}{copied ? "コピー済" : "コピー"}
-          </button>
-          <button onClick={onToggleExpand}
-            className="flex items-center gap-1 px-2 py-1 rounded text-xs text-zinc-500 hover:text-zinc-900">
-            {expanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}元ポスト
-          </button>
+          </div>
         </div>
+        {/* AI Enhancement buttons */}
+        {post.status === "pending" && (
+          <div className="flex items-center gap-2 flex-wrap">
+            <button onClick={async () => {
+              setAiLoading("hallucination");
+              try {
+                const res = await fetch("/api/daily-x/ai-enhance", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ text: editText, originalTweet: post.originalTweet.text, mode: "hallucination-check" }),
+                });
+                const data = await res.json();
+                if (data.success) setEditText(data.text);
+              } catch { /* skip */ } finally { setAiLoading(null); }
+            }} disabled={!!aiLoading}
+              className="flex items-center gap-1 px-2.5 py-1 rounded-lg border border-emerald-200 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 text-xs font-medium disabled:opacity-50 transition-colors">
+              {aiLoading === "hallucination" ? <Loader2 size={12} className="animate-spin" /> : <ShieldCheck size={12} />}
+              ハルシネーションチェック
+            </button>
+            <button onClick={async () => {
+              setAiLoading("enhance");
+              try {
+                const res = await fetch("/api/daily-x/ai-enhance", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ text: editText, originalTweet: post.originalTweet.text, mode: "enhance" }),
+                });
+                const data = await res.json();
+                if (data.success) setEditText(data.text);
+              } catch { /* skip */ } finally { setAiLoading(null); }
+            }} disabled={!!aiLoading}
+              className="flex items-center gap-1 px-2.5 py-1 rounded-lg border border-purple-200 bg-purple-50 hover:bg-purple-100 text-purple-700 text-xs font-medium disabled:opacity-50 transition-colors">
+              {aiLoading === "enhance" ? <Loader2 size={12} className="animate-spin" /> : <Wand2 size={12} />}
+              AI強化（情報量UP）
+            </button>
+          </div>
+        )}
       </div>
       {expanded && (
         <div className="px-4 py-3 bg-zinc-50 border-t border-zinc-200">
