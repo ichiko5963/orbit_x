@@ -858,7 +858,7 @@ function SearchTweetCard({ tweet, onCopy, copied, onGenerate, isGenerating }: {
         )}
 
         {/* Translation */}
-        {tweet.translatedText && (
+        {tweet.translatedText && tweet.translatedText !== tweet.text && (
           <div className="mb-2 px-2 py-1.5 bg-blue-50 border border-blue-100 rounded-lg">
             <p className="text-[10px] text-blue-500 mb-0.5 font-medium">日本語訳</p>
             <p className="text-xs text-blue-900 whitespace-pre-wrap leading-relaxed">{tweet.translatedText}</p>

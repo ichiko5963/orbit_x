@@ -1,11 +1,37 @@
 import { NextRequest, NextResponse } from "next/server";
 import { initAdmin, getAdminFirestore } from "@/lib/firebase-admin";
+import { translateToJapanese } from "@/lib/daily-x";
 
 initAdmin();
 
 /**
+ * Check if text needs (re-)translation to Japanese
+ * Returns true if the text is non-Japanese and either has no translation or translation is same as original
+ */
+function needsTranslation(tweet: { text: string; translatedText?: string | null }): boolean {
+  // Check for Japanese-specific characters (hiragana + katakana only)
+  const jpChars = (tweet.text.match(/[\u3040-\u309f\u30a0-\u30ff]/g) || []).length;
+  const isJapanese = jpChars / tweet.text.length > 0.1;
+  if (isJapanese) return false;
+
+  // No translation yet
+  if (!tweet.translatedText) return true;
+
+  // Translation is same as original (bad translation from old code)
+  if (tweet.translatedText === tweet.text) return true;
+
+  // Translation still contains mostly non-Japanese characters (e.g. Chinese was "translated" but stayed Chinese)
+  const translatedJpChars = (tweet.translatedText.match(/[\u3040-\u309f\u30a0-\u30ff]/g) || []).length;
+  const originalHasCJK = (tweet.text.match(/[\u4e00-\u9fff]/g) || []).length > 3;
+  if (originalHasCJK && translatedJpChars / tweet.translatedText.length < 0.05) return true;
+
+  return false;
+}
+
+/**
  * GET /api/daily-x/search-cache?userId=xxx&date=yyyy-mm-dd
  * Load cached search results from Firestore
+ * Auto-retranslates tweets that have missing or bad translations
  */
 export async function GET(request: NextRequest) {
   try {
@@ -22,12 +48,12 @@ export async function GET(request: NextRequest) {
     }
 
     const db = getAdminFirestore();
-    const doc = await db
+    const docRef = db
       .collection("users")
       .doc(userId)
       .collection("searchCache")
-      .doc(date)
-      .get();
+      .doc(date);
+    const doc = await docRef.get();
 
     if (!doc.exists) {
       return NextResponse.json({
@@ -39,9 +65,42 @@ export async function GET(request: NextRequest) {
     }
 
     const data = doc.data()!;
+    let tweets = data.tweets || [];
+
+    // Re-translate tweets with missing or bad translations (e.g. Chinese not translated)
+    const tweetsToFix = tweets.filter((t: any) => needsTranslation(t));
+    if (tweetsToFix.length > 0) {
+      console.log(`[SearchCache] Re-translating ${tweetsToFix.length} tweets with missing/bad translations`);
+      const translations = await Promise.all(
+        tweetsToFix.map(async (t: any) => {
+          try {
+            const result = await translateToJapanese(t.text);
+            return { id: t.id, translatedText: result !== t.text ? result : null };
+          } catch {
+            return { id: t.id, translatedText: null };
+          }
+        })
+      );
+
+      // Apply translations
+      const translationMap = new Map(translations.map((t) => [t.id, t.translatedText]));
+      tweets = tweets.map((t: any) => {
+        const newTranslation = translationMap.get(t.id);
+        if (newTranslation !== undefined) {
+          return { ...t, translatedText: newTranslation };
+        }
+        return t;
+      });
+
+      // Update cache in background (don't await)
+      docRef.update({ tweets }).catch((e: any) =>
+        console.error("[SearchCache] Failed to update translations:", e)
+      );
+    }
+
     return NextResponse.json({
       success: true,
-      tweets: data.tweets || [],
+      tweets,
       completedKeywords: data.completedKeywords || [],
       updatedAt: data.updatedAt,
       date,
