@@ -26,43 +26,29 @@ export async function POST(request: NextRequest) {
     const db = getAdminFirestore();
 
     // Load reference posts from user's context (contextPosts collection)
+    // Fetch all and filter in-memory to avoid needing composite index
     const contextSnap = await db
       .collection("users")
       .doc(userId)
       .collection("contextPosts")
-      .where("category", "==", category)
-      .orderBy("tier", "asc")
-      .limit(30)
+      .limit(100)
       .get();
 
-    let referencePosts: { text: string; tier: string; likes: number }[] = [];
+    let referencePosts: { text: string; tier: string; likes: number; category: string }[] = [];
     contextSnap.forEach((doc) => {
       const d = doc.data();
       referencePosts.push({
         text: d.text || d.content || "",
         tier: d.tier || "B",
         likes: d.likes || 0,
+        category: d.category || "",
       });
     });
 
-    // If no category-specific posts, try loading all posts
-    if (referencePosts.length === 0) {
-      const allSnap = await db
-        .collection("users")
-        .doc(userId)
-        .collection("contextPosts")
-        .orderBy("tier", "asc")
-        .limit(30)
-        .get();
-
-      allSnap.forEach((doc) => {
-        const d = doc.data();
-        referencePosts.push({
-          text: d.text || d.content || "",
-          tier: d.tier || "B",
-          likes: d.likes || 0,
-        });
-      });
+    // Filter by category first, fall back to all if none match
+    const categoryPosts = referencePosts.filter((p) => p.category === category);
+    if (categoryPosts.length > 0) {
+      referencePosts = categoryPosts;
     }
 
     // Sort by tier priority (S > A > B > C) then by likes

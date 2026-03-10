@@ -30,7 +30,6 @@ import {
 } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 import { useDailyX } from "@/lib/daily-x-context";
-import { DEFAULT_CATEGORIES, CategoryConfig } from "@/lib/categories";
 
 // ==============================
 // Types
@@ -153,10 +152,6 @@ export default function DailyXPage() {
     type: "success" | "error"; message: string;
   } | null>(null);
 
-  // Category generation modal
-  const [categoryModalTweet, setCategoryModalTweet] = useState<SearchTweet | null>(null);
-  const [selectedCategory, setSelectedCategory] = useState<string>("");
-  const [categoryGenerating, setCategoryGenerating] = useState(false);
 
   // ==============================
   // Load cached data on mount
@@ -381,65 +376,6 @@ export default function DailyXPage() {
       setResultBanner({ type: "error", message: "生成に失敗しました" });
     } finally {
       setGeneratingTweetId(null);
-    }
-  };
-
-  const handleGenerateWithCategory = async () => {
-    if (!user || !categoryModalTweet || !selectedCategory) return;
-    setCategoryGenerating(true);
-    setGenerateProgress({
-      isActive: true,
-      tweetAuthor: categoryModalTweet.authorUsername,
-      status: "generating",
-      message: `${selectedCategory}で6パターン生成中...`,
-    });
-    try {
-      const res = await fetch("/api/daily-x/generate-with-category", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          userId: user.uid,
-          tweet: categoryModalTweet,
-          category: selectedCategory,
-        }),
-      });
-      const data = await res.json();
-      if (data.success && data.posts) {
-        setPosts((prev) => [...data.posts, ...prev]);
-        setGenerateProgress({
-          isActive: false,
-          tweetAuthor: categoryModalTweet.authorUsername,
-          status: "done",
-          message: `${data.count}パターン生成完了`,
-        });
-        setResultBanner({
-          type: "success",
-          message: `@${categoryModalTweet.authorUsername} から${data.count}パターン生成しました`,
-        });
-        setCategoryModalTweet(null);
-        setSelectedCategory("");
-        setTimeout(() => {
-          setGenerateProgress({ isActive: false, tweetAuthor: "", status: "done", message: "" });
-        }, 5000);
-      } else {
-        setGenerateProgress({
-          isActive: false,
-          tweetAuthor: categoryModalTweet.authorUsername,
-          status: "error",
-          message: `生成失敗: ${data.error}`,
-        });
-        setResultBanner({ type: "error", message: `生成失敗: ${data.error}` });
-      }
-    } catch {
-      setGenerateProgress({
-        isActive: false,
-        tweetAuthor: categoryModalTweet?.authorUsername || "",
-        status: "error",
-        message: "生成に失敗しました",
-      });
-      setResultBanner({ type: "error", message: "生成に失敗しました" });
-    } finally {
-      setCategoryGenerating(false);
     }
   };
 
@@ -877,7 +813,6 @@ export default function DailyXPage() {
                   onCopy={(t) => handleCopy(t, tweet.id)}
                   copied={copiedId === tweet.id}
                   onInstantGenerate={() => handleGenerateFromTweet(tweet)}
-                  onCategoryGenerate={() => setCategoryModalTweet(tweet)}
                   isGenerating={generatingTweetId === tweet.id} />
               ))}
             </div>
@@ -885,48 +820,6 @@ export default function DailyXPage() {
         )}
       </div>
 
-      {/* Category Generation Modal */}
-      {categoryModalTweet && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => !categoryGenerating && setCategoryModalTweet(null)}>
-          <div className="bg-white rounded-2xl max-w-md w-full p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
-            <h3 className="text-lg font-bold mb-1">AI生成（6パターン）</h3>
-            <p className="text-sm text-zinc-500 mb-4">
-              @{categoryModalTweet.authorUsername} の投稿を元に、カテゴリーに合わせて6パターン生成します
-            </p>
-            <p className="text-xs text-zinc-700 bg-zinc-50 rounded-lg p-2 mb-4 line-clamp-3">
-              {categoryModalTweet.translatedText || categoryModalTweet.text}
-            </p>
-            <label className="block text-sm font-medium text-zinc-700 mb-2">カテゴリーを選択</label>
-            <div className="flex flex-wrap gap-2 mb-5">
-              {DEFAULT_CATEGORIES.map((cat) => (
-                <button key={cat.name}
-                  onClick={() => setSelectedCategory(cat.name)}
-                  className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${
-                    selectedCategory === cat.name
-                      ? "text-white border-transparent"
-                      : "text-zinc-600 border-zinc-200 hover:border-zinc-400"
-                  }`}
-                  style={selectedCategory === cat.name ? { backgroundColor: cat.color } : {}}
-                >
-                  {cat.name}
-                </button>
-              ))}
-            </div>
-            <div className="flex gap-2">
-              <button onClick={() => { setCategoryModalTweet(null); setSelectedCategory(""); }}
-                disabled={categoryGenerating}
-                className="flex-1 px-4 py-2 rounded-lg border border-zinc-300 text-sm text-zinc-600 hover:bg-zinc-50 disabled:opacity-50">
-                キャンセル
-              </button>
-              <button onClick={handleGenerateWithCategory}
-                disabled={!selectedCategory || categoryGenerating}
-                className="flex-1 px-4 py-2 rounded-lg bg-purple-600 text-white text-sm font-medium hover:bg-purple-500 disabled:opacity-50 flex items-center justify-center gap-1.5">
-                {categoryGenerating ? <><Loader2 size={14} className="animate-spin" /> 生成中...</> : <><Sparkles size={14} /> 6パターン生成</>}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
@@ -935,9 +828,9 @@ export default function DailyXPage() {
 // Search Tweet Card
 // ==============================
 
-function SearchTweetCard({ tweet, onCopy, copied, onInstantGenerate, onCategoryGenerate, isGenerating }: {
+function SearchTweetCard({ tweet, onCopy, copied, onInstantGenerate, isGenerating }: {
   tweet: SearchTweet; onCopy: (t: string) => void; copied: boolean;
-  onInstantGenerate: () => void; onCategoryGenerate: () => void; isGenerating: boolean;
+  onInstantGenerate: () => void; isGenerating: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
   const isLong = tweet.text.length > 140;
@@ -1027,10 +920,10 @@ function SearchTweetCard({ tweet, onCopy, copied, onInstantGenerate, onCategoryG
             {isGenerating ? <Loader2 size={10} className="animate-spin" /> : <Sparkles size={10} />}
             {isGenerating ? "生成中" : "瞬時に生成"}
           </button>
-          <button onClick={onCategoryGenerate} disabled={isGenerating}
-            className="flex items-center gap-1 px-2 py-1 rounded-lg bg-purple-600 hover:bg-purple-500 text-white text-[10px] font-medium disabled:opacity-50 transition-colors">
+          <a href={`/compose/generate?content=${encodeURIComponent(tweet.translatedText || tweet.text)}`}
+            className="flex items-center gap-1 px-2 py-1 rounded-lg bg-purple-600 hover:bg-purple-500 text-white text-[10px] font-medium transition-colors">
             <Sparkles size={10} />AI生成
-          </button>
+          </a>
           <button onClick={() => onCopy(tweet.text)}
             className="p-1 rounded text-zinc-400 hover:text-zinc-700">
             {copied ? <Check size={12} /> : <Copy size={12} />}

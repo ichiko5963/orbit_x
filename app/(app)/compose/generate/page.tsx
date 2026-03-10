@@ -28,6 +28,7 @@ import {
   Search,
   Info,
   ShieldCheck,
+  AlertCircle,
   BookOpen,
   Target,
 } from "lucide-react";
@@ -47,22 +48,10 @@ import {
   AIGenerationHistory,
   getBuzzPrompt,
   BuzzPrompt,
+  getCategories,
+  UserCategory,
 } from "@/lib/firebase";
-
-// Practical X post categories (must match database)
-const CATEGORIES = [
-  "速報・ニュース系",
-  "Tips・ノウハウ系",
-  "記事・コンテンツ紹介系",
-  "ツール・サービス紹介系",
-  "動画・メディア紹介系",
-  "プロンプト・AI活用系",
-  "プロダクト・リリース系",
-  "イベント・登壇系",
-  "プレゼント・キャンペーン系",
-  "採用・メンバー募集系",
-  "日常・つぶやき系",
-];
+import { DEFAULT_CATEGORY_NAMES, getAllCategories, CategoryConfig } from "@/lib/categories";
 
 interface ReferencePost {
   id: string;
@@ -122,9 +111,11 @@ export default function GeneratePage() {
   const [userStyleAnalysis, setUserStyleAnalysis] = useState<any>(null);
   const [isLoadingPosts, setIsLoadingPosts] = useState(true);
 
-  // Category selection
+  // Category selection (カスタムカテゴリー対応)
   const [selectedCategory, setSelectedCategory] = useState<string>("");
   const [availableCategories, setAvailableCategories] = useState<{name: string; count: number}[]>([]);
+  const [customCategories, setCustomCategories] = useState<UserCategory[]>([]);
+  const [allCategoryNames, setAllCategoryNames] = useState<string[]>(DEFAULT_CATEGORY_NAMES);
 
   // 6 cards state
   const [cards, setCards] = useState<GeneratedCard[]>([]);
@@ -420,6 +411,12 @@ export default function GeneratePage() {
         const histories = await getAIGenerationHistory(user.uid);
         setGenerationHistory(histories);
 
+        // Check if content is pre-filled from URL (e.g. from Daily X)
+        const prefillContent = searchParams.get("content");
+        if (prefillContent && !content) {
+          setContent(prefillContent);
+        }
+
         // Check if we need to auto-restore a specific history from URL
         const historyId = searchParams.get("historyId");
         if (historyId) {
@@ -460,18 +457,24 @@ export default function GeneratePage() {
     loadHistory();
   }, [user, searchParams]);
 
-  // Load reference posts from BOTH sources
+  // Load reference posts from BOTH sources + custom categories
   useEffect(() => {
     const loadPosts = async () => {
       if (!user) return;
       setIsLoadingPosts(true);
       try {
-        // Load BOTH - userPosts for reference AND style, contextPosts for reference
-        const [contextPosts, userPosts, styleAnalysis] = await Promise.all([
+        // Load BOTH - userPosts for reference AND style, contextPosts for reference, and custom categories
+        const [contextPosts, userPosts, styleAnalysis, userCategories] = await Promise.all([
           getContextPosts(user.uid),
           getPosts(user.uid),
           getUserStyleAnalysis(user.uid),
+          getCategories(user.uid),
         ]);
+
+        // Store custom categories and compute all category names
+        setCustomCategories(userCategories);
+        const allCats = getAllCategories(userCategories as CategoryConfig[]);
+        setAllCategoryNames(allCats.map(c => c.name));
 
         // Store user style analysis if available
         if (styleAnalysis) {
@@ -479,13 +482,13 @@ export default function GeneratePage() {
         }
 
         // === REFERENCE POSTS FROM 他者バズ投稿 (contextPosts) ===
+        // すべてのティアの投稿を表示（生成時にはS/A優先）
         const ctxRefPosts: ReferencePostExtended[] = contextPosts
-          .filter((p: any) => p.tier === "S" || p.tier === "A")
           .map((p: any) => ({
             id: p.id,
             text: p.text,
             likes: p.likes || 0,
-            tier: p.tier as "S" | "A" | "B" | "C",
+            tier: (p.tier || "S") as "S" | "A" | "B" | "C",
             category: p.category || "日常・つぶやき系",
             source: "othersPosts" as const,
           }))
@@ -493,13 +496,13 @@ export default function GeneratePage() {
         setContextReferencePosts(ctxRefPosts);
 
         // === REFERENCE POSTS FROM 過去投稿一覧 (userPosts) ===
+        // すべてのティアの投稿を表示（生成時にはS/A優先）
         const myRefPosts: ReferencePostExtended[] = userPosts
-          .filter((p: any) => p.tier === "S" || p.tier === "A")
           .map((p: any) => ({
             id: p.id,
             text: p.text,
             likes: p.likes || 0,
-            tier: p.tier as "S" | "A" | "B" | "C",
+            tier: (p.tier || "C") as "S" | "A" | "B" | "C",
             category: p.category || "日常・つぶやき系",
             source: "myPosts" as const,
           }))
@@ -543,7 +546,7 @@ export default function GeneratePage() {
     loadPosts();
   }, [user]);
 
-  // Update category counts when source changes
+  // Update category counts when source changes (カスタムカテゴリー対応)
   useEffect(() => {
     // AIおまかせモードではカテゴリー選択不要
     if (postSource === "aiAuto") {
@@ -555,24 +558,27 @@ export default function GeneratePage() {
     const refPosts = postSource === "myPosts" ? myReferencePosts : contextReferencePosts;
 
     const categoryCounts: Record<string, number> = {};
-    CATEGORIES.forEach(cat => {
+    // デフォルト + カスタムカテゴリー全てを含める
+    allCategoryNames.forEach(cat => {
       categoryCounts[cat] = 0;
     });
     refPosts.forEach(p => {
       if (categoryCounts[p.category] !== undefined) {
         categoryCounts[p.category] = (categoryCounts[p.category] || 0) + 1;
+      } else {
+        // 未知のカテゴリーも含める
+        categoryCounts[p.category] = 1;
       }
     });
 
-    const cats = CATEGORIES.map(name => ({
-      name,
-      count: categoryCounts[name] || 0,
-    })).sort((a, b) => b.count - a.count);
+    const cats = Object.entries(categoryCounts)
+      .map(([name, count]) => ({ name, count }))
+      .sort((a, b) => b.count - a.count);
     setAvailableCategories(cats);
 
     // Reset selected category when source changes
     setSelectedCategory("");
-  }, [postSource, myReferencePosts, contextReferencePosts]);
+  }, [postSource, myReferencePosts, contextReferencePosts, allCategoryNames]);
 
   // Get active reference posts based on source selection
   const activeReferencePosts = postSource === "myPosts"
@@ -582,7 +588,7 @@ export default function GeneratePage() {
       : allReferencePosts;
 
   // Get filtered reference posts for selected category
-  // Sティアが6件以上ある場合はランダムに6件選択
+  // Sティア優先、足りなければA→B→Cの順で補充
   const getFilteredReferencePosts = () => {
     if (postSource === "aiAuto") return []; // AIおまかせは別処理
     if (!selectedCategory) return [];
@@ -590,38 +596,43 @@ export default function GeneratePage() {
     const categoryPosts = activeReferencePosts.filter(p => p.category === selectedCategory);
     const sTierPosts = categoryPosts.filter(p => p.tier === "S");
     const aTierPosts = categoryPosts.filter(p => p.tier === "A");
+    const bTierPosts = categoryPosts.filter(p => p.tier === "B");
+    const cTierPosts = categoryPosts.filter(p => p.tier === "C");
+
+    // Fisher-Yates shuffle helper
+    const shuffle = <T,>(arr: T[]): T[] => {
+      const result = [...arr];
+      for (let i = result.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [result[i], result[j]] = [result[j], result[i]];
+      }
+      return result;
+    };
 
     // Sティアが6件以上ある場合はランダムに6件選択
     if (sTierPosts.length >= 6) {
-      // Fisher-Yates shuffle
-      const shuffled = [...sTierPosts];
-      for (let i = shuffled.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
-      }
-      return shuffled.slice(0, 6);
+      return shuffle(sTierPosts).slice(0, 6);
     }
 
-    // Sティアが6件未満の場合はSティア全て + Aティアで6件になるまで
-    const result = [...sTierPosts];
-    const remainingSlots = 6 - result.length;
-    if (remainingSlots > 0 && aTierPosts.length > 0) {
-      // Aティアもランダムに選択
-      const shuffledA = [...aTierPosts];
-      for (let i = shuffledA.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [shuffledA[i], shuffledA[j]] = [shuffledA[j], shuffledA[i]];
-      }
-      result.push(...shuffledA.slice(0, remainingSlots));
+    // S→A→B→Cの順で6件になるまで補充
+    const result = shuffle(sTierPosts);
+    const tiers = [aTierPosts, bTierPosts, cTierPosts];
+
+    for (const tierPosts of tiers) {
+      if (result.length >= 6) break;
+      const remaining = 6 - result.length;
+      result.push(...shuffle(tierPosts).slice(0, remaining));
     }
 
     return result;
   };
 
-  // ランダムに6件選択するヘルパー関数（Sティア優先）
+  // ランダムに6件選択するヘルパー関数（S→A→B→Cの順で優先）
   const selectRandomPosts = (posts: ReferencePostExtended[], count: number = 6): ReferencePostExtended[] => {
     const sTierPosts = posts.filter(p => p.tier === "S");
     const aTierPosts = posts.filter(p => p.tier === "A");
+    const bTierPosts = posts.filter(p => p.tier === "B");
+    const cTierPosts = posts.filter(p => p.tier === "C");
 
     // Fisher-Yates shuffle helper
     const shuffle = <T,>(arr: T[]): T[] => {
@@ -638,11 +649,14 @@ export default function GeneratePage() {
       return shuffle(sTierPosts).slice(0, count);
     }
 
-    // Sティア全て + Aティアからランダムに補充
+    // S→A→B→Cの順で補充
     const result = shuffle(sTierPosts);
-    const remaining = count - result.length;
-    if (remaining > 0 && aTierPosts.length > 0) {
-      result.push(...shuffle(aTierPosts).slice(0, remaining));
+    const tiers = [aTierPosts, bTierPosts, cTierPosts];
+
+    for (const tierPosts of tiers) {
+      if (result.length >= count) break;
+      const remaining = count - result.length;
+      result.push(...shuffle(tierPosts).slice(0, remaining));
     }
 
     return result;
@@ -1689,6 +1703,43 @@ export default function GeneratePage() {
                       <span className={searchProgress >= 92 ? "text-blue-600" : ""}>テーマ生成</span>
                     </div>
                   </div>
+                </div>
+              )}
+
+              {/* 投稿内容またはカテゴリーが必要な場合のメッセージ */}
+              {!isLoadingQueries && searchQueries.length === 0 && !researchComplete && (
+                <div className="py-4">
+                  {!content.trim() ? (
+                    <div className="flex items-center gap-3 p-4 bg-amber-50 border border-amber-200 rounded-xl">
+                      <div className="w-10 h-10 rounded-lg bg-amber-100 flex items-center justify-center flex-shrink-0">
+                        <AlertCircle className="w-5 h-5 text-amber-600" />
+                      </div>
+                      <div>
+                        <p className="font-medium text-amber-800">投稿内容を入力してください</p>
+                        <p className="text-sm text-amber-600">投稿したい内容を入力すると、AIが関連する最新情報を検索します</p>
+                      </div>
+                    </div>
+                  ) : postSource !== "aiAuto" && !selectedCategory ? (
+                    <div className="flex items-center gap-3 p-4 bg-amber-50 border border-amber-200 rounded-xl">
+                      <div className="w-10 h-10 rounded-lg bg-amber-100 flex items-center justify-center flex-shrink-0">
+                        <AlertCircle className="w-5 h-5 text-amber-600" />
+                      </div>
+                      <div>
+                        <p className="font-medium text-amber-800">カテゴリーを選択してください</p>
+                        <p className="text-sm text-amber-600">上のカテゴリー一覧から、投稿に近いカテゴリーを選択してください</p>
+                      </div>
+                    </div>
+                  ) : searchProgressMessage && searchProgress === 0 ? (
+                    <div className="flex items-center gap-3 p-4 bg-red-50 border border-red-200 rounded-xl">
+                      <div className="w-10 h-10 rounded-lg bg-red-100 flex items-center justify-center flex-shrink-0">
+                        <AlertCircle className="w-5 h-5 text-red-600" />
+                      </div>
+                      <div>
+                        <p className="font-medium text-red-800">検索に失敗しました</p>
+                        <p className="text-sm text-red-600">{searchProgressMessage}</p>
+                      </div>
+                    </div>
+                  ) : null}
                 </div>
               )}
 
