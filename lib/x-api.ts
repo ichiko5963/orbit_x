@@ -356,7 +356,13 @@ export async function getBookmarksWithMedia(params: {
   });
 
   if (!meResponse.ok) {
-    throw new Error("Failed to get user info");
+    const errBody = await meResponse.text().catch(() => "");
+    if (meResponse.status === 401) {
+      throw new Error("X認証が無効です。設定ページでXと再連携してください。");
+    } else if (meResponse.status === 429) {
+      throw new Error("X APIのレート制限に達しました。しばらく待ってから再試行してください。");
+    }
+    throw new Error(`ユーザー情報の取得に失敗しました (${meResponse.status}): ${errBody.slice(0, 200)}`);
   }
 
   const meData = await meResponse.json();
