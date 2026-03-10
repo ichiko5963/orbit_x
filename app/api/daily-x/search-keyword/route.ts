@@ -27,20 +27,30 @@ export async function POST(request: NextRequest) {
     const keywords: string[] = keywordsArray || [keyword];
     const batches = batchKeywordQueries(keywords);
 
-    const startTime = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    const startTime = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
     let allTweets: any[] = [];
 
-    // Execute batched queries (much fewer API calls)
+    // Execute batched queries with pagination to get more comprehensive results
     for (const batch of batches) {
-      const result = await searchRecentTweets({
-        query: batch.query,
-        maxResults: Math.min(maxResults, 100),
-        sortOrder: "relevancy",
-        startTime,
-      });
+      let batchTweets: Awaited<ReturnType<typeof searchRecentTweets>>["tweets"] = [];
+      let nextToken: string | undefined;
+      // Fetch multiple pages (up to 3) to get more comprehensive results
+      const maxPages = 3;
+      for (let page = 0; page < maxPages; page++) {
+        const result = await searchRecentTweets({
+          query: batch.query,
+          maxResults: 100,
+          sortOrder: "relevancy",
+          startTime,
+          paginationToken: nextToken,
+        });
+        batchTweets.push(...result.tweets);
+        nextToken = result.nextToken;
+        if (!nextToken) break;
+      }
 
       // Filter out short tweets (<20 chars)
-      const filteredTweets = result.tweets.filter((t) => t.text.length >= 20);
+      const filteredTweets = batchTweets.filter((t: any) => t.text.length >= 20);
 
       // Process tweets: translate non-Japanese
       const processed = await Promise.all(

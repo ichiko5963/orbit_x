@@ -254,56 +254,143 @@ Xでバズる投稿の原理
 /**
  * Search the web for additional context about a tweet's topic
  */
+/**
+ * Extract URLs from tweet text (excluding t.co shortened URLs that point to twitter itself)
+ */
+function extractUrls(text: string): string[] {
+  const urlRegex = /https?:\/\/[^\s)]+/g;
+  return (text.match(urlRegex) || []).filter((url) => {
+    // Keep t.co URLs (they redirect to real URLs) and direct URLs
+    return true;
+  });
+}
+
+/**
+ * Fetch and extract text content from a URL
+ */
+async function fetchUrlContent(url: string): Promise<string> {
+  try {
+    // Resolve t.co redirects
+    const response = await fetch(url, {
+      redirect: "follow",
+      headers: {
+        "User-Agent": "Mozilla/5.0 (compatible; OrbitX/1.0)",
+        Accept: "text/html,application/xhtml+xml",
+      },
+      signal: AbortSignal.timeout(10000),
+    });
+
+    if (!response.ok) return "";
+
+    const finalUrl = response.url;
+    // Skip if it redirects to twitter/x.com (profile pages, tweet pages)
+    if (/^https?:\/\/(twitter\.com|x\.com)\//i.test(finalUrl)) return "";
+
+    const html = await response.text();
+    // Extract text from HTML (simple approach: strip tags, decode entities)
+    const text = html
+      .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, "")
+      .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "")
+      .replace(/<nav[^>]*>[\s\S]*?<\/nav>/gi, "")
+      .replace(/<footer[^>]*>[\s\S]*?<\/footer>/gi, "")
+      .replace(/<header[^>]*>[\s\S]*?<\/header>/gi, "")
+      .replace(/<[^>]+>/g, " ")
+      .replace(/&amp;/g, "&")
+      .replace(/&lt;/g, "<")
+      .replace(/&gt;/g, ">")
+      .replace(/&quot;/g, '"')
+      .replace(/&#39;/g, "'")
+      .replace(/&nbsp;/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+
+    // Return first 3000 chars of meaningful content
+    return text.slice(0, 3000);
+  } catch {
+    return "";
+  }
+}
+
 export async function deepResearchTweet(tweetText: string): Promise<string> {
   const serperKey = process.env.SERPER_API_KEY;
-  if (!serperKey) return "";
+  const researchParts: string[] = [];
 
   try {
-    // Extract key terms from the tweet for search
-    const searchQuery = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
-      messages: [
-        {
-          role: "system",
-          content: "ツイートの内容から、Google検索に最適な英語の検索クエリを1つだけ生成してください。技術名・製品名・企業名を優先してください。検索クエリのみを出力してください。",
-        },
-        { role: "user", content: tweetText },
-      ],
-      temperature: 0,
-      max_tokens: 50,
-    });
-    const query = searchQuery.choices[0]?.message?.content?.trim() || "";
-    if (!query) return "";
+    // Phase 1: Extract and fetch URLs from the tweet (primary source)
+    const urls = extractUrls(tweetText);
+    if (urls.length > 0) {
+      console.log(`[DailyX] Fetching ${urls.length} URLs from tweet...`);
+      const urlContents = await Promise.all(
+        urls.slice(0, 5).map(async (url) => {
+          const content = await fetchUrlContent(url);
+          if (content && content.length > 50) {
+            return `[URL: ${url}]\n${content}`;
+          }
+          return "";
+        })
+      );
 
-    // Search with Serper
-    const res = await fetch("https://google.serper.dev/search", {
-      method: "POST",
-      headers: {
-        "X-API-KEY": serperKey,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ q: query, num: 5 }),
-    });
-
-    if (!res.ok) return "";
-    const data = await res.json();
-
-    // Extract snippets from organic results
-    const snippets: string[] = [];
-    if (data.knowledgeGraph) {
-      const kg = data.knowledgeGraph;
-      if (kg.description) snippets.push(`[${kg.title || ""}] ${kg.description}`);
-    }
-    for (const result of (data.organic || []).slice(0, 5)) {
-      if (result.snippet) {
-        snippets.push(`[${result.title}] ${result.snippet}`);
+      const validContents = urlContents.filter((c) => c.length > 0);
+      if (validContents.length > 0) {
+        researchParts.push("=== ツイート内URLの情報 ===");
+        researchParts.push(...validContents);
       }
     }
 
-    return snippets.join("\n");
+    // Phase 2: If URL content is insufficient (< 500 chars total) or no URLs, do web search
+    const urlContentLength = researchParts.join("\n").length;
+    if (urlContentLength < 500 && serperKey) {
+      console.log(`[DailyX] URL content insufficient (${urlContentLength} chars), doing web search...`);
+
+      // Extract key terms from the tweet for search
+      const searchQuery = await openai.chat.completions.create({
+        model: "gpt-4o-mini",
+        messages: [
+          {
+            role: "system",
+            content: "ツイートの内容から、Google検索に最適な英語の検索クエリを1つだけ生成してください。技術名・製品名・企業名を優先してください。検索クエリのみを出力してください。",
+          },
+          { role: "user", content: tweetText },
+        ],
+        temperature: 0,
+        max_tokens: 50,
+      });
+      const query = searchQuery.choices[0]?.message?.content?.trim() || "";
+
+      if (query) {
+        const res = await fetch("https://google.serper.dev/search", {
+          method: "POST",
+          headers: {
+            "X-API-KEY": serperKey,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ q: query, num: 5 }),
+        });
+
+        if (res.ok) {
+          const data = await res.json();
+          const snippets: string[] = [];
+          if (data.knowledgeGraph) {
+            const kg = data.knowledgeGraph;
+            if (kg.description) snippets.push(`[${kg.title || ""}] ${kg.description}`);
+          }
+          for (const result of (data.organic || []).slice(0, 5)) {
+            if (result.snippet) {
+              snippets.push(`[${result.title}] ${result.snippet}`);
+            }
+          }
+          if (snippets.length > 0) {
+            researchParts.push("=== Web検索結果 ===");
+            researchParts.push(...snippets);
+          }
+        }
+      }
+    }
+
+    return researchParts.join("\n");
   } catch (e) {
     console.error("[DailyX] Deep research error:", e);
-    return "";
+    return researchParts.join("\n") || "";
   }
 }
 
