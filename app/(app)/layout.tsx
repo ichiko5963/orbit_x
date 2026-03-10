@@ -29,6 +29,7 @@ import {
   Bookmark,
   User,
   LinkIcon,
+  Zap,
 } from "lucide-react";
 import { AuthProvider, useAuth } from "@/lib/auth-context";
 import { ImportProvider, useImport } from "@/lib/import-context";
@@ -45,6 +46,7 @@ const XLogo = ({ className }: { className?: string }) => (
 
 const mainNav = [
   { name: "ダッシュボード", href: "/dashboard", icon: LayoutDashboard },
+  { name: "Daily X", href: "/daily-x", icon: Zap },
   { name: "AI投稿作成", href: "/compose", icon: Sparkles },
   { name: "投稿カレンダー", href: "/schedule", icon: CalendarDays },
   { name: "過去投稿一覧", href: "/posts", icon: TrendingUp },

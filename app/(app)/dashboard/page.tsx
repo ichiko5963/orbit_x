@@ -91,11 +91,17 @@ function isThisWeek(dateStr: string) {
 
 const quickActions = [
   {
+    title: "Daily X",
+    description: "AI生成の投稿案を確認",
+    href: "/daily-x",
+    icon: Zap,
+    primary: true,
+  },
+  {
     title: "CSVインポート",
     description: "X PremiumのCSVを取り込む",
     href: "/import",
     icon: Upload,
-    primary: true,
   },
   {
     title: "AI投稿作成",
