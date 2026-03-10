@@ -474,18 +474,20 @@ export function extractTweetId(url: string): string | null {
 /**
  * Format a post with the source URL inserted at a natural break point.
  * Rules:
- * - Always include the original tweet URL
- * - URL on its own line (newline before and after)
+ * - Always include the original tweet URL (with /video/1 if video tweet)
+ * - Single newline before and after URL
  * - Insert at the last good break point within the first ~140 Japanese characters
- * - Good break points: end of sentence (。！？\n), comma (、), or end of bullet (・...)
- * - If no good break found within 140 chars, insert after first sentence/line
  */
 export function formatPostWithMedia(
   postText: string,
   originalTweet: XTweetWithMedia
 ): string {
-  const url = originalTweet.original_url;
-  if (!url) return postText;
+  if (!originalTweet.original_url) return postText;
+
+  // Use /video/1 URL for video tweets, otherwise the original tweet URL
+  const url = originalTweet.has_video
+    ? buildVideoUrl(originalTweet.original_url)
+    : originalTweet.original_url;
 
   // Remove any existing URLs from the text (AI sometimes adds them)
   const cleanText = postText.replace(/https?:\/\/[^\s)]+/g, "").replace(/\n{3,}/g, "\n\n").trim();
@@ -566,9 +568,9 @@ function insertUrlAtBreakPoint(text: string, url: string): string {
     const after = flatText.slice(closestToMax.pos).trimStart();
 
     if (after) {
-      return `${before}\n\n${url}\n\n${after}`;
+      return `${before}\n${url}\n${after}`;
     } else {
-      return `${before}\n\n${url}`;
+      return `${before}\n${url}`;
     }
   }
 
@@ -577,11 +579,11 @@ function insertUrlAtBreakPoint(text: string, url: string): string {
   if (firstNewline > 0 && firstNewline <= maxPos) {
     const before = text.slice(0, firstNewline).trimEnd();
     const after = text.slice(firstNewline).trimStart();
-    return `${before}\n\n${url}\n\n${after}`;
+    return `${before}\n${url}\n${after}`;
   }
 
   // Last resort: append at end
-  return `${text}\n\n${url}`;
+  return `${text}\n${url}`;
 }
 
 /**
