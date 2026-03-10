@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import {
   Loader2,
   Send,
@@ -29,6 +29,7 @@ import {
   Pencil,
   ShieldCheck,
   Wand2,
+  Clock,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 import { useDailyX } from "@/lib/daily-x-context";
@@ -60,8 +61,9 @@ interface DailyPost {
   generatedText: string;
   finalPostText: string;
   mediaImageUrls: string[];
-  status: "pending" | "posted" | "drafted" | "skipped";
+  status: "pending" | "posted" | "drafted" | "skipped" | "scheduled";
   postedAt?: string;
+  scheduledAt?: string;
   tweetId?: string;
   source: "keyword" | "trending" | "account_monitor";
   sourceKeyword?: string;
@@ -493,7 +495,10 @@ export default function DailyXPage() {
       return 0;
     });
 
+  // Sort posts by creation order (newest first)
+  const sortedPosts = [...posts].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   const pendingCount = posts.filter((p) => p.status === "pending").length;
+  const scheduledCount = posts.filter((p) => p.status === "scheduled").length;
   const postedCount = posts.filter((p) => p.status === "posted").length;
   const draftedCount = posts.filter((p) => p.status === "drafted").length;
 
@@ -725,6 +730,7 @@ export default function DailyXPage() {
             </div>
             <div className="flex items-center gap-3 text-sm text-zinc-500 ml-auto">
               <span>{pendingCount} 未投稿</span>
+              {scheduledCount > 0 && <span className="text-orange-600">{scheduledCount} 予約</span>}
               <span className="text-green-600">{postedCount} 投稿済</span>
               <span className="text-yellow-600">{draftedCount} 下書き</span>
             </div>
@@ -768,8 +774,8 @@ export default function DailyXPage() {
               <p className="text-sm">「検索する」で元ツイートを確認し、個別に「AI生成」できます</p>
             </div>
           ) : (
-            <div className="space-y-4">
-              {posts.map((post) => (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+              {sortedPosts.map((post) => (
                 <PostCard key={post.id} post={post}
                   expanded={expandedPosts.has(post.id)}
                   onToggleExpand={() => toggleExpand(post.id)}
@@ -777,7 +783,50 @@ export default function DailyXPage() {
                   onSaveDraft={() => handleSaveDraft(post)}
                   onCopy={(t) => handleCopy(t, post.id)}
                   actionLoading={actionLoading[post.id]}
-                  copied={copiedId === post.id} />
+                  copied={copiedId === post.id}
+                  onSchedule={async (scheduledAt, text) => {
+                    if (!user) return;
+                    setActionLoading((p) => ({ ...p, [post.id]: "scheduling" }));
+                    try {
+                      const res = await fetch("/api/daily-x/schedule", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ userId: user.uid, date, postId: post.id, scheduledAt, text }),
+                      });
+                      const data = await res.json();
+                      if (data.success) {
+                        setPosts((p) => p.map((x) => x.id === post.id ? { ...x, status: "scheduled", scheduledAt } : x));
+                        setResultBanner({ type: "success", message: `${new Date(scheduledAt).toLocaleString("ja-JP")} に予約しました` });
+                      } else {
+                        setResultBanner({ type: "error", message: `予約失敗: ${data.error}` });
+                      }
+                    } catch { setResultBanner({ type: "error", message: "予約に失敗しました" }); }
+                    finally { setActionLoading((p) => { const n = { ...p }; delete n[post.id]; return n; }); }
+                  }}
+                  onCancelSchedule={async () => {
+                    if (!user) return;
+                    try {
+                      const res = await fetch("/api/daily-x/schedule", {
+                        method: "DELETE",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ userId: user.uid, date, postId: post.id }),
+                      });
+                      const data = await res.json();
+                      if (data.success) {
+                        setPosts((p) => p.map((x) => x.id === post.id ? { ...x, status: "pending", scheduledAt: undefined } : x));
+                      }
+                    } catch { /* skip */ }
+                  }}
+                  onUpdateText={async (text) => {
+                    if (!user) return;
+                    try {
+                      await fetch("/api/daily-x/save-draft", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ userId: user.uid, date, postId: post.id, text, keepStatus: true }),
+                      });
+                    } catch { /* skip */ }
+                  }} />
               ))}
             </div>
           )
@@ -1023,113 +1072,146 @@ function SearchTweetCard({ tweet, onCopy, copied, onInstantGenerate, isGeneratin
 // Post Card
 // ==============================
 
-function PostCard({ post, expanded, onToggleExpand, onPostToX, onSaveDraft, onCopy, actionLoading, copied }: {
+function PostCard({ post, expanded, onToggleExpand, onPostToX, onSaveDraft, onCopy, actionLoading, copied, onSchedule, onCancelSchedule, onUpdateText }: {
   post: DailyPost; expanded: boolean; onToggleExpand: () => void; onPostToX: (customText?: string) => void;
   onSaveDraft: () => void; onCopy: (t: string) => void; actionLoading?: string; copied: boolean;
+  onSchedule?: (scheduledAt: string, text?: string) => void;
+  onCancelSchedule?: () => void;
+  onUpdateText?: (text: string) => void;
 }) {
-  const [isEditing, setIsEditing] = useState(false);
   const [editText, setEditText] = useState(post.finalPostText);
   const [aiLoading, setAiLoading] = useState<string | null>(null);
+  const [showSchedule, setShowSchedule] = useState(false);
+  const [scheduleDate, setScheduleDate] = useState("");
+  const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Auto-save on text change (debounced)
+  const handleTextChange = (text: string) => {
+    setEditText(text);
+    if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+    saveTimeoutRef.current = setTimeout(() => {
+      onUpdateText?.(text);
+    }, 1000);
+  };
 
   const sourceBadge = {
-    keyword: { label: "キーワード", color: "bg-blue-100 text-blue-700" },
-    trending: { label: "トレンド", color: "bg-orange-100 text-orange-700" },
+    keyword: { label: "KW", color: "bg-blue-100 text-blue-700" },
+    trending: { label: "TR", color: "bg-orange-100 text-orange-700" },
     account_monitor: { label: `@${post.sourceAccount || "監視"}`, color: "bg-green-100 text-green-700" },
   };
-  const statusBadge = {
+  const statusBadge: Record<string, { label: string; color: string }> = {
     pending: { label: "未投稿", color: "text-zinc-500" },
+    scheduled: { label: "予約", color: "text-orange-600" },
     posted: { label: "投稿済", color: "text-green-600" },
     drafted: { label: "下書き", color: "text-yellow-600" },
     skipped: { label: "スキップ", color: "text-red-400" },
   };
   const badge = sourceBadge[post.source];
-  const status = statusBadge[post.status];
+  const status = statusBadge[post.status] || statusBadge.pending;
+
   return (
-    <div className="rounded-xl bg-white border border-zinc-200 overflow-hidden">
-      <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-200">
-        <div className="flex items-center gap-2">
-          <span className={`px-2 py-0.5 rounded-full text-xs ${badge.color}`}>{badge.label}</span>
-          {post.sourceKeyword && <span className="px-2 py-0.5 rounded-full text-xs bg-purple-100 text-purple-700">{post.sourceKeyword}</span>}
-          <span className={`text-xs ${status.color}`}>{status.label}</span>
+    <div className="rounded-xl bg-white border border-zinc-200 overflow-hidden flex flex-col">
+      {/* Header */}
+      <div className="flex items-center justify-between px-3 py-2 border-b border-zinc-100">
+        <div className="flex items-center gap-1.5">
+          <span className={`px-1.5 py-0.5 rounded-full text-[10px] ${badge.color}`}>{badge.label}</span>
+          {post.sourceKeyword && <span className="px-1.5 py-0.5 rounded-full text-[10px] bg-purple-100 text-purple-700">{post.sourceKeyword}</span>}
+          <span className={`text-[10px] ${status.color}`}>{status.label}</span>
         </div>
-        <div className="flex items-center gap-2 text-xs text-zinc-400">
-          <span className="flex items-center gap-1"><Heart size={12} />{post.originalTweet.likes.toLocaleString()}</span>
-          {post.originalTweet.hasVideo && <Video size={12} className="text-purple-400" />}
-          {post.originalTweet.hasImage && <ImageIcon size={12} className="text-blue-400" />}
+        <div className="flex items-center gap-1.5 text-[10px] text-zinc-400">
+          <span className="flex items-center gap-0.5"><Heart size={10} />{post.originalTweet.likes.toLocaleString()}</span>
+          {post.originalTweet.hasVideo && <Video size={10} className="text-purple-400" />}
+          {post.originalTweet.hasImage && <ImageIcon size={10} className="text-blue-400" />}
         </div>
       </div>
-      <div className="px-4 py-3">
-        {isEditing ? (
-          <div>
-            <textarea
-              value={editText}
-              onChange={(e) => setEditText(e.target.value)}
-              className="w-full text-sm leading-relaxed p-3 rounded-lg border border-zinc-300 focus:border-blue-500 focus:outline-none resize-none bg-zinc-50"
-              rows={Math.max(5, editText.split("\n").length + 1)}
-            />
-            <div className="flex items-center justify-end mt-2 gap-2">
-              <button onClick={() => { setIsEditing(false); setEditText(post.finalPostText); }}
-                className="px-3 py-1 rounded-lg text-xs text-zinc-500 hover:bg-zinc-100">キャンセル</button>
-              <button onClick={() => setIsEditing(false)}
-                className="px-3 py-1 rounded-lg bg-blue-600 text-white text-xs hover:bg-blue-500">保存</button>
-            </div>
-          </div>
-        ) : (
-          <div className="text-sm whitespace-pre-wrap leading-relaxed">{editText}</div>
-        )}
+
+      {/* Editable text - always a textarea */}
+      <div className="px-3 py-2 flex-1">
+        <textarea
+          value={editText}
+          onChange={(e) => handleTextChange(e.target.value)}
+          disabled={post.status === "posted"}
+          className="w-full text-xs leading-relaxed p-0 border-0 focus:outline-none resize-none bg-transparent disabled:text-zinc-500"
+          rows={Math.min(8, Math.max(3, editText.split("\n").length))}
+        />
+        {/* Images */}
         {post.mediaImageUrls.length > 0 && !post.originalTweet.hasVideo && (
-          <div className="mt-3 flex gap-2 overflow-x-auto">
-            {post.mediaImageUrls.map((url, i) => <img key={i} src={url} alt="" className="h-32 rounded-lg object-cover flex-shrink-0" loading="lazy" />)}
-          </div>
-        )}
-        {post.originalTweet.hasVideo && post.originalTweet.videoUrl && (
-          <div className="mt-3 flex items-center gap-2 text-xs text-purple-600 bg-purple-50 rounded-lg px-3 py-2">
-            <Video size={14} /><span>動画URL付与: {post.originalTweet.videoUrl}</span>
+          <div className="flex gap-1.5 overflow-x-auto mt-1">
+            {post.mediaImageUrls.map((url, i) => <img key={i} src={url} alt="" className="h-16 rounded-lg object-cover flex-shrink-0" loading="lazy" />)}
           </div>
         )}
       </div>
-      {/* Action buttons */}
-      <div className="px-4 py-3 border-t border-zinc-200 space-y-2">
-        <div className="flex items-center gap-2 flex-wrap">
-          {post.status === "pending" && (
+
+      {/* Scheduled time display */}
+      {post.status === "scheduled" && post.scheduledAt && (
+        <div className="px-3 py-1.5 bg-orange-50 border-t border-orange-100 flex items-center justify-between">
+          <span className="text-[10px] text-orange-700 flex items-center gap-1">
+            <Clock size={10} /> {new Date(post.scheduledAt).toLocaleString("ja-JP")} に投稿予定
+          </span>
+          <button onClick={onCancelSchedule} className="text-[10px] text-orange-600 hover:text-orange-800">取消</button>
+        </div>
+      )}
+
+      {/* Schedule picker */}
+      {showSchedule && (
+        <div className="px-3 py-2 bg-zinc-50 border-t border-zinc-100">
+          <div className="flex items-center gap-2">
+            <input type="datetime-local" value={scheduleDate}
+              onChange={(e) => setScheduleDate(e.target.value)}
+              min={new Date().toISOString().slice(0, 16)}
+              className="flex-1 px-2 py-1 rounded-lg border border-zinc-300 text-[10px] focus:outline-none focus:border-blue-500" />
+            <button onClick={() => {
+              if (scheduleDate && onSchedule) {
+                onSchedule(new Date(scheduleDate).toISOString(), editText !== post.finalPostText ? editText : undefined);
+                setShowSchedule(false);
+              }
+            }} disabled={!scheduleDate}
+              className="px-2 py-1 rounded-lg bg-orange-500 hover:bg-orange-400 text-white text-[10px] font-medium disabled:opacity-50">予約</button>
+            <button onClick={() => setShowSchedule(false)} className="text-zinc-400 hover:text-zinc-600"><X size={12} /></button>
+          </div>
+        </div>
+      )}
+
+      {/* Footer actions */}
+      <div className="px-3 py-2 border-t border-zinc-100">
+        <div className="flex items-center gap-1 flex-wrap">
+          {(post.status === "pending" || post.status === "scheduled") && (
             <>
               <button onClick={() => onPostToX(editText !== post.finalPostText ? editText : undefined)} disabled={!!actionLoading || !!aiLoading}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium disabled:opacity-50 transition-colors">
-                {actionLoading === "posting" ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
-                Xに投稿
+                className="flex items-center gap-1 px-2 py-1 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-[10px] font-medium disabled:opacity-50 transition-colors">
+                {actionLoading === "posting" ? <Loader2 size={10} className="animate-spin" /> : <Send size={10} />}
+                投稿
               </button>
-              <button onClick={onSaveDraft} disabled={!!actionLoading || !!aiLoading}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-zinc-100 hover:bg-zinc-200 text-zinc-700 text-sm font-medium disabled:opacity-50 transition-colors">
-                {actionLoading === "drafting" ? <Loader2 size={14} className="animate-spin" /> : <BookmarkPlus size={14} />}
-                下書き
+              <button onClick={() => setShowSchedule(!showSchedule)} disabled={!!actionLoading}
+                className="flex items-center gap-1 px-2 py-1 rounded-lg bg-orange-100 hover:bg-orange-200 text-orange-700 text-[10px] font-medium disabled:opacity-50 transition-colors">
+                {actionLoading === "scheduling" ? <Loader2 size={10} className="animate-spin" /> : <Clock size={10} />}
+                予約
               </button>
-              <button onClick={() => setIsEditing(true)} disabled={isEditing}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-zinc-100 hover:bg-zinc-200 text-zinc-700 text-sm font-medium disabled:opacity-50 transition-colors">
-                <Pencil size={14} />編集
+              <button onClick={onSaveDraft} disabled={!!actionLoading}
+                className="flex items-center gap-1 px-2 py-1 rounded-lg bg-zinc-100 hover:bg-zinc-200 text-zinc-600 text-[10px] font-medium disabled:opacity-50">
+                <BookmarkPlus size={10} />下書き
               </button>
             </>
           )}
           {post.status === "posted" && (
-            <span className="flex items-center gap-1 text-sm text-green-600">
-              <Check size={14} /> 投稿済み
-              {post.tweetId && <a href={`https://x.com/i/status/${post.tweetId}`} target="_blank" rel="noopener noreferrer" className="ml-1 text-blue-400 hover:underline"><ExternalLink size={12} /></a>}
+            <span className="flex items-center gap-1 text-[10px] text-green-600">
+              <Check size={10} /> 投稿済
+              {post.tweetId && <a href={`https://x.com/i/status/${post.tweetId}`} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline"><ExternalLink size={10} /></a>}
             </span>
           )}
-          {post.status === "drafted" && <span className="flex items-center gap-1 text-sm text-yellow-600"><BookmarkPlus size={14} /> 下書き保存済み</span>}
-          <div className="ml-auto flex items-center gap-2">
-            <button onClick={() => onCopy(editText)}
-              className="flex items-center gap-1 px-2 py-1 rounded text-xs text-zinc-500 hover:text-zinc-900">
-              {copied ? <Check size={12} /> : <Copy size={12} />}{copied ? "コピー済" : "コピー"}
+          {post.status === "drafted" && <span className="flex items-center gap-1 text-[10px] text-yellow-600"><BookmarkPlus size={10} /> 下書き</span>}
+          <div className="ml-auto flex items-center gap-1">
+            <button onClick={() => onCopy(editText)} className="p-1 rounded text-zinc-400 hover:text-zinc-700">
+              {copied ? <Check size={10} /> : <Copy size={10} />}
             </button>
-            <button onClick={onToggleExpand}
-              className="flex items-center gap-1 px-2 py-1 rounded text-xs text-zinc-500 hover:text-zinc-900">
-              {expanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}元ポスト
+            <button onClick={onToggleExpand} className="p-1 rounded text-zinc-400 hover:text-zinc-700">
+              {expanded ? <ChevronUp size={10} /> : <ChevronDown size={10} />}
             </button>
           </div>
         </div>
-        {/* AI Enhancement buttons */}
-        {post.status === "pending" && (
-          <div className="flex items-center gap-2 flex-wrap">
+        {/* AI buttons */}
+        {(post.status === "pending" || post.status === "scheduled") && (
+          <div className="flex items-center gap-1 mt-1.5">
             <button onClick={async () => {
               setAiLoading("hallucination");
               try {
@@ -1139,12 +1221,12 @@ function PostCard({ post, expanded, onToggleExpand, onPostToX, onSaveDraft, onCo
                   body: JSON.stringify({ text: editText, originalTweet: post.originalTweet.text, mode: "hallucination-check" }),
                 });
                 const data = await res.json();
-                if (data.success) setEditText(data.text);
+                if (data.success) { setEditText(data.text); onUpdateText?.(data.text); }
               } catch { /* skip */ } finally { setAiLoading(null); }
             }} disabled={!!aiLoading}
-              className="flex items-center gap-1 px-2.5 py-1 rounded-lg border border-emerald-200 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 text-xs font-medium disabled:opacity-50 transition-colors">
-              {aiLoading === "hallucination" ? <Loader2 size={12} className="animate-spin" /> : <ShieldCheck size={12} />}
-              ハルシネーションチェック
+              className="flex items-center gap-1 px-2 py-0.5 rounded-lg border border-emerald-200 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 text-[10px] disabled:opacity-50 transition-colors">
+              {aiLoading === "hallucination" ? <Loader2 size={10} className="animate-spin" /> : <ShieldCheck size={10} />}
+              HC
             </button>
             <button onClick={async () => {
               setAiLoading("enhance");
@@ -1155,28 +1237,29 @@ function PostCard({ post, expanded, onToggleExpand, onPostToX, onSaveDraft, onCo
                   body: JSON.stringify({ text: editText, originalTweet: post.originalTweet.text, mode: "enhance" }),
                 });
                 const data = await res.json();
-                if (data.success) setEditText(data.text);
+                if (data.success) { setEditText(data.text); onUpdateText?.(data.text); }
               } catch { /* skip */ } finally { setAiLoading(null); }
             }} disabled={!!aiLoading}
-              className="flex items-center gap-1 px-2.5 py-1 rounded-lg border border-purple-200 bg-purple-50 hover:bg-purple-100 text-purple-700 text-xs font-medium disabled:opacity-50 transition-colors">
-              {aiLoading === "enhance" ? <Loader2 size={12} className="animate-spin" /> : <Wand2 size={12} />}
-              AI強化（情報量UP）
+              className="flex items-center gap-1 px-2 py-0.5 rounded-lg border border-purple-200 bg-purple-50 hover:bg-purple-100 text-purple-700 text-[10px] disabled:opacity-50 transition-colors">
+              {aiLoading === "enhance" ? <Loader2 size={10} className="animate-spin" /> : <Wand2 size={10} />}
+              AI強化
             </button>
           </div>
         )}
       </div>
+
+      {/* Original tweet */}
       {expanded && (
-        <div className="px-4 py-3 bg-zinc-50 border-t border-zinc-200">
-          <div className="flex items-center gap-2 mb-2">
-            {post.originalTweet.authorProfileImage && <img src={post.originalTweet.authorProfileImage} alt="" className="w-6 h-6 rounded-full" />}
-            <span className="text-sm font-medium">{post.originalTweet.authorName}</span>
-            <a href={post.originalTweet.url} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-400 hover:underline">@{post.originalTweet.authorUsername}</a>
+        <div className="px-3 py-2 bg-zinc-50 border-t border-zinc-100">
+          <div className="flex items-center gap-1.5 mb-1">
+            {post.originalTweet.authorProfileImage && <img src={post.originalTweet.authorProfileImage} alt="" className="w-5 h-5 rounded-full" />}
+            <span className="text-[10px] font-medium">{post.originalTweet.authorName}</span>
+            <a href={post.originalTweet.url} target="_blank" rel="noopener noreferrer" className="text-[10px] text-blue-400 hover:underline">@{post.originalTweet.authorUsername}</a>
           </div>
-          <p className="text-sm text-zinc-500 whitespace-pre-wrap">{post.originalTweet.text}</p>
-          <div className="flex items-center gap-3 mt-2 text-xs text-zinc-400">
-            <span>{post.originalTweet.likes.toLocaleString()} いいね</span>
+          <p className="text-[10px] text-zinc-500 whitespace-pre-wrap leading-relaxed">{post.originalTweet.text}</p>
+          <div className="flex items-center gap-2 mt-1 text-[10px] text-zinc-400">
+            <span>{post.originalTweet.likes.toLocaleString()} likes</span>
             <span>{post.originalTweet.retweets.toLocaleString()} RT</span>
-            <span>{new Date(post.originalTweet.createdAt).toLocaleString("ja-JP")}</span>
           </div>
         </div>
       )}

@@ -12,7 +12,7 @@ initAdmin();
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { userId, date, postId, text: customText, imageUrls: customImageUrls } = body;
+    const { userId, date, postId, text: customText, imageUrls: customImageUrls, keepStatus } = body;
 
     if (!userId || !date || !postId) {
       return NextResponse.json(
@@ -40,6 +40,12 @@ export async function POST(request: NextRequest) {
     const post = postDoc.data()!;
     const postText = customText || post.finalPostText;
     const imageUrls = customImageUrls || post.mediaImageUrls || [];
+
+    // If keepStatus, only update the text without changing status
+    if (keepStatus) {
+      await postRef.update({ finalPostText: postText });
+      return NextResponse.json({ success: true, text: postText });
+    }
 
     // Save as draft in user's drafts collection
     const draftRef = db.collection("users").doc(userId).collection("drafts").doc();
