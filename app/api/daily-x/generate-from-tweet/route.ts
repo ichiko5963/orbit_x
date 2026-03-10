@@ -59,13 +59,15 @@ export async function POST(request: NextRequest) {
     // Deep research: search web for additional context
     const researchContext = await deepResearchTweet(xTweet.text);
 
+    const tweetSource = tweet.source || "keyword";
     const generatedText = await generateViralPost({
       originalTweet: xTweet,
       factCheck: true,
       researchContext: researchContext || undefined,
+      source: tweetSource,
     });
 
-    const source = tweet.keyword === "bookmark" ? "keyword" : "keyword";
+    const source = tweetSource;
     const dailyPost = buildDailyXPost(xTweet, generatedText, source, {
       keyword: tweet.keyword,
     });

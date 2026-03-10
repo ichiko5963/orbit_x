@@ -138,6 +138,7 @@ export default function DailyXPage() {
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
   const [generatingTweetId, setGeneratingTweetId] = useState<string | null>(null);
+  const [inlineGeneratedPosts, setInlineGeneratedPosts] = useState<Record<string, DailyPost>>({});
 
   // Search (loaded from Firestore cache)
   const [viewMode, setViewMode] = useState<ViewMode>("posts");
@@ -341,19 +342,16 @@ export default function DailyXPage() {
       });
       const data = await res.json();
       if (data.success) {
-        // Add generated post to the posts list
+        // Add generated post to the posts list AND show inline
         if (data.post) {
           setPosts((prev) => [data.post, ...prev]);
+          setInlineGeneratedPosts((prev) => ({ ...prev, [tweet.id]: data.post }));
         }
         setGenerateProgress({
           isActive: false,
           tweetAuthor: tweet.authorUsername,
           status: "done",
           message: `生成完了: @${tweet.authorUsername}`,
-        });
-        setResultBanner({
-          type: "success",
-          message: `@${tweet.authorUsername} のツイートからポストを生成しました`,
         });
         // Auto-clear generate progress after 5s
         setTimeout(() => {
@@ -815,7 +813,28 @@ export default function DailyXPage() {
                   onCopy={(t) => handleCopy(t, tweet.id)}
                   copied={copiedId === tweet.id}
                   onInstantGenerate={() => handleGenerateFromTweet(tweet)}
-                  isGenerating={generatingTweetId === tweet.id} />
+                  isGenerating={generatingTweetId === tweet.id}
+                  generatedPost={inlineGeneratedPosts[tweet.id]}
+                  onPostToX={async (text) => {
+                    const post = inlineGeneratedPosts[tweet.id];
+                    if (!post || !user) return;
+                    try {
+                      const res = await fetch("/api/daily-x/post-to-x", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ userId: user.uid, date, postId: post.id, ...(text ? { text } : {}) }),
+                      });
+                      const data = await res.json();
+                      if (data.success) {
+                        setInlineGeneratedPosts((prev) => { const n = { ...prev }; delete n[tweet.id]; return n; });
+                        setPosts((p) => p.filter((x) => x.id !== post.id));
+                        setResultBanner({ type: "success", message: "Xに投稿しました" });
+                      } else {
+                        setResultBanner({ type: "error", message: `投稿失敗: ${data.error}` });
+                      }
+                    } catch { setResultBanner({ type: "error", message: "投稿に失敗しました" }); }
+                  }}
+                  onDismissGenerated={() => setInlineGeneratedPosts((prev) => { const n = { ...prev }; delete n[tweet.id]; return n; })} />
               ))}
             </div>
           )
@@ -830,11 +849,20 @@ export default function DailyXPage() {
 // Search Tweet Card
 // ==============================
 
-function SearchTweetCard({ tweet, onCopy, copied, onInstantGenerate, isGenerating }: {
+function SearchTweetCard({ tweet, onCopy, copied, onInstantGenerate, isGenerating, generatedPost, onPostToX, onDismissGenerated }: {
   tweet: SearchTweet; onCopy: (t: string) => void; copied: boolean;
   onInstantGenerate: () => void; isGenerating: boolean;
+  generatedPost?: DailyPost; onPostToX?: (text?: string) => void; onDismissGenerated?: () => void;
 }) {
   const [expanded, setExpanded] = useState(false);
+  const [inlineEditText, setInlineEditText] = useState("");
+  const [inlineEditing, setInlineEditing] = useState(false);
+  const [inlinePostLoading, setInlinePostLoading] = useState(false);
+
+  // Sync inline edit text with generated post
+  useEffect(() => {
+    if (generatedPost) setInlineEditText(generatedPost.finalPostText);
+  }, [generatedPost]);
   const isLong = tweet.text.length > 140;
 
   return (
@@ -936,6 +964,57 @@ function SearchTweetCard({ tweet, onCopy, copied, onInstantGenerate, isGeneratin
           </a>
         </div>
       </div>
+
+      {/* Inline Generated Post Preview */}
+      {generatedPost && (
+        <div className="border-t-2 border-emerald-300 bg-emerald-50 px-3 py-3">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-xs font-semibold text-emerald-700 flex items-center gap-1">
+              <Check size={12} /> 生成完了
+            </span>
+            <button onClick={onDismissGenerated} className="text-zinc-400 hover:text-zinc-600">
+              <X size={14} />
+            </button>
+          </div>
+          {inlineEditing ? (
+            <div>
+              <textarea
+                value={inlineEditText}
+                onChange={(e) => setInlineEditText(e.target.value)}
+                className="w-full text-xs leading-relaxed p-2 rounded-lg border border-zinc-300 focus:border-blue-500 focus:outline-none resize-none bg-white"
+                rows={Math.max(4, inlineEditText.split("\n").length + 1)}
+              />
+              <div className="flex gap-1 mt-1">
+                <button onClick={() => setInlineEditing(false)} className="px-2 py-0.5 text-[10px] rounded bg-zinc-200 text-zinc-600">完了</button>
+              </div>
+            </div>
+          ) : (
+            <p className="text-xs whitespace-pre-wrap leading-relaxed text-zinc-800 mb-2">{inlineEditText}</p>
+          )}
+          <div className="flex items-center gap-1.5 mt-2">
+            <button
+              onClick={async () => {
+                if (!onPostToX) return;
+                setInlinePostLoading(true);
+                await onPostToX(inlineEditText !== generatedPost.finalPostText ? inlineEditText : undefined);
+                setInlinePostLoading(false);
+              }}
+              disabled={inlinePostLoading}
+              className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-[10px] font-medium disabled:opacity-50">
+              {inlinePostLoading ? <Loader2 size={10} className="animate-spin" /> : <Send size={10} />}
+              Xに投稿
+            </button>
+            <button onClick={() => setInlineEditing(!inlineEditing)}
+              className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-zinc-200 hover:bg-zinc-300 text-zinc-700 text-[10px] font-medium">
+              <Pencil size={10} />{inlineEditing ? "プレビュー" : "編集"}
+            </button>
+            <button onClick={() => { onCopy(inlineEditText); }}
+              className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-zinc-200 hover:bg-zinc-300 text-zinc-700 text-[10px] font-medium">
+              <Copy size={10} />コピー
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

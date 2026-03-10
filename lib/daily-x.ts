@@ -215,9 +215,8 @@ AIが
 
 ⑭ 投稿例（再現）
 【海外で話題】
-OpenClawで Web情報収集を強化する
-プラグインが登場。
-その名も ーーScrapling
+OpenClawのWeb情報収集を強化する
+プラグイン「Scrapling」が登場。
 これ何ができるかというと👇
 ・AIがWebを自動巡回 ・ページ構造を解析 ・複数サイトから情報収集 ・そのままレポート生成
 つまり何が起きるかというと…
@@ -418,8 +417,9 @@ export async function generateViralPost(params: {
   originalTweet: XTweetWithMedia;
   factCheck?: boolean;
   researchContext?: string;
+  source?: "keyword" | "trending" | "account_monitor";
 }): Promise<string> {
-  const { originalTweet, factCheck = true, researchContext } = params;
+  const { originalTweet, factCheck = true, researchContext, source } = params;
 
   const researchSection = researchContext
     ? `
@@ -431,7 +431,17 @@ ${researchContext}
 `
     : "";
 
+  // Source-based hook instruction
+  const hookInstruction = source === "account_monitor"
+    ? `フックは必ず【速報】を使ってください。公式アカウントからの情報なので速報形式が最適です。`
+    : `フックは元投稿の内容に合わせて最適なものを選んでください。海外の投稿なら【海外で話題】、新リリースなら【速報】、Tips系なら【保存版】など。「その名も」のような冗長な表現は使わないでください。`;
+
   const userPrompt = `以下の元投稿の情報を使って、上記のルールに従ってバズるX投稿を日本語で作成してください。
+
+━━━━━━━━━━━━━━━━━━━━
+■ フック指示
+━━━━━━━━━━━━━━━━━━━━
+${hookInstruction}
 
 ━━━━━━━━━━━━━━━━━━━━
 ■ 元投稿
