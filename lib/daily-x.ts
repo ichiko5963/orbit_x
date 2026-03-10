@@ -29,6 +29,8 @@ export interface DailyXPost {
     hasImage: boolean;
     imageUrls: string[];
     videoUrl?: string | null;
+    videoMp4Url?: string | null;
+    videoPreviewUrl?: string | null;
   };
   // Generated post
   generatedText: string;
@@ -593,6 +595,8 @@ export function buildDailyXPost(
       hasImage: tweet.has_image,
       imageUrls,
       videoUrl: tweet.has_video ? buildVideoUrl(tweet.original_url) : null,
+      videoMp4Url: tweet.video_mp4_url || null,
+      videoPreviewUrl: tweet.video_preview_url || null,
     },
     generatedText,
     finalPostText,

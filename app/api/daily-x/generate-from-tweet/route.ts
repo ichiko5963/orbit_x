@@ -42,6 +42,7 @@ export async function POST(request: NextRequest) {
       is_quote: false,
       original_url: tweet.url,
       video_url: tweet.videoUrl,
+      video_mp4_url: tweet.videoMp4Url,
       video_preview_url: tweet.videoPreviewUrl,
     };
 

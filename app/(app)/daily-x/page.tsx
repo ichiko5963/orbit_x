@@ -53,6 +53,8 @@ interface OriginalTweet {
   hasImage: boolean;
   imageUrls: string[];
   videoUrl?: string;
+  videoMp4Url?: string;
+  videoPreviewUrl?: string;
 }
 
 interface DailyPost {
@@ -1040,6 +1042,25 @@ function SearchTweetCard({ tweet, onCopy, copied, onInstantGenerate, isGeneratin
           ) : (
             <p className="text-xs whitespace-pre-wrap leading-relaxed text-zinc-800 mb-2">{inlineEditText}</p>
           )}
+          {/* Video preview */}
+          {generatedPost.originalTweet.hasVideo && (
+            <div className="mb-2">
+              {generatedPost.originalTweet.videoMp4Url ? (
+                <video
+                  src={generatedPost.originalTweet.videoMp4Url}
+                  autoPlay muted loop playsInline
+                  className="w-full max-h-28 rounded-lg object-cover"
+                />
+              ) : generatedPost.originalTweet.videoPreviewUrl ? (
+                <a href={generatedPost.originalTweet.videoUrl || generatedPost.originalTweet.url} target="_blank" rel="noopener noreferrer" className="block relative group">
+                  <img src={generatedPost.originalTweet.videoPreviewUrl} alt="動画" className="w-full max-h-28 rounded-lg object-cover" loading="lazy" />
+                  <div className="absolute inset-0 flex items-center justify-center bg-black/30 rounded-lg group-hover:bg-black/40">
+                    <div className="w-8 h-8 rounded-full bg-white/90 flex items-center justify-center"><Play size={14} className="text-zinc-800 ml-0.5" /></div>
+                  </div>
+                </a>
+              ) : null}
+            </div>
+          )}
           {/* Image preview */}
           {generatedPost.mediaImageUrls.length > 0 && !generatedPost.originalTweet.hasVideo && (
             <div className="flex gap-1.5 overflow-x-auto mb-2">
@@ -1142,6 +1163,35 @@ function PostCard({ post, expanded, onToggleExpand, onPostToX, onSaveDraft, onCo
           className="w-full text-xs leading-relaxed p-0 border-0 focus:outline-none resize-none bg-transparent disabled:text-zinc-500"
           rows={Math.min(8, Math.max(3, editText.split("\n").length))}
         />
+        {/* Video preview */}
+        {post.originalTweet.hasVideo && (
+          <div className="mt-1.5">
+            {post.originalTweet.videoMp4Url ? (
+              <video
+                src={post.originalTweet.videoMp4Url}
+                autoPlay
+                muted
+                loop
+                playsInline
+                className="w-full max-h-32 rounded-lg object-cover"
+              />
+            ) : post.originalTweet.videoPreviewUrl ? (
+              <a href={post.originalTweet.videoUrl || post.originalTweet.url} target="_blank" rel="noopener noreferrer" className="block relative group">
+                <img src={post.originalTweet.videoPreviewUrl} alt="動画" className="w-full max-h-32 rounded-lg object-cover" loading="lazy" />
+                <div className="absolute inset-0 flex items-center justify-center bg-black/30 rounded-lg group-hover:bg-black/40 transition-colors">
+                  <div className="w-8 h-8 rounded-full bg-white/90 flex items-center justify-center">
+                    <Play size={14} className="text-zinc-800 ml-0.5" />
+                  </div>
+                </div>
+              </a>
+            ) : post.originalTweet.videoUrl ? (
+              <a href={post.originalTweet.videoUrl} target="_blank" rel="noopener noreferrer"
+                className="flex items-center gap-1.5 text-[10px] text-purple-600 bg-purple-50 rounded-lg px-2 py-1.5 hover:bg-purple-100">
+                <Video size={10} /> 動画を再生 →
+              </a>
+            ) : null}
+          </div>
+        )}
         {/* Images */}
         {post.mediaImageUrls.length > 0 && !post.originalTweet.hasVideo && (
           <div className="flex gap-1.5 overflow-x-auto mt-1">
