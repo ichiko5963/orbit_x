@@ -763,7 +763,8 @@ export default function DailyXPage() {
               検索 {searchResults.length > 0 && `(${searchResults.length})`}
             </button>
             <button onClick={() => { setViewMode("bookmarks"); if (bookmarkTweets.length === 0 && !bookmarkLoading) handleFetchBookmarks(); }}
-              className={`px-3 py-1.5 rounded-md text-sm transition-colors flex items-center gap-1 ${viewMode === "bookmarks" ? "bg-zinc-800 text-white" : "text-zinc-500 hover:text-zinc-900"}`}>
+              className={`px-3 py-1.5 rounded-md text-sm transition-colors flex items-center gap-1 ${viewMode === "bookmarks" ? "bg-zinc-800 text-white" : "text-zinc-500 hover:text-zinc-900"}`}
+              title="X API Basic以上のプラン($100/月)が必要です">
               <Bookmark size={14} />
               保存済み {bookmarkTweets.length > 0 && `(${bookmarkTweets.length})`}
             </button>
@@ -857,16 +858,15 @@ export default function DailyXPage() {
               {viewMode === "bookmarks" ? (
                 <>
                   <Bookmark size={32} className="mx-auto mb-3 opacity-50" />
-                  <p className="text-lg mb-2">保存済みポストがありません</p>
-                  <p className="text-sm">X連携済みの場合、ブックマークが表示されます</p>
-                  <button onClick={handleFetchBookmarks}
-                    className="mt-4 px-4 py-2 rounded-lg bg-zinc-800 text-white text-sm">再取得</button>
+                  <p className="text-lg mb-2">ブックマーク機能は利用できません</p>
+                  <p className="text-sm text-zinc-500">X API Basicプラン以上（$100/月）が必要です。</p>
+                  <p className="text-sm text-zinc-500 mt-1">Freeプランではキーワード検索をご利用ください。</p>
                 </>
               ) : (
                 <>
                   <Search size={32} className="mx-auto mb-3 opacity-50" />
                   <p className="text-lg mb-2">検索結果なし</p>
-                  <p className="text-sm">「検索する」ボタンで24時間以内のツイートを検索します</p>
+                  <p className="text-sm">「検索する」ボタンで直近7日間のツイートを検索します</p>
                 </>
               )}
             </div>

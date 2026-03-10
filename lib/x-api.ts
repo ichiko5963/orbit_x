@@ -359,6 +359,8 @@ export async function getBookmarksWithMedia(params: {
     const errBody = await meResponse.text().catch(() => "");
     if (meResponse.status === 401) {
       throw new Error("X認証が無効です。設定ページでXと再連携してください。");
+    } else if (meResponse.status === 403) {
+      throw new Error("ブックマークAPIはX API Basic以上のプラン($100/月)が必要です。Freeプランでは利用できません。");
     } else if (meResponse.status === 429) {
       throw new Error("X APIのレート制限に達しました。しばらく待ってから再試行してください。");
     }
