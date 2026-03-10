@@ -482,16 +482,13 @@ export function formatPostWithMedia(
   postText: string,
   originalTweet: XTweetWithMedia
 ): string {
-  if (!originalTweet.original_url) return postText;
-
-  // Use /video/1 URL for video tweets, otherwise the original tweet URL
-  const url = originalTweet.has_video
-    ? buildVideoUrl(originalTweet.original_url)
-    : originalTweet.original_url;
-
   // Remove any existing URLs from the text (AI sometimes adds them)
   const cleanText = postText.replace(/https?:\/\/[^\s)]+/g, "").replace(/\n{3,}/g, "\n\n").trim();
 
+  // Only include URL for video tweets (video needs /video/1 URL to embed)
+  if (!originalTweet.has_video || !originalTweet.original_url) return cleanText;
+
+  const url = buildVideoUrl(originalTweet.original_url);
   return insertUrlAtBreakPoint(cleanText, url);
 }
 

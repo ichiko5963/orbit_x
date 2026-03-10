@@ -1040,6 +1040,14 @@ function SearchTweetCard({ tweet, onCopy, copied, onInstantGenerate, isGeneratin
           ) : (
             <p className="text-xs whitespace-pre-wrap leading-relaxed text-zinc-800 mb-2">{inlineEditText}</p>
           )}
+          {/* Image preview */}
+          {generatedPost.mediaImageUrls.length > 0 && !generatedPost.originalTweet.hasVideo && (
+            <div className="flex gap-1.5 overflow-x-auto mb-2">
+              {generatedPost.mediaImageUrls.map((url, i) => (
+                <img key={i} src={url} alt="" className="h-16 rounded-lg object-cover flex-shrink-0" loading="lazy" />
+              ))}
+            </div>
+          )}
           <div className="flex items-center gap-1.5 mt-2">
             <button
               onClick={async () => {

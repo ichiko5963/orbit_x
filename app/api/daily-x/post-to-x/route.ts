@@ -61,81 +61,54 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // ---- Try posting ----
-    const errors: string[] = [];
-    let tweetResult: any = null;
-
-    // Method 1: OAuth 2.0 (user token from Firestore)
-    if (accessToken) {
-      try {
-        const payload: any = { text: postText };
-        if (mediaIds.length > 0) {
-          payload.media = { media_ids: mediaIds };
-        }
-
-        const response = await fetch("https://api.twitter.com/2/tweets", {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${accessToken}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify(payload),
-        });
-
-        const responseText = await response.text();
-
-        if (response.ok) {
-          tweetResult = JSON.parse(responseText);
-        } else {
-          let detail = `OAuth2.0: HTTP ${response.status}`;
-          try {
-            const errJson = JSON.parse(responseText);
-            detail = `OAuth2.0: ${errJson.detail || errJson.title || errJson.error || response.status}`;
-          } catch {
-            detail = `OAuth2.0: ${response.status} - ${responseText.slice(0, 200)}`;
-          }
-          errors.push(detail);
-          console.warn("[PostToX]", detail);
-        }
-      } catch (e) {
-        const msg = `OAuth2.0 exception: ${e instanceof Error ? e.message : String(e)}`;
-        errors.push(msg);
-        console.warn("[PostToX]", msg);
-      }
-    } else {
-      errors.push("OAuth2.0: ユーザートークンなし（X連携未設定 or 期限切れ）");
-    }
-
-    // Method 2: OAuth 1.0a (app credentials from env)
-    if (!tweetResult) {
-      const client = createTwitterClient();
-      if (client) {
-        try {
-          const payload: any = { text: postText };
-          if (mediaIds.length > 0) {
-            payload.mediaIds = mediaIds;
-          }
-
-          // Use raw fetch with OAuth 1.0a to get better error details
-          tweetResult = await client.postTweet(postText, {
-            mediaIds: mediaIds.length > 0 ? mediaIds : undefined,
-          });
-        } catch (e) {
-          const msg = `OAuth1.0a: ${e instanceof Error ? e.message : String(e)}`;
-          errors.push(msg);
-          console.error("[PostToX]", msg);
-        }
-      } else {
-        errors.push("OAuth1.0a: 環境変数 X_API_KEY/X_API_SECRET/X_ACCESS_TOKEN/X_ACCESS_TOKEN_SECRET 未設定");
-      }
-    }
-
-    if (!tweetResult) {
+    // Post using the user's own OAuth 2.0 token ONLY
+    // Never fall back to app credentials (OAuth 1.0a) to prevent posting to wrong account
+    if (!accessToken) {
       return NextResponse.json(
         {
-          error: `投稿に失敗しました。\n${errors.join("\n")}`,
-          details: errors,
+          error: "X連携が必要です。設定画面からXアカウントを連携してください。",
+          details: ["ユーザートークンなし（X連携未設定 or 期限切れ）"],
         },
+        { status: 401 }
+      );
+    }
+
+    let tweetResult: any = null;
+    try {
+      const payload: any = { text: postText };
+      if (mediaIds.length > 0) {
+        payload.media = { media_ids: mediaIds };
+      }
+
+      const response = await fetch("https://api.twitter.com/2/tweets", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      });
+
+      const responseText = await response.text();
+
+      if (response.ok) {
+        tweetResult = JSON.parse(responseText);
+      } else {
+        let detail = `HTTP ${response.status}`;
+        try {
+          const errJson = JSON.parse(responseText);
+          detail = errJson.detail || errJson.title || errJson.error || `HTTP ${response.status}`;
+        } catch {
+          detail = `${response.status} - ${responseText.slice(0, 200)}`;
+        }
+        return NextResponse.json(
+          { error: `投稿に失敗しました: ${detail}` },
+          { status: response.status }
+        );
+      }
+    } catch (e) {
+      return NextResponse.json(
+        { error: `投稿に失敗しました: ${e instanceof Error ? e.message : String(e)}` },
         { status: 500 }
       );
     }
