@@ -49,8 +49,8 @@ export async function POST(request: NextRequest) {
       .collection("settings")
       .doc("xAuth")
       .get();
-    const xProfile = xProfileDoc.exists ? xProfileDoc.data() : null;
-    const userXUsername = xProfile?.username || xProfile?.profile?.username || null;
+    const xAuthData = xProfileDoc.exists ? xProfileDoc.data() : null;
+    const userXUsername = xAuthData?.xUsername || null;
 
     // Get user's X OAuth 2.0 access token
     const accessToken = await getUserAccessToken(db, userId);
