@@ -471,14 +471,117 @@ export function extractTweetId(url: string): string | null {
 /**
  * Format post text with video URL at the beginning if video exists
  */
+/**
+ * Format a post with the source URL inserted at a natural break point.
+ * Rules:
+ * - Always include the original tweet URL
+ * - URL on its own line (newline before and after)
+ * - Insert at the last good break point within the first ~140 Japanese characters
+ * - Good break points: end of sentence (。！？\n), comma (、), or end of bullet (・...)
+ * - If no good break found within 140 chars, insert after first sentence/line
+ */
 export function formatPostWithMedia(
   postText: string,
   originalTweet: XTweetWithMedia
 ): string {
-  if (originalTweet.has_video && originalTweet.video_url) {
-    return `${originalTweet.video_url}\n\n${postText}`;
+  const url = originalTweet.original_url;
+  if (!url) return postText;
+
+  // Remove any existing URLs from the text (AI sometimes adds them)
+  const cleanText = postText.replace(/https?:\/\/[^\s)]+/g, "").replace(/\n{3,}/g, "\n\n").trim();
+
+  return insertUrlAtBreakPoint(cleanText, url);
+}
+
+/**
+ * Insert URL at the best natural break point within ~140 chars
+ */
+function insertUrlAtBreakPoint(text: string, url: string): string {
+  const maxPos = 140;
+  const lines = text.split("\n");
+
+  // Find break points: positions where we could insert the URL
+  // Each break is { pos: character position, quality: higher is better }
+  const breakPoints: { pos: number; quality: number }[] = [];
+  let charCount = 0;
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+
+    // End of each line is a natural break (after the newline)
+    const lineEndPos = charCount + line.length;
+
+    // Check for sentence-ending punctuation within the line
+    for (let j = 0; j < line.length; j++) {
+      const ch = line[j];
+      const pos = charCount + j + 1; // position after this character
+      if (pos > maxPos) break;
+
+      if ("。！？".includes(ch)) {
+        breakPoints.push({ pos, quality: 10 }); // Best: sentence end
+      } else if (ch === "\n" || (j === line.length - 1 && line.trim() !== "")) {
+        // End of non-empty line
+      }
+    }
+
+    if (lineEndPos <= maxPos && line.trim() !== "") {
+      breakPoints.push({ pos: lineEndPos, quality: 8 }); // Good: end of line
+    }
+
+    // Check for comma/pause within maxPos
+    for (let j = 0; j < line.length; j++) {
+      const ch = line[j];
+      const pos = charCount + j + 1;
+      if (pos > maxPos) break;
+      if ("、，".includes(ch)) {
+        breakPoints.push({ pos, quality: 5 }); // OK: comma
+      }
+    }
+
+    charCount += line.length + 1; // +1 for newline
   }
-  return postText;
+
+  // Find the last good break point within maxPos
+  // Prefer higher quality, then later position
+  const validBreaks = breakPoints
+    .filter((b) => b.pos <= maxPos && b.pos > 0)
+    .sort((a, b) => {
+      // First by quality (higher is better), then by position (later is better)
+      if (b.quality !== a.quality) return b.quality - a.quality;
+      return b.pos - a.pos;
+    });
+
+  // Among the highest quality breaks, pick the last one (closest to 140)
+  if (validBreaks.length > 0) {
+    const bestQuality = validBreaks[0].quality;
+    const bestBreaks = validBreaks.filter((b) => b.quality === bestQuality);
+    const chosen = bestBreaks[bestBreaks.length - 1]; // last position with best quality
+
+    // Actually pick the one closest to maxPos
+    const closestToMax = bestBreaks.sort((a, b) => b.pos - a.pos)[0];
+
+    // Split text at this position
+    const flatText = text;
+    const before = flatText.slice(0, closestToMax.pos).trimEnd();
+    const after = flatText.slice(closestToMax.pos).trimStart();
+
+    if (after) {
+      return `${before}\n\n${url}\n\n${after}`;
+    } else {
+      return `${before}\n\n${url}`;
+    }
+  }
+
+  // Fallback: insert after first line
+  const firstNewline = text.indexOf("\n");
+  if (firstNewline > 0 && firstNewline <= maxPos) {
+    const before = text.slice(0, firstNewline).trimEnd();
+    const after = text.slice(firstNewline).trimStart();
+    return `${before}\n\n${url}\n\n${after}`;
+  }
+
+  // Last resort: append at end
+  return `${text}\n\n${url}`;
 }
 
 /**
