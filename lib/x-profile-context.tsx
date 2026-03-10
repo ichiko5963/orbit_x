@@ -71,6 +71,17 @@ export function XProfileProvider({ children }: { children: ReactNode }) {
     fetchProfile();
   }, [user]);
 
+  // Auto-refresh when returning from X OAuth callback
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("x_auth_success") === "true") {
+      // Delay slightly to ensure Firestore write is complete
+      const timer = setTimeout(() => fetchProfile(), 1000);
+      return () => clearTimeout(timer);
+    }
+  }, []);
+
   return (
     <XProfileContext.Provider
       value={{

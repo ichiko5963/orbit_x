@@ -69,6 +69,8 @@ export interface XTweetWithMedia {
   is_quote: boolean;
   original_url: string;
   video_url?: string; // /video/1 形式のURL
+  video_mp4_url?: string; // 直接再生可能なmp4 URL
+  video_preview_url?: string; // 動画サムネイル
 }
 
 // ==============================
@@ -102,6 +104,15 @@ function buildTweetWithMedia(
 
   const originalUrl = `https://x.com/${author?.username || "unknown"}/status/${tweet.id}`;
   const videoUrl = hasVideo ? `${originalUrl}/video/1` : undefined;
+  const videoMedia = media.find(
+    (m) => (m.type === "video" || m.type === "animated_gif")
+  );
+  const videoPreviewUrl = videoMedia?.preview_image_url;
+  // Get highest quality mp4 variant for autoplay
+  const videoMp4Url = videoMedia?.variants
+    ?.filter((v) => v.content_type === "video/mp4")
+    ?.sort((a, b) => (b.bit_rate || 0) - (a.bit_rate || 0))
+    ?.[0]?.url;
 
   return {
     id: tweet.id,
@@ -122,6 +133,8 @@ function buildTweetWithMedia(
     is_quote: isQuote,
     original_url: originalUrl,
     video_url: videoUrl,
+    video_mp4_url: videoMp4Url,
+    video_preview_url: videoPreviewUrl,
   };
 }
 
@@ -164,8 +177,10 @@ export async function searchRecentTweets(params: {
   query: string;
   maxResults?: number;
   paginationToken?: string;
+  sortOrder?: "recency" | "relevancy";
+  startTime?: string; // ISO 8601
 }): Promise<{ tweets: XTweetWithMedia[]; nextToken?: string }> {
-  const { query, maxResults = 100, paginationToken } = params;
+  const { query, maxResults = 100, paginationToken, sortOrder = "relevancy", startTime } = params;
   const bearerToken = getBearerToken();
 
   const url = new URL(`${X_API_BASE}/tweets/search/recent`);
@@ -175,6 +190,10 @@ export async function searchRecentTweets(params: {
   url.searchParams.set("user.fields", USER_FIELDS);
   url.searchParams.set("media.fields", MEDIA_FIELDS);
   url.searchParams.set("expansions", EXPANSIONS);
+  url.searchParams.set("sort_order", sortOrder);
+  if (startTime) {
+    url.searchParams.set("start_time", startTime);
+  }
 
   if (paginationToken) {
     url.searchParams.set("next_token", paginationToken);

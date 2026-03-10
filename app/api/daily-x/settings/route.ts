@@ -33,6 +33,8 @@ export async function GET(request: NextRequest) {
         keywords: settings?.keywords || DEFAULT_KEYWORDS,
         monitoredAccounts: settings?.monitoredAccounts || DEFAULT_MONITORED_ACCOUNTS,
         discordWebhookUrl: settings?.discordWebhookUrl || "",
+        minLikes: settings?.minLikes ?? 100,
+        maxTweets: settings?.maxTweets ?? 20,
         lastCheckedTweetIds: settings?.lastCheckedTweetIds || {},
       },
     });
@@ -53,7 +55,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { userId, keywords, monitoredAccounts, discordWebhookUrl } = body;
+    const { userId, keywords, monitoredAccounts, discordWebhookUrl, minLikes, maxTweets } = body;
 
     if (!userId) {
       return NextResponse.json({ error: "userId is required" }, { status: 400 });
@@ -72,6 +74,12 @@ export async function POST(request: NextRequest) {
     }
     if (discordWebhookUrl !== undefined) {
       updates.discordWebhookUrl = discordWebhookUrl;
+    }
+    if (minLikes !== undefined) {
+      updates.minLikes = minLikes;
+    }
+    if (maxTweets !== undefined) {
+      updates.maxTweets = maxTweets;
     }
 
     await db

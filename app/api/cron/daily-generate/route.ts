@@ -1,132 +1,191 @@
 import { NextRequest, NextResponse } from "next/server";
 import { initAdmin, getAdminFirestore } from "@/lib/firebase-admin";
-import { getAllBookmarks, XTweetWithMedia } from "@/lib/x-api";
+import { searchRecentTweets } from "@/lib/x-api";
 import {
   generateViralPost,
   buildDailyXPost,
-  getViralPatterns,
+  batchKeywordQueries,
+  DEFAULT_KEYWORDS,
   DailyXPost,
 } from "@/lib/daily-x";
-import { refreshAccessToken } from "@/lib/x-oauth";
 
 initAdmin();
 
 /**
  * Daily post generation cron job
- * Runs every morning - generates ~60 posts from bookmarks
+ * Runs every morning - searches all keywords (min_faves:500) and generates posts
+ * Also callable manually via POST for the "refresh" button
  * Schedule: 0 21 * * * (UTC) = 6:00 AM JST
  */
 export async function GET(request: NextRequest) {
+  return handleGenerate(request);
+}
+
+export async function POST(request: NextRequest) {
+  return handleGenerate(request);
+}
+
+async function handleGenerate(request: NextRequest) {
   try {
+    // Allow both cron (GET with auth) and manual trigger (POST with userId)
     const authHeader = request.headers.get("authorization");
-    if (
-      process.env.CRON_SECRET &&
-      authHeader !== `Bearer ${process.env.CRON_SECRET}`
-    ) {
+    const isCron =
+      !process.env.CRON_SECRET ||
+      authHeader === `Bearer ${process.env.CRON_SECRET}`;
+
+    let manualUserId: string | null = null;
+    if (request.method === "POST") {
+      try {
+        const body = await request.json();
+        manualUserId = body.userId || null;
+      } catch {
+        // No body
+      }
+    }
+
+    if (!isCron && !manualUserId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    console.log("[DailyGenerate] Starting daily post generation...");
+    console.log("[DailyGenerate] Starting keyword-based post generation...");
     const db = getAdminFirestore();
-
-    // Get all users
-    const usersSnapshot = await db.collection("users").get();
+    const today = new Date().toISOString().split("T")[0];
     const results: any[] = [];
 
-    for (const userDoc of usersSnapshot.docs) {
-      const userId = userDoc.id;
+    // Get users to process
+    let userIds: string[] = [];
+    if (manualUserId) {
+      userIds = [manualUserId];
+    } else {
+      const usersSnapshot = await db.collection("users").get();
+      userIds = usersSnapshot.docs.map((d) => d.id);
+    }
 
+    for (const userId of userIds) {
       try {
-        // Get user's X OAuth token
-        const accessToken = await getUserAccessToken(db, userId);
-        if (!accessToken) {
-          console.log(`[DailyGenerate] No access token for user ${userId}, skipping`);
-          continue;
-        }
-
-        // Get user's style
-        const styleDoc = await db
+        // Get user's custom keywords or use defaults
+        const settingsDoc = await db
           .collection("users")
           .doc(userId)
           .collection("settings")
-          .doc("userStyle")
+          .doc("dailyX")
           .get();
-        const userStyle = styleDoc.exists ? styleDoc.data()?.promptSummary : undefined;
 
-        // Get viral patterns from user's high-performing posts
-        const viralPatterns = await getViralPatterns(db, userId);
-        if (viralPatterns.length === 0) {
-          console.log(`[DailyGenerate] No viral patterns for user ${userId}, using defaults`);
+        const settings = settingsDoc.exists ? settingsDoc.data() || {} : {};
+        const keywords: string[] =
+          settings.keywords?.length > 0 ? settings.keywords : DEFAULT_KEYWORDS;
+
+        const allPosts: DailyXPost[] = [];
+        const seenTweetIds = new Set<string>();
+
+        const errors: string[] = [];
+        const minLikes = settings.minLikes ?? 100;
+
+        // Batch keywords into minimal API calls
+        const batches = batchKeywordQueries(keywords);
+        console.log(`[DailyGenerate] ${keywords.length} keywords -> ${batches.length} batched API calls`);
+
+        for (const batch of batches) {
+          try {
+            console.log(`[DailyGenerate] Searching batch: ${batch.query.slice(0, 100)}...`);
+
+            const result = await searchRecentTweets({
+              query: batch.query,
+              maxResults: 20,
+              sortOrder: "relevancy",
+            });
+
+            // Filter by minimum likes client-side
+            const qualifiedTweets = result.tweets.filter(
+              (t) => t.likes >= minLikes && t.text.length >= 20
+            );
+
+            console.log(
+              `[DailyGenerate] Found ${result.tweets.length} tweets (${qualifiedTweets.length} with ${minLikes}+ likes)`
+            );
+
+            // Generate posts for top tweets (skip duplicates)
+            for (const tweet of qualifiedTweets.slice(0, 5)) {
+              if (seenTweetIds.has(tweet.id)) continue;
+              seenTweetIds.add(tweet.id);
+
+              // Determine keyword
+              const matchedKeyword = batch.keywords.find((kw) => {
+                const lower = tweet.text.toLowerCase();
+                return lower.includes(kw.toLowerCase());
+              }) || batch.keywords[0];
+
+              try {
+                const generatedText = await generateViralPost({
+                  originalTweet: tweet,
+                  factCheck: true,
+                });
+
+                const dailyPost = buildDailyXPost(
+                  tweet,
+                  generatedText,
+                  "keyword",
+                  { keyword: matchedKeyword }
+                );
+
+                allPosts.push(dailyPost);
+              } catch (error) {
+                const msg = error instanceof Error ? error.message : String(error);
+                console.error(
+                  `[DailyGenerate] Generate error for ${tweet.id}:`,
+                  msg
+                );
+                errors.push(`Generate(${tweet.id}): ${msg}`);
+              }
+            }
+
+            // Rate limiting between batches
+            if (batches.length > 1) {
+              await new Promise((r) => setTimeout(r, 1500));
+            }
+          } catch (error) {
+            const msg = error instanceof Error ? error.message : String(error);
+            console.error(`[DailyGenerate] Search error:`, msg);
+            errors.push(`Search: ${msg}`);
+          }
         }
 
-        // Fetch bookmarks
-        console.log(`[DailyGenerate] Fetching bookmarks for user ${userId}...`);
-        const bookmarks = await getAllBookmarks({
-          accessToken,
-          limit: 100,
-        });
+        // Save to Firestore
+        console.log(
+          `[DailyGenerate] Saving ${allPosts.length} posts for user ${userId}...`
+        );
+        const dateRef = db
+          .collection("users")
+          .doc(userId)
+          .collection("dailyPosts")
+          .doc(today);
 
-        console.log(`[DailyGenerate] Got ${bookmarks.length} bookmarks`);
-
-        // Filter out retweets and very short posts
-        const eligibleTweets = bookmarks.filter(
-          (t) => !t.is_retweet && t.text.length > 20
+        await dateRef.set(
+          {
+            date: today,
+            totalPosts: allPosts.length,
+            createdAt: new Date().toISOString(),
+            source: "keywords",
+            keywordsUsed: keywords,
+          },
+          { merge: true }
         );
 
-        // Generate posts (up to 60)
-        const targetCount = Math.min(60, eligibleTweets.length);
-        const dailyPosts: DailyXPost[] = [];
-        const today = new Date().toISOString().split("T")[0];
-
-        console.log(`[DailyGenerate] Generating ${targetCount} posts...`);
-
-        // Process in batches of 5 for parallelism
-        for (let i = 0; i < targetCount; i += 5) {
-          const batch = eligibleTweets.slice(i, Math.min(i + 5, targetCount));
-          const batchPromises = batch.map(async (tweet) => {
-            try {
-              const generatedText = await generateViralPost({
-                originalTweet: tweet,
-                viralPatterns,
-                userStyle,
-                factCheck: true,
-              });
-
-              return buildDailyXPost(tweet, generatedText, "bookmark");
-            } catch (error) {
-              console.error(`[DailyGenerate] Failed to generate for tweet ${tweet.id}:`, error);
-              return null;
-            }
-          });
-
-          const batchResults = await Promise.all(batchPromises);
-          dailyPosts.push(...batchResults.filter(Boolean) as DailyXPost[]);
-
-          // Rate limiting
-          await new Promise((r) => setTimeout(r, 1000));
-        }
-
-        // Save to Firestore under dailyPosts/{date}/posts/{postId}
-        console.log(`[DailyGenerate] Saving ${dailyPosts.length} posts to Firestore...`);
-        const dateRef = db.collection("users").doc(userId).collection("dailyPosts").doc(today);
-        await dateRef.set({
-          date: today,
-          totalPosts: dailyPosts.length,
-          createdAt: new Date().toISOString(),
-          source: "bookmarks",
-        });
-
-        for (const post of dailyPosts) {
+        for (const post of allPosts) {
           await dateRef.collection("posts").doc(post.id).set(post);
         }
 
         results.push({
           userId,
-          postsGenerated: dailyPosts.length,
+          postsGenerated: allPosts.length,
+          keywordsSearched: keywords.length,
           date: today,
+          ...(errors.length > 0 && { errors }),
         });
 
-        console.log(`[DailyGenerate] User ${userId}: ${dailyPosts.length} posts generated`);
+        console.log(
+          `[DailyGenerate] User ${userId}: ${allPosts.length} posts generated from ${keywords.length} keywords`
+        );
       } catch (error) {
         console.error(`[DailyGenerate] Error for user ${userId}:`, error);
         results.push({ userId, error: String(error) });
@@ -144,54 +203,5 @@ export async function GET(request: NextRequest) {
       { error: error instanceof Error ? error.message : "Unknown error" },
       { status: 500 }
     );
-  }
-}
-
-async function getUserAccessToken(db: any, userId: string): Promise<string | null> {
-  try {
-    const tokenDoc = await db
-      .collection("users")
-      .doc(userId)
-      .collection("settings")
-      .doc("xAuth")
-      .get();
-
-    if (!tokenDoc.exists) return null;
-    const tokenData = tokenDoc.data();
-    if (!tokenData?.accessToken) return null;
-
-    const expiresAt = tokenData.expiresAt?.toDate?.() || new Date(tokenData.expiresAt);
-
-    if (new Date() > new Date(expiresAt.getTime() - 5 * 60 * 1000)) {
-      if (!tokenData.refreshToken) return null;
-
-      const clientId = process.env.X_CLIENT_ID;
-      const clientSecret = process.env.X_CLIENT_SECRET;
-      if (!clientId) return null;
-
-      const newTokens = await refreshAccessToken({
-        refreshToken: tokenData.refreshToken,
-        clientId,
-        clientSecret,
-      });
-
-      await db
-        .collection("users")
-        .doc(userId)
-        .collection("settings")
-        .doc("xAuth")
-        .update({
-          accessToken: newTokens.access_token,
-          refreshToken: newTokens.refresh_token || tokenData.refreshToken,
-          expiresAt: new Date(Date.now() + newTokens.expires_in * 1000),
-        });
-
-      return newTokens.access_token;
-    }
-
-    return tokenData.accessToken;
-  } catch (error) {
-    console.error(`[DailyGenerate] Token error for ${userId}:`, error);
-    return null;
   }
 }

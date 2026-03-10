@@ -166,11 +166,18 @@ class TwitterClient {
       body: JSON.stringify(payload),
     });
 
-    const data = await response.json();
+    const responseText = await response.text();
+    let data: any;
+    try {
+      data = JSON.parse(responseText);
+    } catch {
+      console.error("Twitter API non-JSON response:", response.status, responseText.slice(0, 500));
+      throw new Error(`X API returned non-JSON (HTTP ${response.status}): ${responseText.slice(0, 200)}`);
+    }
 
     if (!response.ok) {
-      console.error("Twitter API error:", data);
-      throw new Error(data.detail || data.title || "Failed to post tweet");
+      console.error("Twitter API error:", response.status, data);
+      throw new Error(data.detail || data.title || data.errors?.[0]?.message || `HTTP ${response.status}`);
     }
 
     return data as TweetResponse;

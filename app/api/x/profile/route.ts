@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getAdminFirestore } from "@/lib/firebase-admin";
+import { initAdmin, getAdminFirestore } from "@/lib/firebase-admin";
 import { refreshAccessToken } from "@/lib/x-oauth";
+
+initAdmin();
 
 /**
  * Refresh expired access token using refresh token
@@ -115,15 +117,56 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    // Token is valid (either still valid or successfully refreshed)
+    // If profile data is missing in Firestore, fetch from X API
+    let profileData = {
+      id: xAuthData.xUserId,
+      name: xAuthData.xName,
+      username: xAuthData.xUsername,
+      profileImageUrl: xAuthData.xProfileImageUrl,
+    };
+
+    if (!profileData.username || !profileData.id) {
+      try {
+        const xRes = await fetch(
+          "https://api.twitter.com/2/users/me?user.fields=profile_image_url,name,username",
+          {
+            headers: {
+              Authorization: `Bearer ${tokenResult.accessToken}`,
+            },
+          }
+        );
+        if (xRes.ok) {
+          const xData = await xRes.json();
+          const xUser = xData.data;
+          if (xUser) {
+            profileData = {
+              id: xUser.id,
+              name: xUser.name,
+              username: xUser.username,
+              profileImageUrl: xUser.profile_image_url,
+            };
+            // Save to Firestore for next time
+            await db
+              .collection("users")
+              .doc(userId)
+              .collection("settings")
+              .doc("xAuth")
+              .update({
+                xUserId: xUser.id,
+                xName: xUser.name,
+                xUsername: xUser.username,
+                xProfileImageUrl: xUser.profile_image_url || null,
+              });
+          }
+        }
+      } catch (e) {
+        console.error("[X Profile] Failed to fetch from X API:", e);
+      }
+    }
+
     return NextResponse.json({
       connected: true,
-      profile: {
-        id: xAuthData.xUserId,
-        name: xAuthData.xName,
-        username: xAuthData.xUsername,
-        profileImageUrl: xAuthData.xProfileImageUrl,
-      },
+      profile: profileData,
       connectedAt: xAuthData.connectedAt,
       tokenRefreshed: tokenResult.refreshed,
     });

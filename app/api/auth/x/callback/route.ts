@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { exchangeCodeForToken } from "@/lib/x-oauth";
-import { getAdminFirestore } from "@/lib/firebase-admin";
+import { initAdmin, getAdminFirestore } from "@/lib/firebase-admin";
+
+initAdmin();
 
 // Helper to get base URL
 function getBaseUrl(request: NextRequest): string {

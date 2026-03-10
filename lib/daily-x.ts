@@ -1,5 +1,5 @@
 /**
- * Daily X - Core logic for daily post generation, trending posts, and account monitoring
+ * Daily X - Core logic for keyword-based post generation, trending posts, and account monitoring
  */
 
 import OpenAI from "openai";
@@ -19,7 +19,7 @@ export interface DailyXPost {
     text: string;
     authorName: string;
     authorUsername: string;
-    authorProfileImage?: string;
+    authorProfileImage?: string | null;
     url: string;
     likes: number;
     retweets: number;
@@ -28,7 +28,7 @@ export interface DailyXPost {
     hasVideo: boolean;
     hasImage: boolean;
     imageUrls: string[];
-    videoUrl?: string;
+    videoUrl?: string | null;
   };
   // Generated post
   generatedText: string;
@@ -41,9 +41,9 @@ export interface DailyXPost {
   postedAt?: string;
   tweetId?: string;
   // Source type
-  source: "bookmark" | "trending" | "account_monitor";
-  sourceKeyword?: string;
-  sourceAccount?: string;
+  source: "keyword" | "trending" | "account_monitor";
+  sourceKeyword?: string | null;
+  sourceAccount?: string | null;
   // Metadata
   createdAt: string;
   category?: string;
@@ -88,64 +88,273 @@ export const DEFAULT_MONITORED_ACCOUNTS = [
 ];
 
 // ==============================
+// The Prompt (一言一句変えない)
+// ==============================
+
+const VIRAL_POST_PROMPT = `目的
+AI・テック・ビジネス関連の情報を 思わず保存・拡散したくなる投稿としてまとめる。
+投稿は以下の要素を満たすこと。
+
+① 投稿構造
+投稿は必ず以下の構造にする。
+① フック ② 何が起きたか（超簡潔） ③ 解説 ④ 何がヤバいのか ⑤ 具体例 ⑥ 未来の示唆 ⑦ 行動誘導
+
+② フックの作り方
+投稿の冒頭は必ず以下のどれかから始める。
+【海外で話題】 【速報】 【衝撃】 【注意喚起】 【保存版】 【実は】 【知らないと損】
+このフックの目的は
+・スクロール停止 ・信頼感 ・情報価値
+を一瞬で伝えること。
+
+③ 読みやすい文章設計
+以下を徹底する。
+・1行15〜25文字 ・改行多め ・句読点少なめ ・スマホ可読性重視
+例
+悪い例 OpenClawというAIエージェントは最近海外で話題になっていて様々な使い方が可能です
+良い例 OpenClawというAIエージェントが 海外でかなり話題になっています。
+理由はシンプル。
+「AIが自律で働く」から。
+
+④ 情報密度
+必ず
+・何が起きたのか ・何ができるのか ・何が変わるのか
+この3つを入れる。
+
+⑤ 箇条書き
+途中で必ず箇条書きを入れる。
+例
+できること👇
+・Web自動リサーチ ・競合分析 ・ニュース収集 ・企業リスト作成 ・レポート生成
+など。
+
+⑥ ヤバさの言語化
+単なる紹介ではなく
+「これ何がヤバいの？」
+を説明する。
+例
+つまり何が起きるかというと…
+AIが
+「調べるツール」 ↓ 「作るツール」 ↓ 「働くツール」
+になり始めています。
+
+⑦ 未来予測
+必ず最後に未来視点を入れる。
+例
+これ 本当に数年以内に
+「AIエージェントが当たり前」
+になる可能性あります。
+
+⑧ 拡散トリガー
+投稿には必ず
+・保存 ・引用 ・コメント
+を誘発する要素を入れる。
+例
+正直これ かなり気になってるので
+実際に触ってみて レビューしようと思います。
+
+⑨ 情報の信頼感
+必要に応じて
+・企業名 ・技術名 ・GitHub ・研究者 ・数値
+を入れる。
+例
+・GitHubで1300スター ・72%トークン削減 ・24時間自律稼働
+
+⑩ 投稿の長さ
+理想
+120〜300文字
+ただし
+・スレッド型 ・情報まとめ
+の場合は
+400〜800文字でも可。
+
+⑪ よく使うパターン
+直人さんの投稿では以下の型が多い。
+型1
+海外トレンド
+【海外で話題】
+〜が登場。
+これ何かというと👇
+〜説明
+つまり…
+〜解説
+これ かなりヤバいです。
+
+型2
+速報
+【速報】
+〜が公開。
+結論👇
+〜
+できること👇
+・ ・ ・
+
+型3
+注意喚起
+【注意喚起】
+〜で事故が起きました。
+結論👇
+〜
+
+型4
+技術解説
+【保存版】
+〜の仕組みを わかりやすく解説👇
+
+⑫ 投稿トーン
+トーンは
+・フラット ・断定しすぎない ・でもワクワク感
+例
+正直 かなり面白いです。
+
+⑬ 最後の一文
+直人さんの投稿ではよく
+・レビュー予定 ・使ってみる ・解説する
+を入れる。
+例
+これはさすがに気になるので 実際に触ってみてレビューします。
+
+⑭ 投稿例（再現）
+【海外で話題】
+OpenClawで Web情報収集を強化する
+プラグインが登場。
+その名も ーーScrapling
+これ何ができるかというと👇
+・AIがWebを自動巡回 ・ページ構造を解析 ・複数サイトから情報収集 ・そのままレポート生成
+つまり何が起きるかというと…
+AIが
+「聞かれたら答えるツール」
+から
+「自分で調べるAI」
+になります。
+例えば👇
+・市場リサーチ ・競合分析 ・ニュース収集 ・企業リスト作成
+全部
+AIが自動で クロール → 収集 → 整理。
+AIエージェント どんどんヤバくなってます。
+これは 実際に触ってみてレビューします。
+
+⑮ このプロンプトの本質
+このプロンプトの設計思想は
+Xでバズる投稿の原理
+①スクロール停止 ②情報価値 ③理解しやすさ ④保存価値 ⑤未来示唆
+を全部満たすこと。
+
+正直に言うと
+直人さんの投稿がバズりやすい理由は
+投稿構造がかなり強いからです。
+特にこの3つ。
+1 冒頭フック
+2 箇条書き
+3 つまり何が起きるか`;
+
+// ==============================
 // Post Generation
 // ==============================
 
 /**
- * Generate a viral-format post from an original tweet
- * Uses the structure of viral posts but creates new content based on the original
+ * Search the web for additional context about a tweet's topic
+ */
+export async function deepResearchTweet(tweetText: string): Promise<string> {
+  const serperKey = process.env.SERPER_API_KEY;
+  if (!serperKey) return "";
+
+  try {
+    // Extract key terms from the tweet for search
+    const searchQuery = await openai.chat.completions.create({
+      model: "gpt-4o-mini",
+      messages: [
+        {
+          role: "system",
+          content: "ツイートの内容から、Google検索に最適な英語の検索クエリを1つだけ生成してください。技術名・製品名・企業名を優先してください。検索クエリのみを出力してください。",
+        },
+        { role: "user", content: tweetText },
+      ],
+      temperature: 0,
+      max_tokens: 50,
+    });
+    const query = searchQuery.choices[0]?.message?.content?.trim() || "";
+    if (!query) return "";
+
+    // Search with Serper
+    const res = await fetch("https://google.serper.dev/search", {
+      method: "POST",
+      headers: {
+        "X-API-KEY": serperKey,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ q: query, num: 5 }),
+    });
+
+    if (!res.ok) return "";
+    const data = await res.json();
+
+    // Extract snippets from organic results
+    const snippets: string[] = [];
+    if (data.knowledgeGraph) {
+      const kg = data.knowledgeGraph;
+      if (kg.description) snippets.push(`[${kg.title || ""}] ${kg.description}`);
+    }
+    for (const result of (data.organic || []).slice(0, 5)) {
+      if (result.snippet) {
+        snippets.push(`[${result.title}] ${result.snippet}`);
+      }
+    }
+
+    return snippets.join("\n");
+  } catch (e) {
+    console.error("[DailyX] Deep research error:", e);
+    return "";
+  }
+}
+
+/**
+ * Generate a viral-format post from an original tweet using the exact prompt
  */
 export async function generateViralPost(params: {
   originalTweet: XTweetWithMedia;
-  viralPatterns: string[]; // Sample viral post texts for structure reference
-  userStyle?: string; // User's posting style summary
   factCheck?: boolean;
+  researchContext?: string;
 }): Promise<string> {
-  const { originalTweet, viralPatterns, userStyle, factCheck = true } = params;
+  const { originalTweet, factCheck = true, researchContext } = params;
 
-  // Select a random viral pattern for structure reference
-  const patternIndex = Math.floor(Math.random() * viralPatterns.length);
-  const referencePattern = viralPatterns[patternIndex] || "";
+  const researchSection = researchContext
+    ? `
+━━━━━━━━━━━━━━━━━━━━
+■ 追加リサーチ情報（Web検索結果）
+━━━━━━━━━━━━━━━━━━━━
+以下の情報を活用して、より正確で情報量の多い投稿を作成してください。
+${researchContext}
+`
+    : "";
 
-  const prompt = `以下の元投稿の内容を参考にして、バズるX投稿を日本語で作成してください。
+  const userPrompt = `以下の元投稿の情報を使って、上記のルールに従ってバズるX投稿を日本語で作成してください。
 
 ━━━━━━━━━━━━━━━━━━━━
-■ 元投稿（内容の参考）
+■ 元投稿
 ━━━━━━━━━━━━━━━━━━━━
 @${originalTweet.author_username}:
 ${originalTweet.text}
 
 いいね: ${originalTweet.likes.toLocaleString()}
+リツイート: ${originalTweet.retweets.toLocaleString()}
 ${originalTweet.has_video ? "※動画付き投稿" : ""}
 ${originalTweet.has_image ? "※画像付き投稿" : ""}
-
-${referencePattern ? `━━━━━━━━━━━━━━━━━━━━
-■ 参考にする投稿の型（構造のみ参考）
+${researchSection}
 ━━━━━━━━━━━━━━━━━━━━
-${referencePattern}` : ""}
-
-${userStyle ? `━━━━━━━━━━━━━━━━━━━━
-■ 投稿スタイル
+■ 重要な前提
 ━━━━━━━━━━━━━━━━━━━━
-${userStyle}` : ""}
+この投稿は他人のツイートを引用・参照して作成するものです。
+自分が発見・体験したかのように書くのではなく、「海外で話題になっている」「〜が公開された」「〜が登場した」のように、他者の情報を紹介・引用するスタンスで書いてください。
 
 ━━━━━━━━━━━━━━━━━━━━
-■ 生成ルール
+■ ルール
 ━━━━━━━━━━━━━━━━━━━━
-1. 元投稿の核心的な情報を日本語で伝える
-2. 情報量を詰め込む（具体的な数字、機能名、技術名を入れる）
-3. ${referencePattern ? "参考投稿の「構造」（行数、改行、箇条書き）を真似する" : "読みやすい構造にする"}
-4. バズる要素を入れる（驚き、具体性、有用性）
-5. 280文字以内に収める
-6. 日本語で書く
-7. 元投稿が英語の場合は内容を翻訳して伝える
-8. URLは絶対に含めない
-
-■ 禁止事項
-- 絵文字の多用（最大1-2個）
-- AIっぽい表現（〜ですね、素晴らしい、ぜひ）
-- URL/リンク
-- 「〜しましょう」「〜してみてください」
+- 元投稿が英語の場合は内容を日本語で伝える
+- 元投稿の核心的な情報・数字・技術名を正確に反映する
+- Web検索で得た追加情報があれば、具体的な数値・機能・事実を盛り込む
+- URLは絶対に含めない
+- 投稿本文のみを出力する
+- 自分の体験談として書かない（他者の投稿の引用・紹介として書く）
 
 投稿本文のみを出力:`;
 
@@ -154,15 +363,12 @@ ${userStyle}` : ""}
     messages: [
       {
         role: "system",
-        content: `あなたはXでバズる投稿を作成する専門家です。
-情報量が濃く、読者が思わず保存したくなる投稿を作ります。
-AIっぽい表現は絶対に使いません。事実ベースで淡々と、でもインパクトのある書き方をします。
-URLは絶対に含めません。`,
+        content: VIRAL_POST_PROMPT,
       },
-      { role: "user", content: prompt },
+      { role: "user", content: userPrompt },
     ],
     temperature: 0.5,
-    max_tokens: 500,
+    max_tokens: 1000,
   });
 
   let generatedText = response.choices[0]?.message?.content?.trim() || "";
@@ -203,7 +409,7 @@ ${originalText}
         { role: "user", content: prompt },
       ],
       temperature: 0.1,
-      max_tokens: 500,
+      max_tokens: 1000,
     });
 
     return response.choices[0]?.message?.content?.trim() || generatedText;
@@ -214,30 +420,25 @@ ${originalText}
 }
 
 /**
- * Translate a tweet to Japanese
+ * Translate a tweet to Japanese using free Google Translate
  */
 export async function translateToJapanese(text: string): Promise<string> {
   // If already mostly Japanese, return as-is
   const japaneseRatio = (text.match(/[\u3000-\u9fff\uff00-\uffef]/g) || []).length / text.length;
   if (japaneseRatio > 0.3) return text;
 
-  const response = await openai.chat.completions.create({
-    model: "gpt-4o-mini",
-    messages: [
-      {
-        role: "system",
-        content: "技術ドキュメントの翻訳者。自然な日本語に翻訳する。技術用語は英語のまま残す。",
-      },
-      {
-        role: "user",
-        content: `以下の英語のツイートを自然な日本語に翻訳してください。技術用語（製品名、サービス名、技術名）は英語のまま残してください。\n\n${text}`,
-      },
-    ],
-    temperature: 0.2,
-    max_tokens: 500,
-  });
-
-  return response.choices[0]?.message?.content?.trim() || text;
+  try {
+    const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=ja&dt=t&q=${encodeURIComponent(text)}`;
+    const res = await fetch(url);
+    const data = await res.json();
+    // Response format: [[["translated text","original text",null,null,X],...],null,"en"]
+    const translated = (data[0] as any[])
+      .map((segment: any) => segment[0])
+      .join("");
+    return translated || text;
+  } catch {
+    return text;
+  }
 }
 
 /**
@@ -259,7 +460,7 @@ export function buildDailyXPost(
       text: tweet.text,
       authorName: tweet.author_name,
       authorUsername: tweet.author_username,
-      authorProfileImage: tweet.author_profile_image,
+      authorProfileImage: tweet.author_profile_image || null,
       url: tweet.original_url,
       likes: tweet.likes,
       retweets: tweet.retweets,
@@ -268,61 +469,94 @@ export function buildDailyXPost(
       hasVideo: tweet.has_video,
       hasImage: tweet.has_image,
       imageUrls,
-      videoUrl: tweet.has_video ? buildVideoUrl(tweet.original_url) : undefined,
+      videoUrl: tweet.has_video ? buildVideoUrl(tweet.original_url) : null,
     },
     generatedText,
     finalPostText,
     mediaImageUrls: imageUrls,
     status: "pending",
     source,
-    sourceKeyword: sourceDetail?.keyword,
-    sourceAccount: sourceDetail?.account,
+    sourceKeyword: sourceDetail?.keyword || null,
+    sourceAccount: sourceDetail?.account || null,
     createdAt: new Date().toISOString(),
   };
 }
 
 /**
- * Get viral post patterns from user's stored posts
- * Returns S/A tier posts as structural references
+ * Build X search query for a keyword
+ * Note: min_faves requires Pro tier ($5000+), so we filter client-side instead
+ * Example: ("Claude Code" OR ClaudeCode) -is:retweet
  */
-export async function getViralPatterns(
-  db: FirebaseFirestore.Firestore,
-  userId: string
-): Promise<string[]> {
-  const patterns: string[] = [];
+export function buildKeywordQuery(keyword: string): string {
+  const trimmed = keyword.trim();
+  const noSpace = trimmed.replace(/\s+/g, "");
+  const lowerNoSpace = noSpace.toLowerCase();
 
-  // Get S-tier posts from user's posts
-  const postsSnap = await db
-    .collection("users")
-    .doc(userId)
-    .collection("posts")
-    .where("tier", "in", ["S", "A"])
-    .limit(30)
-    .get();
-
-  for (const doc of postsSnap.docs) {
-    const data = doc.data();
-    if (data.text && data.likes >= 100) {
-      patterns.push(data.text);
-    }
+  let keywordPart: string;
+  if (trimmed.includes(" ")) {
+    keywordPart = `("${trimmed}" OR ${noSpace} OR ${lowerNoSpace})`;
+  } else {
+    keywordPart = trimmed;
   }
 
-  // Also get from context posts
-  const contextSnap = await db
-    .collection("users")
-    .doc(userId)
-    .collection("contextPosts")
-    .where("tier", "in", ["S", "A"])
-    .limit(20)
-    .get();
+  return `${keywordPart} -is:retweet`;
+}
 
-  for (const doc of contextSnap.docs) {
-    const data = doc.data();
-    if (data.text && data.likes >= 100) {
-      patterns.push(data.text);
+/**
+ * Build a single keyword part (without -is:retweet) for batching
+ */
+function buildKeywordPart(keyword: string): string {
+  const trimmed = keyword.trim();
+  const noSpace = trimmed.replace(/\s+/g, "");
+  const lowerNoSpace = noSpace.toLowerCase();
+
+  if (trimmed.includes(" ")) {
+    return `"${trimmed}" OR ${noSpace} OR ${lowerNoSpace}`;
+  }
+  return trimmed;
+}
+
+/**
+ * Batch keywords into combined queries to minimize API calls
+ * X Basic tier query limit: 512 chars
+ * Returns array of { query, keywords[] } objects
+ */
+export function batchKeywordQueries(
+  keywords: string[],
+  maxQueryLength: number = 480
+): { query: string; keywords: string[] }[] {
+  const batches: { query: string; keywords: string[] }[] = [];
+  const suffix = " -is:retweet";
+
+  let currentParts: string[] = [];
+  let currentKeywords: string[] = [];
+  let currentLength = 0;
+
+  for (const keyword of keywords) {
+    const part = buildKeywordPart(keyword);
+    // Account for " OR " separator + parentheses + suffix
+    const addedLength = currentParts.length === 0
+      ? part.length + 2 + suffix.length  // (part) -is:retweet
+      : part.length + 4;                  // " OR " + part
+
+    if (currentLength + addedLength > maxQueryLength && currentParts.length > 0) {
+      // Flush current batch
+      const query = `(${currentParts.join(" OR ")})${suffix}`;
+      batches.push({ query, keywords: currentKeywords });
+      currentParts = [];
+      currentKeywords = [];
+      currentLength = 0;
     }
+
+    currentParts.push(part);
+    currentKeywords.push(keyword);
+    currentLength = `(${currentParts.join(" OR ")})${suffix}`.length;
   }
 
-  // Shuffle and return top patterns
-  return patterns.sort(() => Math.random() - 0.5).slice(0, 15);
+  if (currentParts.length > 0) {
+    const query = `(${currentParts.join(" OR ")})${suffix}`;
+    batches.push({ query, keywords: currentKeywords });
+  }
+
+  return batches;
 }

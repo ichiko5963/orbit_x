@@ -36,6 +36,7 @@ import { ImportProvider, useImport } from "@/lib/import-context";
 import { XProfileProvider, useXProfile } from "@/lib/x-profile-context";
 import { ResearchProvider } from "@/lib/research-context";
 import { ResearchProgressWidget } from "@/components/research-progress-widget";
+import { DailyXProvider, useDailyX } from "@/lib/daily-x-context";
 
 // Custom X logo component
 const XLogo = ({ className }: { className?: string }) => (
@@ -143,6 +144,126 @@ function BackgroundImportIndicator() {
           </div>
         ) : null}
       </div>
+    </div>
+  );
+}
+
+function DailyXProgressWidget() {
+  const { progress, generateProgress, cancelSearch } = useDailyX();
+  const pathname = usePathname();
+
+  const showSearch = progress.isActive || progress.current > 0;
+  const showGenerate = generateProgress.isActive || generateProgress.status === "done" && generateProgress.message;
+
+  // Don't show on daily-x page for search (it has its own UI), but always show generate
+  const showSearchWidget = showSearch && pathname !== "/daily-x";
+  const showGenerateWidget = showGenerate;
+
+  if (!showSearchWidget && !showGenerateWidget) return null;
+
+  const pct =
+    progress.total > 0
+      ? Math.round((progress.current / progress.total) * 100)
+      : 0;
+
+  return (
+    <div className="fixed bottom-6 right-6 z-50 animate-fade-in space-y-3">
+      {/* Generate progress */}
+      {showGenerateWidget && (
+        <div className="bg-white rounded-2xl shadow-2xl border border-zinc-200 p-4 min-w-[300px]">
+          {generateProgress.isActive ? (
+            <div className="space-y-3">
+              <div className="flex items-center gap-2">
+                <Loader2 className="w-4 h-4 text-purple-500 animate-spin" />
+                <span className="text-sm font-medium text-zinc-900">
+                  AI生成中
+                </span>
+              </div>
+              <div className="relative h-2 bg-purple-100 rounded-full overflow-hidden">
+                <div className="absolute inset-y-0 left-0 bg-purple-500 rounded-full animate-pulse w-full" />
+              </div>
+              <p className="text-xs text-zinc-500 truncate">
+                @{generateProgress.tweetAuthor} のツイートから生成中...
+              </p>
+            </div>
+          ) : generateProgress.status === "done" && generateProgress.message ? (
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4 text-emerald-500" />
+                <span className="text-sm font-medium text-emerald-700">
+                  {generateProgress.message}
+                </span>
+              </div>
+            </div>
+          ) : generateProgress.status === "error" ? (
+            <div className="flex items-center gap-2">
+              <X className="w-4 h-4 text-red-500" />
+              <span className="text-sm font-medium text-red-600">
+                {generateProgress.message}
+              </span>
+            </div>
+          ) : null}
+        </div>
+      )}
+
+      {/* Search progress */}
+      {showSearchWidget && (
+        <div className="bg-white rounded-2xl shadow-2xl border border-zinc-200 p-4 min-w-[300px]">
+          {progress.isActive ? (
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Loader2 className="w-4 h-4 text-blue-500 animate-spin" />
+                  <span className="text-sm font-medium text-zinc-900">
+                    キーワード検索中
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-bold text-blue-600">
+                    {progress.current}/{progress.total}
+                  </span>
+                  <button
+                    onClick={cancelSearch}
+                    className="p-1 rounded text-zinc-400 hover:text-red-500"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+              <div className="relative h-2 bg-zinc-100 rounded-full overflow-hidden">
+                <div
+                  className="absolute inset-y-0 left-0 bg-blue-500 rounded-full transition-all duration-500"
+                  style={{ width: `${pct}%` }}
+                />
+              </div>
+              <p className="text-xs text-zinc-500 truncate">
+                検索中: {progress.currentKeyword}
+              </p>
+            </div>
+          ) : progress.current > 0 ? (
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-500" />
+                  <span className="text-sm font-medium text-emerald-700">
+                    検索完了
+                  </span>
+                </div>
+                <span className="text-xs text-zinc-400">
+                  {progress.errors.length > 0 &&
+                    `${progress.errors.length}件エラー`}
+                </span>
+              </div>
+              <Link
+                href="/daily-x"
+                className="block w-full text-center py-2 text-sm font-medium text-blue-600 bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors"
+              >
+                Daily Xで確認する
+              </Link>
+            </div>
+          ) : null}
+        </div>
+      )}
     </div>
   );
 }
@@ -559,6 +680,9 @@ function AppLayoutContent({ children }: { children: ReactNode }) {
         {/* Background Import Indicator */}
         <BackgroundImportIndicator />
 
+        {/* DailyX Progress Widget (他のページに移動しても表示) */}
+        <DailyXProgressWidget />
+
         {/* Research Progress Widget (他のページに移動しても表示) */}
         <ResearchProgressWidget />
       </div>
@@ -572,7 +696,9 @@ export default function AppLayout({ children }: { children: ReactNode }) {
       <ImportProvider>
         <XProfileProvider>
           <ResearchProvider>
-            <AppLayoutContent>{children}</AppLayoutContent>
+            <DailyXProvider>
+              <AppLayoutContent>{children}</AppLayoutContent>
+            </DailyXProvider>
           </ResearchProvider>
         </XProfileProvider>
       </ImportProvider>
