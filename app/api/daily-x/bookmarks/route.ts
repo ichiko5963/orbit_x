@@ -106,11 +106,10 @@ export async function POST(request: NextRequest) {
 
         let translatedText: string | undefined;
         try {
-          const japaneseRatio =
-            (tweet.text.match(/[\u3000-\u9fff\uff00-\uffef]/g) || []).length /
-            tweet.text.length;
-          if (japaneseRatio < 0.3) {
-            translatedText = await translateToJapanese(tweet.text);
+          const jpChars = (tweet.text.match(/[\u3040-\u309f\u30a0-\u30ff]/g) || []).length;
+          if (jpChars / tweet.text.length < 0.1) {
+            const result = await translateToJapanese(tweet.text);
+            if (result !== tweet.text) translatedText = result;
           }
         } catch {
           // skip

@@ -31,7 +31,8 @@ interface DailyXContextType {
     userId: string,
     keywords: string[],
     onComplete?: () => void,
-    maxResults?: number
+    maxResults?: number,
+    minLikes?: number
   ) => void;
   cancelSearch: () => void;
   setGenerateProgress: (p: GenerateProgress) => void;
@@ -70,7 +71,7 @@ export function DailyXProvider({ children }: { children: ReactNode }) {
   }, [abortRef]);
 
   const startSearch = useCallback(
-    (userId: string, keywords: string[], onComplete?: () => void, maxResults?: number) => {
+    (userId: string, keywords: string[], onComplete?: () => void, maxResults?: number, minLikes?: number) => {
       abortRef.current = false;
 
       setProgress({
@@ -90,7 +91,7 @@ export function DailyXProvider({ children }: { children: ReactNode }) {
           const res = await fetch("/api/daily-x/search-keyword", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ userId, keywords, maxResults: maxResults || 20 }),
+            body: JSON.stringify({ userId, keywords, maxResults: maxResults || 20, minLikes: minLikes || 0 }),
           });
           const data = await res.json();
           if (!data.success) {

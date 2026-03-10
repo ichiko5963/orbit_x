@@ -14,7 +14,7 @@ initAdmin();
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { userId, keyword, keywords: keywordsArray, maxResults = 10 } = body;
+    const { userId, keyword, keywords: keywordsArray, maxResults = 10, minLikes = 0 } = body;
 
     if (!userId || (!keyword && !keywordsArray)) {
       return NextResponse.json(
@@ -51,11 +51,14 @@ export async function POST(request: NextRequest) {
 
           let translatedText: string | undefined;
           try {
-            const jpRatio =
-              (tweet.text.match(/[\u3000-\u9fff\uff00-\uffef]/g) || []).length /
-              tweet.text.length;
-            if (jpRatio < 0.3) {
-              translatedText = await translateToJapanese(tweet.text);
+            // Use hiragana/katakana only to detect Japanese (kanji is shared with Chinese)
+            const jpChars = (tweet.text.match(/[\u3040-\u309f\u30a0-\u30ff]/g) || []).length;
+            if (jpChars / tweet.text.length < 0.1) {
+              const result = await translateToJapanese(tweet.text);
+              // Only set if translation is different from original
+              if (result !== tweet.text) {
+                translatedText = result;
+              }
             }
           } catch {
             // skip
@@ -93,7 +96,10 @@ export async function POST(request: NextRequest) {
       allTweets = [...allTweets, ...processed];
     }
 
-    // Sort by likes and take top N
+    // Filter by minLikes, sort by likes, and take top N
+    if (minLikes > 0) {
+      allTweets = allTweets.filter((t) => t.likes >= minLikes);
+    }
     allTweets.sort((a, b) => b.likes - a.likes);
     allTweets = allTweets.slice(0, maxResults);
 

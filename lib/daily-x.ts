@@ -423,14 +423,20 @@ ${originalText}
  * Translate a tweet to Japanese using free Google Translate
  */
 export async function translateToJapanese(text: string): Promise<string> {
-  // If already mostly Japanese, return as-is
-  const japaneseRatio = (text.match(/[\u3000-\u9fff\uff00-\uffef]/g) || []).length / text.length;
-  if (japaneseRatio > 0.3) return text;
+  // Detect Japanese-specific characters (hiragana + katakana only, NOT kanji which is shared with Chinese)
+  const hiraganaKatakana = (text.match(/[\u3040-\u309f\u30a0-\u30ff]/g) || []).length;
+  // If text has significant hiragana/katakana, it's Japanese - skip translation
+  if (hiraganaKatakana / text.length > 0.1) return text;
 
   try {
+    // Use Google Translate with auto-detect to handle ALL languages (English, Chinese, Korean, etc.)
     const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=ja&dt=t&q=${encodeURIComponent(text)}`;
     const res = await fetch(url);
     const data = await res.json();
+    // Google returns detected language as data[2] (e.g. "en", "zh-CN", "ko")
+    const detectedLang = data[2] as string;
+    // If already Japanese, return original
+    if (detectedLang === "ja") return text;
     // Response format: [[["translated text","original text",null,null,X],...],null,"en"]
     const translated = (data[0] as any[])
       .map((segment: any) => segment[0])

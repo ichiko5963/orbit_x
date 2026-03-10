@@ -92,8 +92,8 @@ interface DailyXSettings {
   keywords: string[];
   monitoredAccounts: string[];
   discordWebhookUrl: string;
-  minLikes: number;
-  maxTweets: number;
+  minLikes: number | "";
+  maxTweets: number | "";
 }
 
 type SourceFilter = "all" | "keyword" | "trending" | "account_monitor";
@@ -240,7 +240,7 @@ export default function DailyXPage() {
       settings.keywords.length > 0 ? settings.keywords : DEFAULT_KEYWORDS;
     startSearch(user.uid, keywords, () => {
       loadCachedSearch();
-    }, settings.maxTweets || 20);
+    }, (typeof settings.maxTweets === "number" && settings.maxTweets > 0) ? settings.maxTweets : 20, (typeof settings.minLikes === "number" && settings.minLikes > 0) ? settings.minLikes : 0);
   };
 
   // ==============================
@@ -481,8 +481,10 @@ export default function DailyXPage() {
 
   const currentTweets = viewMode === "bookmarks" ? bookmarkTweets : searchResults;
   const availableKeywords = [...new Set(currentTweets.map((t) => t.keyword))];
+  const effectiveMinLikes = (typeof settings.minLikes === "number" && settings.minLikes > 0) ? settings.minLikes : 0;
   const sortedTweets = [...currentTweets]
     .filter((t) => filterKeyword === "all" || t.keyword === filterKeyword)
+    .filter((t) => t.likes >= effectiveMinLikes)
     .sort((a, b) => {
       if (sortMode === "likes") return b.likes - a.likes;
       if (sortMode === "retweets") return b.retweets - a.retweets;
@@ -626,13 +628,13 @@ export default function DailyXPage() {
               <div>
                 <label className="block text-sm text-zinc-500 mb-2">取得件数（いいね上位N件）</label>
                 <input type="number" value={settings.maxTweets}
-                  onChange={(e) => setSettings((s) => ({ ...s, maxTweets: parseInt(e.target.value) || 20 }))}
+                  onChange={(e) => setSettings((s) => ({ ...s, maxTweets: e.target.value === "" ? "" : parseInt(e.target.value) }))}
                   min={5} max={100} className="w-32 px-3 py-1.5 rounded-lg bg-zinc-100 border border-zinc-300 text-sm focus:outline-none focus:border-blue-500" />
               </div>
               <div>
                 <label className="block text-sm text-zinc-500 mb-2">最低いいね数</label>
                 <input type="number" value={settings.minLikes}
-                  onChange={(e) => setSettings((s) => ({ ...s, minLikes: parseInt(e.target.value) || 0 }))}
+                  onChange={(e) => setSettings((s) => ({ ...s, minLikes: e.target.value === "" ? "" : parseInt(e.target.value) }))}
                   min={0} className="w-32 px-3 py-1.5 rounded-lg bg-zinc-100 border border-zinc-300 text-sm focus:outline-none focus:border-blue-500" />
               </div>
             </div>
