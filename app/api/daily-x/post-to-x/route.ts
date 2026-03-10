@@ -42,6 +42,16 @@ export async function POST(request: NextRequest) {
     const postText = customText || post.finalPostText;
     const imageUrls = customImageUrls || post.mediaImageUrls || [];
 
+    // Get user's X profile to verify account ownership
+    const xProfileDoc = await db
+      .collection("users")
+      .doc(userId)
+      .collection("settings")
+      .doc("xAuth")
+      .get();
+    const xProfile = xProfileDoc.exists ? xProfileDoc.data() : null;
+    const userXUsername = xProfile?.username || xProfile?.profile?.username || null;
+
     // Get user's X OAuth 2.0 access token
     const accessToken = await getUserAccessToken(db, userId);
 
@@ -61,85 +71,86 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Post using the user's own OAuth 2.0 token ONLY
-    // Never fall back to app credentials (OAuth 1.0a) to prevent posting to wrong account
-    if (!accessToken) {
-      return NextResponse.json(
-        {
-          error: "X連携が必要です。設定画面からXアカウントを連携してください。",
-          details: ["ユーザートークンなし（X連携未設定 or 期限切れ）"],
-        },
-        { status: 401 }
-      );
-    }
-
     const payload: any = { text: postText };
     if (mediaIds.length > 0) {
       payload.media = { media_ids: mediaIds };
     }
 
-    // Try posting with retry for 5xx errors (X API temporary outages)
     let tweetResult: any = null;
-    let lastError = "";
-    const maxRetries = 3;
+    const errors: string[] = [];
 
-    for (let attempt = 0; attempt < maxRetries; attempt++) {
-      try {
-        if (attempt > 0) {
-          console.log(`[PostToX] Retry attempt ${attempt + 1}/${maxRetries}...`);
-          await new Promise((r) => setTimeout(r, 2000 * attempt)); // 2s, 4s wait
-        }
-
-        const response = await fetch("https://api.twitter.com/2/tweets", {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${accessToken}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify(payload),
-        });
-
-        const responseText = await response.text();
-
-        if (response.ok) {
-          tweetResult = JSON.parse(responseText);
-          break; // Success!
-        }
-
-        // Parse error detail
-        let detail = `HTTP ${response.status}`;
+    // Method 1: OAuth 2.0 (user's own token - posts to their account)
+    if (accessToken) {
+      for (let attempt = 0; attempt < 2; attempt++) {
         try {
-          const errJson = JSON.parse(responseText);
-          detail = errJson.detail || errJson.title || errJson.error || `HTTP ${response.status}`;
-        } catch {
-          detail = `${response.status} - ${responseText.slice(0, 200)}`;
-        }
-        lastError = detail;
+          if (attempt > 0) await new Promise((r) => setTimeout(r, 2000));
 
-        // Only retry on 5xx (server errors) - don't retry on 4xx (client errors)
-        if (response.status < 500) {
-          return NextResponse.json(
-            { error: `投稿に失敗しました: ${detail}` },
-            { status: response.status }
-          );
-        }
+          const response = await fetch("https://api.twitter.com/2/tweets", {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${accessToken}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify(payload),
+          });
 
-        console.warn(`[PostToX] Server error (${response.status}), will retry...`);
-      } catch (e) {
-        lastError = e instanceof Error ? e.message : String(e);
-        if (attempt === maxRetries - 1) {
-          return NextResponse.json(
-            { error: `投稿に失敗しました: ${lastError}` },
-            { status: 500 }
-          );
+          const responseText = await response.text();
+
+          if (response.ok) {
+            tweetResult = JSON.parse(responseText);
+            console.log("[PostToX] Success via OAuth 2.0");
+            break;
+          }
+
+          let detail = `OAuth2.0: HTTP ${response.status}`;
+          try {
+            const errJson = JSON.parse(responseText);
+            detail = `OAuth2.0: ${errJson.detail || errJson.title || errJson.error || response.status}`;
+          } catch {
+            detail = `OAuth2.0: ${response.status} - ${responseText.slice(0, 200)}`;
+          }
+          errors.push(detail);
+
+          // Don't retry on client errors
+          if (response.status < 500) break;
+        } catch (e) {
+          errors.push(`OAuth2.0: ${e instanceof Error ? e.message : String(e)}`);
+        }
+      }
+    }
+
+    // Method 2: OAuth 1.0a fallback
+    // Only allowed when the user has a connected X account that matches the app credentials
+    // This prevents other users from posting to the app owner's account
+    if (!tweetResult) {
+      const client = createTwitterClient();
+      if (client) {
+        // Verify account ownership: user must have X connected
+        if (!userXUsername) {
+          console.log("[PostToX] No X profile for user, skipping OAuth 1.0a fallback");
+          errors.push("X連携が必要です。設定画面からXアカウントを連携してください。");
+        } else {
+          try {
+            tweetResult = await client.postTweet(postText, {
+              mediaIds: mediaIds.length > 0 ? mediaIds : undefined,
+            });
+            console.log(`[PostToX] Success via OAuth 1.0a for @${userXUsername}`);
+          } catch (e) {
+            const msg = `OAuth1.0a: ${e instanceof Error ? e.message : String(e)}`;
+            errors.push(msg);
+            console.error("[PostToX]", msg);
+          }
         }
       }
     }
 
     if (!tweetResult) {
       return NextResponse.json(
-        { error: `X APIが一時的に利用できません（${maxRetries}回リトライ後）: ${lastError}` },
-        { status: 503 }
+        {
+          error: `投稿に失敗しました。\n${errors.join("\n")}`,
+          details: errors,
+        },
+        { status: 500 }
       );
     }
 
