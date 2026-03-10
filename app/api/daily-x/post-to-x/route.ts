@@ -73,27 +73,40 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const payload: any = { text: postText };
+    if (mediaIds.length > 0) {
+      payload.media = { media_ids: mediaIds };
+    }
+
+    // Try posting with retry for 5xx errors (X API temporary outages)
     let tweetResult: any = null;
-    try {
-      const payload: any = { text: postText };
-      if (mediaIds.length > 0) {
-        payload.media = { media_ids: mediaIds };
-      }
+    let lastError = "";
+    const maxRetries = 3;
 
-      const response = await fetch("https://api.twitter.com/2/tweets", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(payload),
-      });
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+      try {
+        if (attempt > 0) {
+          console.log(`[PostToX] Retry attempt ${attempt + 1}/${maxRetries}...`);
+          await new Promise((r) => setTimeout(r, 2000 * attempt)); // 2s, 4s wait
+        }
 
-      const responseText = await response.text();
+        const response = await fetch("https://api.twitter.com/2/tweets", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(payload),
+        });
 
-      if (response.ok) {
-        tweetResult = JSON.parse(responseText);
-      } else {
+        const responseText = await response.text();
+
+        if (response.ok) {
+          tweetResult = JSON.parse(responseText);
+          break; // Success!
+        }
+
+        // Parse error detail
         let detail = `HTTP ${response.status}`;
         try {
           const errJson = JSON.parse(responseText);
@@ -101,15 +114,32 @@ export async function POST(request: NextRequest) {
         } catch {
           detail = `${response.status} - ${responseText.slice(0, 200)}`;
         }
-        return NextResponse.json(
-          { error: `投稿に失敗しました: ${detail}` },
-          { status: response.status }
-        );
+        lastError = detail;
+
+        // Only retry on 5xx (server errors) - don't retry on 4xx (client errors)
+        if (response.status < 500) {
+          return NextResponse.json(
+            { error: `投稿に失敗しました: ${detail}` },
+            { status: response.status }
+          );
+        }
+
+        console.warn(`[PostToX] Server error (${response.status}), will retry...`);
+      } catch (e) {
+        lastError = e instanceof Error ? e.message : String(e);
+        if (attempt === maxRetries - 1) {
+          return NextResponse.json(
+            { error: `投稿に失敗しました: ${lastError}` },
+            { status: 500 }
+          );
+        }
       }
-    } catch (e) {
+    }
+
+    if (!tweetResult) {
       return NextResponse.json(
-        { error: `投稿に失敗しました: ${e instanceof Error ? e.message : String(e)}` },
-        { status: 500 }
+        { error: `X APIが一時的に利用できません（${maxRetries}回リトライ後）: ${lastError}` },
+        { status: 503 }
       );
     }
 
